@@ -549,9 +549,11 @@ the baseline at \eqn{\mathbf{x} = 0}, so a covariate far from zero
 (a calendar year, an age in days) can push it beyond what a number
 can hold: it is then reported as \code{Inf}, as 0, or as a value too small
 to keep its digits, with a warning of class
-\code{"hzr_unrepresentable_scale"}, and \code{\link[=predict]{predict()}} refuses the fit.
-Centering or rescaling the covariate fixes it without changing the
-model.}
+\code{"hzr_unrepresentable_scale"}. The fit keeps \eqn{\log \mu} and its
+standard error, which \code{summary()} shows as a \code{log(mu)} row and
+\code{\link[=predict]{predict()}} reads; \code{coef()} shows \eqn{\mu} as it is, and \code{vcov()}
+gives \code{NA} for it. Centering or rescaling the covariate reports
+\eqn{\mu} itself, without changing the model.}
 \item{\code{"exponential"}: constant hazard}{The memoryless special case
 \eqn{\nu = 1}: a time-invariant baseline rate, \eqn{H(t \mid \mathbf{x}) =
     \mu t \exp(\eta)}.  Use it when the event rate does not change with

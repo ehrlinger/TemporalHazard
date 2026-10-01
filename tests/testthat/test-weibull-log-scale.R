@@ -16,6 +16,74 @@
   list(ll = as.numeric(ll), msgs = msgs)
 }
 
+.ls_data <- function(alpha, b) {
+  set.seed(1)
+  n <- 400
+  x <- 1000 + stats::rnorm(n, sd = 5)
+  t <- (stats::rexp(n) / exp(alpha + b * x))^(1 / 0.2)
+  cens <- stats::rexp(n)^5 * 3
+  data.frame(time = pmin(t, cens), dead = as.integer(t <= cens),
+             x = x, xc = x - 1000)
+}
+
+.ls_fit <- function(formula, data, theta) {
+  suppressWarnings(hazard(formula, data = data, dist = "weibull",
+                          theta = theta, fit = TRUE))
+}
+
+test_that("summary() shows the log(mu) a fit kept, with its standard error (#566)", {
+  d <- .ls_data(200, -0.2)
+  raw <- .ls_fit(survival::Surv(time, dead) ~ x, d, c(exp(50), 0.2, -0.2))
+  ctr <- .ls_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, -0.2))
+  expect_identical(unname(coef(raw)[[1]]), Inf)   # premise
+  tab <- summary(raw)$coefficients
+  expect_identical(rownames(tab)[1:2], c(rownames(tab)[1], "log(mu)"))
+  expect_equal(nrow(tab), length(coef(raw)) + 1L)
+  # mu itself has no standard error; log(mu) does.
+  expect_true(is.na(tab$std_error[1]))
+  # Oracle: the centred fit. H = exp(nu (log mu + log t) + b x) with
+  # x = xc + 1000, so log(mu_raw) = log(mu_ctr) - 1000 b / nu, and its
+  # variance is the delta method on the centred fit's (log mu, nu, b).
+  th <- unname(coef(ctr))
+  lmu_c <- log(th[1])
+  want <- lmu_c - 1000 * th[3] / th[2]
+  expect_equal(tab$estimate[2] / want, 1, tolerance = 1e-4)
+  v <- unname(vcov(ctr))
+  dd <- c(1 / th[1], 1, 1)
+  v_log <- v * outer(dd, dd)                       # (log mu, nu, b)
+  grad <- c(1, 1000 * th[3] / th[2]^2, -1000 / th[2])
+  se_want <- sqrt(as.numeric(grad %*% v_log %*% grad))
+  expect_equal(tab$std_error[2] / se_want, 1, tolerance = 1e-2)
+  expect_true(is.na(tab$z_stat[2]) && is.na(tab$p_value[2]))
+  # print() shows the row.
+  out <- utils::capture.output(print(summary(raw)))
+  expect_true(any(grepl("^log\\(mu\\)", out)))
+
+  # Known negative: a fit whose mu is representable gets no extra row.
+  tab_ctr <- summary(ctr)$coefficients
+  expect_equal(nrow(tab_ctr), length(coef(ctr)))
+  expect_false("log(mu)" %in% rownames(tab_ctr))
+})
+
+test_that("a fit whose mu is representable predicts as before (#566)", {
+  # Known negative for the log-scale readers: on an ordinary fit the
+  # cumulative hazard and its SE are what the natural scale gives.
+  d <- .ls_data(-2, 0.001)
+  f <- .ls_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, 0))
+  expect_null(f$fit$log_scale$needed)
+  nd <- data.frame(time = c(0.5, 2), xc = c(-3, 4))
+  th <- unname(coef(f))
+  h_nat <- (th[1] * nd$time)^th[2] * exp(th[3] * nd$xc)
+  got <- predict(f, newdata = nd, type = "cumulative_hazard", se.fit = TRUE)
+  expect_equal(got$fit / h_nat, rep(1, 2), tolerance = 1e-12)
+  # The SE, by the natural-scale Jacobian and vcov.
+  j_nat <- cbind((th[2] / th[1]) * h_nat,
+                 log(th[1] * nd$time) * h_nat,
+                 nd$xc * h_nat)
+  se_nat <- sqrt(rowSums((j_nat %*% unname(vcov(f))) * j_nat))
+  expect_equal(got$se.fit / se_nat, rep(1, 2), tolerance = 1e-10)
+})
+
 test_that("a left-censored row whose H is subnormal is read on the log scale (#566 acceptance 1)", {
   obj <- hazard(time = 2, status = -1, time_upper = 2, dist = "weibull",
                 theta = c(1e-81, 4), fit = FALSE)

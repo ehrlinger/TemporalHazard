@@ -34,7 +34,7 @@
   list(fit = fit, n_scale = length(msgs), msgs = msgs)
 }
 
-test_that("a fit whose mu overflows warns, and its readers refuse (#566)", {
+test_that("a fit whose mu overflows warns, and its readers use log(mu) (#566)", {
   d <- .w566_data(200, -0.2)
   res <- .w566_fit(survival::Surv(time, dead) ~ x, d, c(exp(50), 0.2, -0.2))
   f <- res$fit
@@ -53,20 +53,42 @@ test_that("a fit whose mu overflows warns, and its readers refuse (#566)", {
 
   nd <- d[1:2, ]
   nd$time <- c(0.5, 2)
-  # The centred fit predicts these rows; on main the raw fit returned 0 for
-  # both, as if that were the survival.
-  s_ctr <- predict(ctr$fit, newdata = nd, type = "survival")
+  # The centred fit predicts these rows; on main fcc6501d the raw fit
+  # returned 0 for both, as if that were the survival, and after #573 every
+  # reader refused it. Now every reader goes through the log(mu) the fit
+  # kept, and agrees with the centred fit, the same model.
+  nd_ctr <- transform(nd, xc = x - 1000)
+  s_ctr <- predict(ctr$fit, newdata = nd_ctr, type = "survival")
   expect_true(all(s_ctr > 0.05 & s_ctr < 0.95))
-  # Every type is refused, including the two that never read mu.
   for (type in c("survival", "cumulative_hazard", "hazard",
                  "linear_predictor")) {
-    expect_error(predict(f, newdata = nd, type = type),
-                 "scale mu = Inf, which cannot be represented", fixed = TRUE)
+    got <- predict(f, newdata = nd, type = type)
+    want <- predict(ctr$fit, newdata = nd_ctr, type = type)
+    if (type == "linear_predictor") {
+      # The linear predictors differ by the centring constant, b * 1000.
+      want <- want + unname(coef(ctr$fit)[[3]]) * 1000
+    }
+    if (type == "hazard") {
+      want <- want * exp(unname(coef(ctr$fit)[[3]]) * 1000)
+    }
+    expect_equal(got / want, rep(1, 2), tolerance = 1e-3, info = type)
   }
-  expect_error(predict(f, type = "cumulative_hazard"),
-               "scale mu = Inf", fixed = TRUE)
-  expect_error(hzr_gof(f), "scale mu = Inf", fixed = TRUE)
-  expect_error(hzr_deciles(f, time = 1), "scale mu = Inf", fixed = TRUE)
+  got_ci <- predict(f, newdata = nd, type = "survival", se.fit = TRUE)
+  want_ci <- predict(ctr$fit, newdata = nd_ctr, type = "survival",
+                     se.fit = TRUE)
+  expect_equal(got_ci$se.fit / want_ci$se.fit, rep(1, 2), tolerance = 1e-2)
+  expect_equal(got_ci$lower / want_ci$lower, rep(1, 2), tolerance = 1e-2)
+  g_raw <- hzr_gof(f)
+  g_ctr <- hzr_gof(ctr$fit)
+  expect_true(all(is.finite(g_raw$cum_expected)))
+  last <- nrow(g_ctr)
+  expect_gt(g_ctr$cum_expected[last], 0)
+  expect_equal(g_raw$cum_expected[last] / g_ctr$cum_expected[last], 1,
+               tolerance = 1e-3)
+  dc_raw <- hzr_deciles(f, time = 1)
+  dc_ctr <- hzr_deciles(ctr$fit, time = 1)
+  expect_equal(dc_raw$expected / dc_ctr$expected, rep(1, nrow(dc_ctr)),
+               tolerance = 1e-3)
 })
 
 test_that("a fit whose mu underflows to 0 warns too (#566)", {
@@ -79,8 +101,15 @@ test_that("a fit whose mu underflows to 0 warns too (#566)", {
   expect_match(res$msgs, "scale mu is reported as 0", fixed = TRUE)
   nd <- d[1:2, ]
   nd$time <- c(0.5, 2)
-  expect_error(predict(f, newdata = nd, type = "survival"),
-               "scale mu = 0, which must be positive", fixed = TRUE)
+  # Read through log(mu), against the centred fit of the same model. After
+  # #573 this refused ("scale mu = 0, which must be positive").
+  ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, 0.2))
+  expect_equal(f$fit$objective, ctr$fit$fit$objective, tolerance = 1e-4)
+  got <- predict(f, newdata = nd, type = "survival", se.fit = TRUE)
+  want <- predict(ctr$fit, newdata = transform(nd, xc = x - 1000),
+                  type = "survival", se.fit = TRUE)
+  expect_equal(got$fit / want$fit, rep(1, 2), tolerance = 1e-3)
+  expect_equal(got$se.fit / want$se.fit, rep(1, 2), tolerance = 1e-2)
 })
 
 test_that("an intercept-only object is checked without a stored design (#566)", {
@@ -159,36 +188,43 @@ test_that("mu * time overflowing does not make the cumulative hazard Inf (#566)"
 })
 
 
-test_that("an overflowed variance gives NA standard errors, not wrong ones (#566)", {
+test_that("an overflowed variance of mu is read on the log scale, not withheld (#566)", {
   # log(mu) is about 600: mu is finite, but its variance carries mu^2 and is
   # Inf. predict() read that as a fixed parameter and returned a standard
   # error 187 times the centred fit's (16.85 against 0.0901) on main
-  # fcc6501d, and summary() showed the SE of mu with no warning.
+  # fcc6501d; after #573 it withheld it. The variance of log(mu) is an
+  # ordinary number, and the fit keeps it.
   d <- .w566_data(115, -0.115)
   raw <- .w566_fit(survival::Surv(time, dead) ~ x, d, c(exp(500), 0.2, -0.115))
   ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, -0.115))
-  # The fit says so: it is the variance here, not mu, that cannot be held.
+  # The fit says so: it is the variance here, not mu, that cannot be held,
+  # and the warning says what each reader now does.
   expect_identical(raw$n_scale, 1L)
   expect_match(raw$msgs, "variance of the Weibull scale mu", fixed = TRUE)
-  # The warning promises NA SEs only where a prediction reads mu; the linear
-  # predictor and hazard below keep theirs (Copilot on #573).
-  expect_match(raw$msgs, "for any prediction that depends on mu", fixed = TRUE)
+  expect_match(raw$msgs, "vcov() gives NA for mu", fixed = TRUE)
+  expect_match(raw$msgs, "summary() and predict() use the variance of log(mu)",
+               fixed = TRUE)
   expect_true(is.finite(coef(raw$fit)[[1]]))
-  expect_identical(unname(vcov(raw$fit)[1, 1]), Inf)
+  # vcov(): mu's row and column are NA, with the reason recorded -- no Inf,
+  # no NaN, no false 0. After #573 vcov(raw)[1, 1] was Inf.
+  v <- vcov(raw$fit)
+  expect_true(all(is.na(v[1, ])) && all(is.na(v[, 1])))
+  expect_false(any(is.nan(v)))
+  expect_true(all(is.finite(v[-1, -1])))
+  expect_match(raw$fit$degraded_causes[["standard_errors"]],
+               "log(mu) and its standard error are kept instead", fixed = TRUE)
   nd <- d[1:2, ]
   nd$time <- c(0.5, 2)
   p_ctr <- predict(ctr$fit, newdata = nd, type = "cumulative_hazard",
                    se.fit = TRUE)
-  expect_warning(
-    p_raw <- predict(raw$fit, newdata = nd, type = "cumulative_hazard",
-                     se.fit = TRUE),
-    "variance that cannot be represented", fixed = TRUE
-  )
-  # The value is right; its standard error and limits are withheld. The two
-  # fits are separate optimizer runs, hence the tolerance.
-  expect_equal(p_raw$fit, p_ctr$fit, tolerance = 1e-2)
-  expect_true(all(is.na(p_raw$se.fit)))
-  expect_true(all(is.na(p_raw$lower)) && all(is.na(p_raw$upper)))
+  p_raw <- expect_no_warning(predict(raw$fit, newdata = nd,
+                                     type = "cumulative_hazard",
+                                     se.fit = TRUE))
+  # Against the centred fit, the same model: separate optimizer runs, hence
+  # the tolerance.
+  expect_equal(p_raw$fit / p_ctr$fit, rep(1, 2), tolerance = 1e-2)
+  expect_equal(p_raw$se.fit / p_ctr$se.fit, rep(1, 2), tolerance = 1e-2)
+  expect_equal(p_raw$lower / p_ctr$lower, rep(1, 2), tolerance = 1e-2)
   expect_true(all(is.finite(p_ctr$se.fit)))
 
   # The linear predictor and the relative hazard do not depend on mu, so
@@ -203,28 +239,27 @@ test_that("an overflowed variance gives NA standard errors, not wrong ones (#566
   expect_equal(hz$se.fit, hz$fit * se_eta, tolerance = 1e-10)
 })
 
-test_that("an underflowed or NaN variance is withheld too (#566)", {
+test_that("an underflowed variance of mu is read on the log scale; a NaN one is withheld (#566)", {
   # log(mu) is about -400: mu is an ordinary double, but its variance is
   # subnormal while its covariances are not. The sandwich then gave a
-  # standard error of 0.1018 where the centred fit gives 0.0583.
+  # standard error of 0.1018 where the centred fit gives 0.0583; after #573
+  # it withheld it.
   d <- .w566_data(-80, 0.08)
   raw <- .w566_fit(survival::Surv(time, dead) ~ x, d, c(exp(-400), 0.2, 0.08))
   expect_identical(raw$n_scale, 1L)
   expect_match(raw$msgs, "variance of the Weibull scale mu", fixed = TRUE)
-  v11 <- unname(vcov(raw$fit)[1, 1])
-  expect_true(!is.na(v11) && v11 < .Machine$double.xmin)
+  expect_true(all(is.na(vcov(raw$fit)[1, ])))
+  ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, 0.08))$fit
   nd <- d[1:2, ]
   nd$time <- c(0.5, 2)
-  expect_warning(
-    p <- predict(raw$fit, newdata = nd, type = "cumulative_hazard",
-                 se.fit = TRUE),
-    "variance that cannot be represented", fixed = TRUE
-  )
-  expect_true(all(is.finite(p$fit)) && all(is.na(p$se.fit)))
+  p <- expect_no_warning(predict(raw$fit, newdata = nd,
+                                 type = "cumulative_hazard", se.fit = TRUE))
+  p_ctr <- predict(ctr, newdata = nd, type = "cumulative_hazard",
+                   se.fit = TRUE)
+  expect_equal(p$se.fit / p_ctr$se.fit, rep(1, 2), tolerance = 1e-2)
 
   # A NaN variance is not a fixed parameter either: it is Inf - Inf in the
   # delta method. A fixed one is NA, and is still dropped without a warning.
-  ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, 0.08))$fit
   nan <- ctr
   nan$fit$vcov[1, ] <- NaN
   nan$fit$vcov[, 1] <- NaN
@@ -304,6 +339,15 @@ test_that("hzr_bootstrap() counts replicates whose mu cannot be represented (#56
   ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, -0.2))$fit
   bs_ctr <- collect(hzr_bootstrap(ctr, n_boot = 3, seed = 3))
   expect_false(any(grepl(pattern, bs_ctr$msgs, fixed = TRUE)))
+  # Warn only (#566, decision B): the result has the same shape as the
+  # centred fit's, with no column or element added for log(mu).
+  expect_identical(names(bs$value), names(bs_ctr$value))
+  for (el in names(bs$value)) {
+    if (is.data.frame(bs$value[[el]])) {
+      expect_identical(names(bs$value[[el]]), names(bs_ctr$value[[el]]),
+                       info = el)
+    }
+  }
   # A mu that reached exactly 0 is counted too.
   d0 <- .w566_data(-200, 0.2)
   f0 <- .w566_fit(survival::Surv(time, dead) ~ x, d0,
