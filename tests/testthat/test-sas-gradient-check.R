@@ -538,6 +538,7 @@ test_that("hazard() records the reason on the fit, and print()/summary() show it
 # usable. Its premise is gone. CoE fits no longer difference the
 # log-likelihood for the test; they use the exact gradient, and that fit now
 # reports a finite relative gradient (0.0221, nlm code 2, measured with main
-# d721a22e merged in), so there is no such real fit to assert on. The rule itself, that an NA from the finite-difference route
+# d721a22e merged in), so there is no such real fit to assert on. The rule
+# itself, that an NA from the finite-difference route
 # names its reason and never reads as a failed test, is still covered by
 # the synthetic .hzr_optim_generic(gradient_exact = FALSE) test above.
