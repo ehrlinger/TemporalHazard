@@ -613,10 +613,14 @@ such shapes coexist.
   calendar year, an age in days) can push it beyond what a number can
   hold: it is then reported as `Inf`, as 0, or as a value too small to
   keep its digits, with a warning of class
-  `"hzr_unrepresentable_scale"`, and
-  [`predict()`](https://rdrr.io/r/stats/predict.html) refuses the fit.
-  Centering or rescaling the covariate fixes it without changing the
-  model.
+  `"hzr_unrepresentable_scale"`. The fit keeps \\\log \mu\\ and its
+  standard error, which
+  [`summary()`](https://rdrr.io/r/base/summary.html) shows as a
+  `log(mu)` row and [`predict()`](https://rdrr.io/r/stats/predict.html)
+  reads; [`coef()`](https://rdrr.io/r/stats/coef.html) shows \\\mu\\ as
+  it is, and [`vcov()`](https://rdrr.io/r/stats/vcov.html) gives `NA`
+  for it. Centering or rescaling the covariate reports \\\mu\\ itself,
+  without changing the model.
 
 - `"exponential"`: constant hazard:
 
@@ -742,10 +746,10 @@ summary(fit2)
 #> Coefficients:
 #>          estimate   std_error     z_stat      p_value
 #> mu    0.121938323 0.062299561  1.9572902 5.031335e-02
-#> nu    1.143693956 0.084297244 13.5673944 6.250475e-42
+#> nu    1.143693955 0.084297244 13.5673944 6.250475e-42
 #> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01
 #> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02
-#> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01
+#> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01
 
 # \donttest{
 # -- Parametric survival with Kaplan-Meier overlay -----------------

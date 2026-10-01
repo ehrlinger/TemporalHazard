@@ -33,8 +33,12 @@ but the vcov is the full-information matrix at the optimum (the CoE
 solution is the unconstrained MLE). That recomputation requires numDeriv
 and an invertible Hessian; if either is unavailable the fit emits a
 warning and the conserved `log_mu` stays `NA` (the rest of the matrix is
-unaffected). Returns a scalar `NA` only when the model has not been
-fitted or no covariance matrix is available.
+unaffected). For a Weibull fit whose scale `mu`, or its variance, cannot
+be represented, `mu`'s row and column are `NA`, the reason is recorded
+in the fit's `degraded_causes`, and
+[`summary()`](https://rdrr.io/r/base/summary.html) shows the variance of
+`log(mu)` instead. Returns a scalar `NA` only when the model has not
+been fitted or no covariance matrix is available.
 
 ## Examples
 

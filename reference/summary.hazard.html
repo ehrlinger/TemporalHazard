@@ -89,7 +89,10 @@ log-likelihood at the estimates, and <code>NA</code> for a fit with
 weight, not dropped by a phase design): there the
 fitted objective is PROC HAZARD's interval-mean-hazard objective, not a
 log-likelihood. That value is always in <code>objective_value</code>, and
-<code>objective</code> says which of the two it is (<code>"likelihood"</code> or <code>"sas"</code>).</p>
+<code>objective</code> says which of the two it is (<code>"likelihood"</code> or <code>"sas"</code>).
+For a Weibull fit whose scale <code>mu</code>, or its variance, cannot be
+represented, the coefficient table has a <code>log(mu)</code> row under <code>mu</code>, with
+the standard error of <code>log(mu)</code>; it is not tested against 0.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>

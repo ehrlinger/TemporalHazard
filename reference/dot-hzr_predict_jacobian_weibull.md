@@ -16,7 +16,7 @@ Jacobian of Weibull predictions with respect to theta
 
 - theta:
 
-  MLE parameter vector `c(mu, nu, beta_1, ...)`.
+  MLE parameter vector `c(log(mu), nu, beta_1, ...)` (#566).
 
 - time:
 
@@ -32,4 +32,4 @@ Jacobian of Weibull predictions with respect to theta
 
 ## Value
 
-Numeric n x p Jacobian.
+Numeric n x p Jacobian, with respect to `log(mu)`, `nu` and beta.

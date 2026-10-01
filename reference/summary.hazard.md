@@ -29,7 +29,10 @@ an interval-censored row (one of positive weight, not dropped by a phase
 design): there the fitted objective is PROC HAZARD's
 interval-mean-hazard objective, not a log-likelihood. That value is
 always in `objective_value`, and `objective` says which of the two it is
-(`"likelihood"` or `"sas"`).
+(`"likelihood"` or `"sas"`). For a Weibull fit whose scale `mu`, or its
+variance, cannot be represented, the coefficient table has a `log(mu)`
+row under `mu`, with the standard error of `log(mu)`; it is not tested
+against 0.
 
 ## See also
 

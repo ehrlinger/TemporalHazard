@@ -527,7 +527,7 @@ fit_ic
 #>   engine:       native-r-m2 
 #>   log-lik:      -674.374 
 #>   converged:    TRUE 
-#>   gradient:     relative 3.92e-07 (SAS/C requires <= 6.06e-06; met, nlm code 1)
+#>   gradient:     relative 3.91e-07 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   Not done in this run: none
 ```
 
