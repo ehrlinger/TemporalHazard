@@ -1680,7 +1680,8 @@ hazard <- function(formula = NULL,
           "The variance of the Weibull scale mu cannot be represented (mu = ",
           format(optim_result$par[[1L]]), "), usually because a covariate ",
           "is far from zero. The standard error reported for mu cannot be ",
-          "used, and predict() will return NA standard errors. Centre or ",
+          "used, and predict() will return NA standard errors for any ",
+          "prediction that depends on mu. Centre or ",
           "rescale the covariates and refit."
         ), call = NULL)
       ))

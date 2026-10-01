@@ -170,6 +170,9 @@ test_that("an overflowed variance gives NA standard errors, not wrong ones (#566
   # The fit says so: it is the variance here, not mu, that cannot be held.
   expect_identical(raw$n_scale, 1L)
   expect_match(raw$msgs, "variance of the Weibull scale mu", fixed = TRUE)
+  # The warning promises NA SEs only where a prediction reads mu; the linear
+  # predictor and hazard below keep theirs (Copilot on #573).
+  expect_match(raw$msgs, "for any prediction that depends on mu", fixed = TRUE)
   expect_true(is.finite(coef(raw$fit)[[1]]))
   expect_identical(unname(vcov(raw$fit)[1, 1]), Inf)
   nd <- d[1:2, ]
