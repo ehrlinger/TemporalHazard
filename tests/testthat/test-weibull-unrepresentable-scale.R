@@ -490,6 +490,34 @@ test_that("prediction SEs: a negative variance is named, and an unused one is dr
   expect_true(all(is.na(se_used)))
 })
 
+test_that("a numerically zero Jacobian column does not exempt a parameter (#566, Copilot on #573)", {
+  data(avc, package = "TemporalHazard", envir = environment())
+  a <- stats::na.omit(avc)
+  f <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ age + mal,
+                               data = a, dist = "weibull",
+                               theta = c(0.01, 0.5, 0, 0), fit = TRUE))
+  b_age <- unname(coef(f))[3]
+  # eta = -1000 in every row: the relative hazard exp(eta) underflows to 0,
+  # so age's Jacobian column is exactly 0, yet the prediction depends on it.
+  nd <- data.frame(time = c(1, 5), age = -1000 / b_age, mal = 0)
+  hz_of <- function(obj) {
+    predict(obj, newdata = nd, type = "hazard", se.fit = TRUE)
+  }
+  base <- expect_no_warning(hz_of(f))
+  expect_identical(base$fit, c(0, 0))
+  inf_age <- f
+  inf_age$fit$vcov[3, 3] <- Inf
+  # On 0ccf028d this dropped age as unused and returned se.fit 0, silently.
+  expect_warning(got <- hz_of(inf_age), "variance that cannot be represented",
+                 fixed = TRUE)
+  expect_true(all(is.na(got$se.fit)))
+  # Known negative: mal is 0 in every row, so its Inf variance is still
+  # dropped exactly.
+  inf_mal <- f
+  inf_mal$fit$vcov[4, 4] <- Inf
+  expect_identical(expect_no_warning(hz_of(inf_mal))$se.fit, base$se.fit)
+})
+
 test_that("a negative variance of mu is not called an overflow at fit time (#566, Copilot on #573)", {
   expect_false(.hzr_variance_unrepresentable(-1))
   expect_false(.hzr_variance_unrepresentable(-1e-320))

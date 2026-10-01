@@ -350,6 +350,55 @@ NULL
     (!is.na(d) & d >= 0 & d < .Machine$double.xmin)
 }
 
+#' Which parameters a Weibull prediction depends on (#566)
+#'
+#' Read off the prediction's form, not the Jacobian's values. The relative
+#' hazard and linear predictor never read mu or nu; a coefficient is unused
+#' only where its covariate is 0 in every row.
+#' @return Logical vector of length `p`.
+#' @noRd
+.hzr_weibull_used <- function(type, x, p) {
+  used <- rep(TRUE, p)
+  if (!type %in% c("cumulative_hazard", "survival")) used[1:2] <- FALSE
+  if (p > 2L) {
+    used[3:p] <- if (is.null(x)) FALSE else colSums(is.na(x) | x != 0) > 0
+  }
+  used
+}
+
+#' Which parameters each phase of a multiphase prediction depends on (#566)
+#'
+#' A phase depends on its own shape slots, and on each of its coefficients
+#' whose covariate is not 0 in every row. The walk follows
+#' .hzr_predict_jacobian_multiphase(). If it does not account for exactly `p`
+#' parameters, every parameter counts as used, which withholds rather than
+#' drops.
+#' @return Named list of logical vectors of length `p`, one per phase.
+#' @noRd
+.hzr_multiphase_used <- function(phases, covariate_counts, x_list, p) {
+  out <- list()
+  pos <- 1L
+  for (nm in names(phases)) {
+    u <- rep(FALSE, p)
+    n_shape <- switch(phases[[nm]]$type, constant = 1L, g3 = 5L, 4L)
+    u[pos:(pos + n_shape - 1L)] <- TRUE
+    pos <- pos + n_shape
+    n_beta <- covariate_counts[[nm]]
+    if (n_beta > 0L) {
+      x <- x_list[[nm]]
+      if (!is.null(x)) {
+        u[pos:(pos + n_beta - 1L)] <- colSums(is.na(x) | x != 0) > 0
+      }
+      pos <- pos + n_beta
+    }
+    out[[nm]] <- u
+  }
+  if (pos - 1L != p) {
+    out <- lapply(out, function(u) rep(TRUE, p))
+  }
+  out
+}
+
 #' Whether a vcov has the shape .hzr_free_vcov() can use
 #' @noRd
 .hzr_vcov_shape_ok <- function(vcov_mat, p) {
@@ -511,13 +560,21 @@ NULL
   # for a Jacobian.
   if (.hzr_vcov_shape_ok(object$fit$vcov, p)) {
     J <- jacobian()
-    # A parameter whose Jacobian column is exactly zero on every requested
-    # row does not enter this prediction: a Weibull mu or nu for the relative
-    # hazard and linear predictor, or a coefficient whose covariate is 0 in
-    # every row of newdata. Its variance, representable or not, cannot change
-    # the standard error, so it is dropped exactly rather than withholding it.
-    unused <- which(colSums(is.na(J) | J != 0) == 0)
-    fv <- .hzr_free_vcov(object$fit$vcov, p, unused = unused)
+    # A parameter this prediction does not depend on, by its form: a Weibull
+    # mu or nu for the relative hazard and linear predictor, or a coefficient
+    # whose covariate is 0 in every row of newdata. Its variance, representable
+    # or not, cannot change the standard error, so it is dropped exactly
+    # rather than withholding it. Read off the form, not J's values: a column
+    # can be zero numerically (exp(eta) underflowing, mu * time == 1) where
+    # the prediction still depends on that parameter (#566).
+    used <- if (dist == "weibull") {
+      .hzr_weibull_used(type, x, p)
+    } else if (dist == "multiphase") {
+      Reduce(`|`, .hzr_multiphase_used(phases, cov_counts, x_list, p))
+    } else {
+      rep(TRUE, p)
+    }
+    fv <- .hzr_free_vcov(object$fit$vcov, p, unused = which(!used))
   } else {
     fv <- .hzr_free_vcov(object$fit$vcov, p)
   }
@@ -617,6 +674,8 @@ NULL
   J_list <- .hzr_predict_jacobian_multiphase(theta, time, phases, cov_counts,
                                              x_list, p, per_phase = TRUE)
   J_by_comp <- c(list(total = Reduce(`+`, J_list)), J_list)
+  used_list <- .hzr_multiphase_used(phases, cov_counts, x_list, p)
+  used_by_comp <- c(list(total = Reduce(`|`, used_list)), used_list)
 
   # Screen the vcov per component, against the parameters that component
   # depends on (#566): a bad variance in one phase's block withholds that
@@ -625,8 +684,8 @@ NULL
   # nothing; the distinct messages are raised once below.
   cl_list <- lapply(components, function(cmp) {
     J <- J_by_comp[[cmp]]
-    unused <- which(colSums(is.na(J) | J != 0) == 0)
-    fv <- tryCatch(.hzr_free_vcov(vcov_mat, p, unused = unused),
+    fv <- tryCatch(.hzr_free_vcov(vcov_mat, p,
+                                  unused = which(!used_by_comp[[cmp]])),
                    warning = function(w) conditionMessage(w))
     if (!is.list(fv)) {
       return(list(cl = na_cl_of(cmp), msg = fv))
