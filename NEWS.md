@@ -2,6 +2,30 @@
 
 ## Bug fixes
 
+* **Multiphase fits under Conservation of Events could stop short of the
+  maximum and report `converged = TRUE` (#565). Multiphase estimates from
+  earlier versions, fitted with `conserve = TRUE` (the default), may be
+  wrong.** Under Conservation of Events one phase's scale is re-solved from
+  the other parameters at every step. The optimizer was given the score at
+  that solved scale without the term for how the scale moves with the other
+  parameters, so it followed a direction that was not the gradient of the
+  log-likelihood it was maximizing. On the `avc` data, a two-phase model
+  with six covariates stopped at a log-likelihood of -184.462 where SAS
+  reaches -182.659. The optimizer now receives the full gradient, and that
+  fit reaches -182.659 from the default start. Refit any multiphase model
+  fitted with Conservation of Events; `conserve = FALSE` fits are not
+  affected. On that fit the relative-gradient test recorded in
+  `fit$fit$rel_gradient` had failed (0.311 against a limit of about 6e-6),
+  with no warning.
+  A fit can now run towards the point where the conserved phase leaves
+  the model, where before it stopped well short, and it can still stop
+  beside that point with the gradient test not met. When the conserved
+  phase's share of the cumulative hazard falls below
+  `control$phase_share_tol`, the identifiability warning reports the phase
+  as it did, and the fit also carries a `"coe_phase_vanished"` record in
+  `fit$fit$boundary`, with that share. The record raises no second
+  warning.
+
 * **In a two-way `hzr_stepwise()` screen, a variable frozen by `max_move`
   is now frozen in the state it ends the iteration in (#580).** A variable
   that reached `max_move` by entering was frozen at once, but the
