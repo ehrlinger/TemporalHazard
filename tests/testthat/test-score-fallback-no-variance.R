@@ -12,17 +12,41 @@
 # vanished and the screen rendered as an honest "nothing met slentry" -- the
 # indistinguishability #159 and #130 were both about.
 
-fnv_fixture <- function(beta = 0.5, n = 400, seed = 7) {
-  set.seed(seed)
+# An IDENTIFIED base (#565): the early phase's shapes are fixed. With them
+# free the base had no maximum (exponential data), and whether x1's score
+# could be computed depended on where the fit stopped on that ridge: on one
+# CI platform it could, and the premise of this file failed. Both x1 and x2
+# carry a strong effect here, because on an identified base a noise
+# candidate is always scored normally and never reaches the fallback; x2 is
+# the candidate the fallback rescues. The premises are asserted in
+# `expect_fnv_premises()`. A rescued NOISE candidate is tested separately,
+# with its score reason mocked.
+fnv_fixture <- function(beta = 1.2, beta2 = 1.2, n = 400, seed = 7) {
+  withr::local_seed(seed)
   x1 <- stats::rnorm(n)
-  data.frame(tt = stats::rexp(n, 0.3 * exp(beta * x1)) + 0.01,
+  x2 <- stats::rnorm(n)
+  data.frame(tt = stats::rexp(n, 0.3 * exp(beta * x1 + beta2 * x2)) + 0.01,
              ev = stats::rbinom(n, 1, 0.75),
-             x1 = x1, x2 = stats::rnorm(n))
+             x1 = x1, x2 = x2)
 }
 
 fnv_phases <- function() {
-  list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+  list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0,
+                         fixed = "shapes"),
        const = hzr_phase("constant"))
+}
+
+# The base is a maximum, its nuisance block inverts, and each named candidate
+# is untestable by the score because of its own information.
+expect_fnv_premises <- function(fit, D, indefinite = c("x1", "x2")) {
+  expect_true(isTRUE(fit$fit$converged))
+  expect_lte(fit$fit$rel_gradient, .Machine$double.eps^(1 / 3))
+  expect_true(isTRUE(.hzr_score_nuisance(fit)$ok))
+  for (v in indefinite) {
+    expect_identical(.hzr_score_q(fit, var = v, phase = "const",
+                                  data = D)$reason,
+                     "information_indefinite", label = v)
+  }
 }
 
 fnv_fit <- function(D) {
@@ -57,6 +81,7 @@ fnv_no_variance <- function(env = parent.frame()) {
 test_that("the fallback reaches x1, whose refit then has no variance", {
   skip_on_cran()
   D <- fnv_fixture()
+  expect_fnv_premises(fnv_fit(D), D)
   # Unmocked: the score cannot test x1, so the fallback refits it, and that
   # refit (from the better of two starts) has a variance and tests it.
   out <- suppressWarnings(.hzr_stepwise_forward_step(
@@ -108,12 +133,14 @@ test_that("the row says the rescue failed, not just that the score did", {
   # and describes only the first failure.
   expect_identical(x1_row$reason, "fallback_no_variance")
 
-  # And the noise variable IS rescued, scored and declined on its merits --
-  # so the fallback still works and this is not "the rescue stopped running".
+  # And x2 IS rescued and tested -- so the fallback still works and this is
+  # not "the rescue stopped running". x2 carries a real effect on this
+  # fixture, so the Wald test passes it; a rescued NOISE candidate declined
+  # on its merits is the mocked case below.
   x2_row <- out$all_scores[out$all_scores$variable == "x2", ]
   expect_true(x2_row$fallback)
   expect_false(is.na(x2_row$score))
-  expect_gt(x2_row$p_value, 0.05)
+  expect_lt(x2_row$p_value, 0.05)
 })
 
 test_that("n_wald_fallbacks counts rescues, not attempts", {
@@ -131,12 +158,50 @@ test_that("n_wald_fallbacks counts rescues, not attempts", {
   expect_false(out$all_scores$fallback[out$all_scores$variable == "x1"])
 })
 
+test_that("a rescued noise candidate is declined on its merits, and counted once", {
+  skip_on_cran()
+  # Plumbing, by construction: on an identified base a noise candidate is
+  # always scored, so its score reason is mocked as information_indefinite to
+  # send it to the fallback. x1 is untestable by the score for real and its
+  # refit has no variance, as above. So x1 is an attempt that yields no test
+  # and x2 a rescue that does: one fallback, one uncomputable.
+  D <- fnv_fixture(beta2 = 0)
+  base <- fnv_fit(D)
+  expect_fnv_premises(base, D, indefinite = "x1")
+  # The premise of the mock: x2 really is scored normally.
+  expect_false(is.na(.hzr_score_q(base, var = "x2", phase = "const",
+                                  data = D)$stat))
+  fnv_no_variance()
+  orig_q <- .hzr_score_q
+  local_mocked_bindings(.hzr_score_q = function(current, var, ...) {
+    r <- orig_q(current, var, ...)
+    if (identical(var, "x2")) {
+      r$stat <- NA_real_
+      r$p_value <- NA_real_
+      r$reason <- "information_indefinite"
+    }
+    r
+  })
+  out <- suppressWarnings(.hzr_stepwise_forward_step(
+    current = base, scope = list(const = ~ x1 + x2), data = D,
+    criterion = "score", slentry = 0.05))
+  x2_row <- out$all_scores[out$all_scores$variable == "x2", ]
+  expect_true(x2_row$fallback)
+  expect_identical(x2_row$stat_type, "wald_z")
+  expect_false(is.na(x2_row$score))
+  expect_gt(x2_row$p_value, 0.05)
+  expect_identical(out$n_wald_fallbacks, 1L)
+  expect_identical(out$n_uncomputable, 1L)
+})
+
 test_that("a screen that tested nothing says so rather than looking clean", {
   skip_on_cran()
   fnv_no_variance()
   D <- fnv_fixture()
+  # x1 alone in scope: x2 carries a real effect on this fixture and would
+  # enter, and this test is about a screen with nothing it could test.
   w <- testthat::capture_warnings(
-    sw <- hzr_stepwise(fit = fnv_fit(D), scope = list(const = ~ x1 + x2),
+    sw <- hzr_stepwise(fit = fnv_fit(D), scope = list(const = ~ x1),
                        data = D, direction = "both", criterion = "score",
                        slentry = 0.05, trace = FALSE))
   # Zero steps is the honest outcome here -- neither criterion could test x1.
@@ -169,7 +234,7 @@ test_that("a weaker effect is still tested normally", {
   # The contrast that makes the above meaningful: same fixture, smaller beta,
   # and the score tests x1 directly. Without this, every assertion here could
   # pass for a screen that had simply stopped working.
-  D <- fnv_fixture(beta = 0.4)
+  D <- fnv_fixture(beta = 0.4, beta2 = 0)
   sw <- suppressWarnings(hzr_stepwise(
     fit = fnv_fit(D), scope = list(const = ~ x1 + x2), data = D,
     direction = "both", criterion = "score", slentry = 0.05, trace = FALSE))
