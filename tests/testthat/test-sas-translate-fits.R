@@ -2172,13 +2172,13 @@ test_that("the phase-name verdict matches the HAZARD binary on a grid (#440)", {
   writeLines(paste0("%HAZARD( ", text, " );"), f)
   suppressWarnings(hzr_translate_sas(f))
 }
-.p431_parms <- "PARMS MUE=0.2 THALF=0.3 NU=1 M=0;"
+.p431_parms <- "PARMS MUE=0.2 THALF=0.3 NU=1 M=1;"
 
 test_that("a value on a PROC option that takes none warns and fits (#431)", {
   for (opt in c("NOCOV=1", "CONSERVE=YES", "PRINTIT=1", "NOPRINT=0")) {
     key <- sub("=.*$", "", opt)
     job <- .u1_job(proc = paste0(" ", opt),
-                   parms = "MUE=0.2 THALF=0.3 NU=1 M=0")
+                   parms = "MUE=0.2 THALF=0.3 NU=1 M=1")
     expect_true(.u1_warns_and_fits(job), info = opt)
     expect_identical(NROW(job$untranslated), 1L, info = opt)
     expect_identical(job$untranslated$construct, opt, info = opt)
@@ -2266,7 +2266,7 @@ test_that("a valued bare option is refused in every spacing (#431)", {
   constructs <- character(0)
   for (v in variants) {
     job <- .u1_job(proc = paste0(" ", v),
-                   parms = "MUE=0.2 THALF=0.3 NU=1 M=0")
+                   parms = "MUE=0.2 THALF=0.3 NU=1 M=1")
     expect_true(.u1_warns_and_fits(job), info = v)
     expect_identical(NROW(job$untranslated), 1L, info = v)
     constructs <- c(constructs, job$untranslated$construct)

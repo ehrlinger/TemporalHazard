@@ -20,7 +20,7 @@ stopifnot(file.exists(bin))
 work <- tempfile("proc-option-oracle-")
 dir.create(work)
 
-P <- "PARMS MUE=0.2 THALF=0.3 NU=1 M=0;"
+P <- "PARMS MUE=0.2 THALF=0.3 NU=1 M=1;"
 B <- "EVENT DEAD; TIME TT;"
 grid <- c(
   # A value on each of the eleven bare options, and on one abbreviation.
