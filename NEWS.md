@@ -85,7 +85,10 @@
   each case's own log-scale terms, and the `"hazard"` phase's cumulative
   hazard and hazard are formed from it. Where `1 - G` can be formed, the
   values agree with the old ones to rounding. `G`, `g` and `h` keep their
-  names and meaning.
+  names and meaning. The hazard `h` of any phase type is also formed
+  without a cancellation that lost it for a `nu` very close to 0 (at
+  `nu = -1e-18`, `t = 2`, `t_half = 1`, `m = 1` it was 0 or 1 where it is
+  about 5e17); fitted values of `nu` near `1e-16` occur.
 
   The clamp could also create an optimum. The hazard near `1e290` added
   about 668 to the log-likelihood per event, and a fit could converge on

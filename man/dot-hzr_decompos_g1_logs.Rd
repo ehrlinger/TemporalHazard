@@ -16,8 +16,9 @@
 \item{m}{Positive scalar.}
 }
 \value{
-List with \code{log_S} (\eqn{= -\log(\mathrm{btnu})/m}), \code{log_g}, and
-\code{a}, the softplus argument, so that \code{log(btnu) = log1pexp(a)}.
+List with \code{log_S} (\eqn{= -\log(\mathrm{btnu})/m}), \code{log_g},
+\code{a}, the softplus argument, so that \code{log(btnu) = log1pexp(a)}, and the
+terms \code{log_g} is built from (\code{e}, \code{log_bt}, \code{log_rho}).
 }
 \description{
 Cases 1 (\code{nu > 0}) and 3 (\code{nu < 0}) evaluate the same intermediate

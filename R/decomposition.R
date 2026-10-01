@@ -68,8 +68,9 @@
 #' @param t_half Positive scalar.
 #' @param nu Nonzero scalar.
 #' @param m Positive scalar.
-#' @return List with `log_S` (\eqn{= -\log(\mathrm{btnu})/m}), `log_g`, and
-#'   `a`, the softplus argument, so that `log(btnu) = log1pexp(a)`.
+#' @return List with `log_S` (\eqn{= -\log(\mathrm{btnu})/m}), `log_g`,
+#'   `a`, the softplus argument, so that `log(btnu) = log1pexp(a)`, and the
+#'   terms `log_g` is built from (`e`, `log_bt`, `log_rho`).
 #' @keywords internal
 .hzr_decompos_g1_logs <- function(time, t_half, nu, m) {
   # log(2^m - 1) = x + log(1 - exp(-x)) for x = m*log(2).  Both tails are
@@ -100,7 +101,7 @@
 
   list(log_S = log_S,
        log_g = log_S - e - log(m) - log_bt - log_rho,
-       a = a)
+       a = a, e = e, log_bt = log_bt, log_rho = log_rho)
 }
 
 #' log(1 - exp(-x)) from L = log(x), for x > 0
@@ -341,8 +342,18 @@ hzr_decompos <- function(time, t_half, nu, m) {
     # -log(G) = log(btnu) / m, carried as its log (#578). log(btnu) is
     # log1pexp(a), which underflows to 0 far past saturation, where
     # log(1 - G) would read -Inf.
-    log_surv <- .hzr_log1mexp_of_log(.hzr_log_log1pexp(lg$a) - log(m))
+    L        <- .hzr_log_log1pexp(lg$a) - log(m)
+    log_surv <- .hzr_log1mexp_of_log(L)
     log_g    <- lg$log_g
+    # log(g) and log(1 - G) share the term a, which is huge for a tiny nu
+    # (a = log(t_half / t) / nu + ...): their difference would lose the
+    # hazard. Cancelled here: log_h = log_S + (a - log(log1pexp(a)))
+    # - log1pexp(a) - log_bt - log_rho - excess(L) (Copilot, #583).
+    a_less_ll <- ifelse(lg$a < -30,
+                        -log1p(-exp(lg$a) / 2 + exp(lg$a)^2 / 3),
+                        lg$a - log(hzr_log1pexp(lg$a)))
+    log_h <- lg$log_S + a_less_ll - hzr_log1pexp(lg$a) - lg$log_bt -
+      lg$log_rho - .hzr_log1mexp_of_log_excess(L)
 
   } else if (m == 0 && nu > 0) {
     # Case 1L: Weibull-like (m -> 0 limit)
@@ -353,8 +364,12 @@ hzr_decompos <- function(time, t_half, nu, m) {
     g     <- G * (bt^num1) / rho
     # -log(G) = btnu = bt^(-1/nu), carried as its log (#578). Near t = 0,
     # or where bt underflows, that log overflows, and log(1 - G) is 0.
-    log_surv <- .hzr_log1mexp_of_log(-log(bt) / nu)
+    L        <- -log(bt) / nu
+    log_surv <- .hzr_log1mexp_of_log(L)
     log_g    <- -btnu + num1 * log(bt) - log(rho)
+    # num1 * log(bt) and log(1 - G) share -log(bt) / nu, huge for a tiny nu;
+    # cancelled: log_h = -btnu - log(bt) - log(rho) - excess(L).
+    log_h    <- -btnu - log(bt) - log(rho) - .hzr_log1mexp_of_log_excess(L)
 
   } else if (m < 0 && nu > 0) {
     # Case 2: heavy-tailed.  `1 - 2^m` loses every significant digit once
@@ -374,8 +389,13 @@ hzr_decompos <- function(time, t_half, nu, m) {
     g     <- exp(log_g)
     # -log(G) = log_btnu / m, both negative; log_btnu = log(1 - e^-y) with
     # y = log_bt / nu, whose minus is carried as its log (#578).
-    log_surv <- .hzr_log1mexp_of_log(.hzr_log_neg_log1mexp(log_bt / nu) -
-                                       log(-m))
+    y        <- log_bt / nu
+    L        <- .hzr_log_neg_log1mexp(y) - log(-m)
+    log_surv <- .hzr_log1mexp_of_log(L)
+    # No cancelled form is needed here: for a tiny nu, dm and log_bt are of
+    # order nu, so y = log_bt / nu stays of order 1 and log(g) and
+    # log(1 - G) share no huge term (a form like Cases 1, 1L and 3 was tried
+    # and made no measurable difference).
 
   } else if (m < 0 && nu == 0) {
     # Case 2L: exponential decay (nu -> 0 limit)
@@ -424,6 +444,8 @@ hzr_decompos <- function(time, t_half, nu, m) {
     # 1 - G is exp(log_S) exactly (#578).
     log_surv <- lg$log_S
     log_g    <- lg$log_g
+    # h = g / (1 - G): log_S cancels exactly, and it is huge for a tiny |nu|.
+    log_h    <- -lg$e - log(m) - lg$log_bt - lg$log_rho
 
   } else if (m == 0 && nu < 0) {
     # Case 3L: bounded exponential (m -> 0 limit)
@@ -455,7 +477,10 @@ hzr_decompos <- function(time, t_half, nu, m) {
   # rounded to 1 the old guard divided by double.xmin, and h came back near
   # 1e290 where it is of order 1 (#578). The density is taken as its log too:
   # far past saturation g itself underflows to 0 while h does not.
+  # Where a case's cancelled form is not finite (its own extremes), or the
+  # case has none, the plain difference is used.
   if (is.null(log_h)) log_h <- log_g - log_surv
+  log_h <- ifelse(is.finite(log_h), log_h, log_g - log_surv)
   h <- exp(log_h)
 
   list(G = G, g = g, h = h, log_surv = log_surv)

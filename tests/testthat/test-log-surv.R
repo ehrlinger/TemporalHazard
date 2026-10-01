@@ -149,6 +149,32 @@ test_that("near t = 0, and where bt underflows, log_surv is 0, not NA (#578)", {
   expect_equal(ratio, c(1, 1, 1), tolerance = 1e-10)
 })
 
+test_that("the hazard keeps its value for a tiny nu (#578)", {
+  skip_if_not_installed("numDeriv")
+  # Found by Copilot. For a tiny |nu|, log(g) and log(1 - G) share a term of
+  # size 1 / nu, so their difference lost the hazard: Case 3 at nu = -1e-18,
+  # t = 2, t_half = 1, m = 1 gave h = 1 where log(h) is 40.753. Fitted |nu|
+  # near 1e-16 occur (#448). Oracle: t * h is the derivative of -log_surv in
+  # log(t), and log_surv keeps its accuracy there.
+  expect_equal(log(hzr_decompos(2, 1, -1e-18, 1)$h), 40.75338, tolerance = 1e-6)
+  tt <- c(0.5, 2, 5)
+  shapes <- list(c(1e-16, 1), c(-1e-16, 1), c(1e-18, 1), c(-1e-18, 1),
+                 c(1e-16, 0), c(1e-14, 2), c(-1e-14, 2), c(1e-12, -0.5))
+  for (sh in shapes) {
+    d <- hzr_decompos(tt, t_half = 1, nu = sh[1], m = sh[2])
+    oracle <- vapply(tt, function(t) {
+      numDeriv::grad(function(lt) {
+        -hzr_decompos(exp(lt), t_half = 1, nu = sh[1], m = sh[2])$log_surv
+      }, log(t))
+    }, numeric(1))
+    live <- oracle > 1
+    expect_true(any(live), label = paste("nu =", sh[1], "m =", sh[2]))
+    expect_equal(tt[live] * d$h[live] / oracle[live], rep(1, sum(live)),
+                 tolerance = 1e-6,
+                 label = paste("nu =", sh[1], "m =", sh[2]))
+  }
+})
+
 test_that("a hazard phase with entry times and nu below 1 fits (#578)", {
   skip_on_cran() # a multiphase fit
   # Data from the phase's own model: m = 0, nu = 0.5, t_half = 2, with a
