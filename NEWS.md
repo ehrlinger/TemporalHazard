@@ -20,6 +20,31 @@
   nothing. The absence of the warning is not a guarantee. Multiphase fits
   are not flagged.
 
+* **`predict(se.fit = TRUE)` could return wrong standard errors, including
+  exactly 0, with no warning, when the fit's covariance was incomplete or not
+  positive definite (#586).**
+    - When inverting the Hessian finds a variance that is not positive, the
+      fit stores it as `NA`, the same mark a fixed parameter carries.
+      `predict()` dropped such a parameter as if it were known. On a Weibull
+      fit with `mu`'s variance masked, survival standard errors of 0.0175,
+      0.0345 and 0.0392 came back as 0.0221, 0.0221 and 0.0524. An `NA`
+      variance now counts as fixed only where the fit's `fixed_mask` says
+      so. Otherwise, a prediction that uses the parameter returns `NA`
+      standard errors and limits, with a warning naming it.
+    - A covariance with a positive diagonal can still be indefinite, which
+      happens when the Hessian was not at a proper maximum. A negative
+      quadratic form was then clamped to an `se.fit` of 0 with a zero-width
+      interval, and a positive one was reported although it is not a
+      variance. The covariance of the parameters a prediction uses is now
+      checked for positive definiteness, and an infinite covariance among
+      them is refused.
+    - Parameters the prediction does not use, by its form, are left out of
+      that check and of the sandwich. An infinite covariance between two of
+      them no longer turns `se.fit` into `NaN` (#587).
+    - When Conservation of Events could not recompute the conserved phase's
+      variance, `predict()` keeps its standard errors but now warns that
+      they leave that variance out and may be understated.
+
 * **Multiphase fits under Conservation of Events could stop short of the
   maximum and report `converged = TRUE` (#565). Multiphase estimates from
   earlier versions, fitted with `conserve = TRUE` (the default), may be
