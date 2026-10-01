@@ -410,8 +410,9 @@ NULL
 #'
 #' Restricts the sandwich to the parameters the prediction uses. A parameter
 #' held fixed (`fixed`, from the fit's `fixed_mask`; e.g. `fixed = "shapes"`)
-#' carries an NA row and is dropped as known. (The CoE-conserved `log_mu` is
-#' one when its full-information recompute failed; the caller warns.) An NA
+#' with an NA row is dropped as known. (The CoE-conserved `log_mu` is one when
+#' its full-information recompute failed; the caller warns.) A fixed one with
+#' a variance, such as a shape a g3 constraint derives, stays in. An NA
 #' variance on a parameter that is NOT fixed was masked by `.hzr_safe_solve()`
 #' as non-positive: it withholds the standard error if the prediction uses
 #' it (#586). Returns `NULL` (with a warning) when CLs cannot be computed.
@@ -437,8 +438,14 @@ NULL
   }
   is_fixed <- if (length(fixed) == p) as.logical(fixed) %in% TRUE else
     rep(FALSE, p)
-  # The sandwich runs over these: neither unused by the prediction nor fixed.
-  free_idx <- setdiff(seq_len(p), union(unused, which(is_fixed)))
+  # The sandwich runs over these: neither unused by the prediction nor fixed
+  # without a variance. A shape a g3 constraint derives from the others is
+  # fixed in fixed_mask but carries its delta-method variance and
+  # covariances (#325), and the Jacobian treats it as its own column, so it
+  # stays in; dropping it lost the constraint's chain-rule term.
+  d_all <- diag(vcov_mat)
+  known <- which(is_fixed & is.na(d_all) & !is.nan(d_all))
+  free_idx <- setdiff(seq_len(p), union(unused, known))
   # A fixed or masked parameter carries an NA variance and is dropped from the
   # sandwich below. A variance that overflowed or underflowed is not that. A
   # Weibull mu's variance carries mu^2: it is Inf for mu near exp(600), and
