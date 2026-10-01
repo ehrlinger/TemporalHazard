@@ -684,6 +684,16 @@ NULL
 
   result$par <- setNames(c(mu_hat, nu_hat, beta_hat), names(theta_start))
 
+  # The same estimate with log(mu) in place of mu (#566). log(mu) = alpha / nu
+  # always holds a double where mu itself can overflow to Inf, underflow to 0
+  # or lose its digits; predict() and summary() read this. Its covariance is
+  # the delta method again, with d log(mu) / d alpha = 1 / nu and
+  # d log(mu) / d psi = -alpha / nu, masked where an internal variance is.
+  log_names <- c("log_mu", names(theta_start)[-1])
+  log_theta <- setNames(c(alpha_hat / nu_hat, nu_hat, beta_hat),
+                        if (length(names(theta_start)) == p) log_names else NULL)
+  log_vcov <- NULL
+
   # Delta method: Cov(mu, nu, beta) = J * Cov(alpha, psi, beta) * J^T
   #
   #   dmu/dalpha = mu / nu             dmu/dpsi = -mu alpha / nu
@@ -714,7 +724,16 @@ NULL
     v_nat[bad_nat, ] <- NA_real_
     v_nat[, bad_nat] <- NA_real_
     result$vcov <- v_nat
+
+    J_log <- J
+    J_log[1, 1] <- 1 / nu_hat
+    J_log[1, 2] <- -alpha_hat / nu_hat
+    log_vcov <- J_log %*% v_int %*% t(J_log)
+    log_vcov[bad_nat, ] <- NA_real_
+    log_vcov[, bad_nat] <- NA_real_
+    dimnames(log_vcov) <- list(names(log_theta), names(log_theta))
   }
+  result$log_scale <- list(theta = log_theta, vcov = log_vcov)
 
   result
 }
