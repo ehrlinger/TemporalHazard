@@ -67,8 +67,11 @@ test_that("every case's cumulative hazard and hazard agree as it saturates (#578
   # far below the times, in every case, including the two shapes where the
   # first version of this form returned NA.
   skip_if_not_installed("numDeriv")
+  # Case 2L at m = -3 and m = -0.4 as well as -1: at m = -1 the coefficient
+  # mm1 of its hazard's first term is 0, so that term goes untested (Copilot).
   shapes <- list(c(1, 1), c(0.2931, 120), c(2, 0.5), c(1.5, 0), c(1, -0.5),
-                 c(2, -5), c(0, -1), c(-1, 1), c(-1.5, 0))
+                 c(2, -5), c(0, -1), c(0, -3), c(0, -0.4), c(-1, 1),
+                 c(-1.5, 0))
   for (sh in shapes) {
     for (lth in c(-3, -30, -60, -300, -700)) {
       th <- exp(lth)
