@@ -85,7 +85,8 @@ test_that("#471's three spellings emit one model (#471)", {
                   function(p) .mz_job(p)$calls$fit)
   expect_identical(calls[[2L]], calls[[1L]])
   expect_identical(calls[[3L]], calls[[1L]])
-  # The binary agrees they are one job: one log-likelihood on synth.
+  # Oracle sanity check, not code coverage: the binary agrees they are one
+  # job, with one log-likelihood on synth. Only the fixture can fail this.
   oracle <- .mz_oracle()
   ll <- oracle$synth_ll[startsWith(oracle$id, "issue_")]
   expect_length(ll, 3L)
@@ -110,7 +111,13 @@ test_that("the emitted fit reproduces PROC HAZARD's estimates (#471)", {
     expect_equal(exp(th[[2L]]), o$mzero_thalf, tolerance = 1e-4, info = o$id)
     expect_equal(th[[3L]], o$mzero_nu, tolerance = 1e-4, info = o$id)
     expect_equal(exp(th[[1L]]), o$mzero_mue, tolerance = 1e-4, info = o$id)
-    if (o$m_estimated == "No") expect_identical(th[[4L]], o$mzero_m)
+    if (o$m_estimated == "No") {
+      expect_identical(th[[4L]], o$mzero_m)
+    } else {
+      # Where M is estimated (moved to 1, then free), compare it too. The
+      # likelihood is flat in M near 0, so the scale is max(1, |M|), not |M|.
+      expect_lt(abs(th[[4L]] - o$mzero_m), 1e-4 * max(1, abs(o$mzero_m)))
+    }
   }
   # KNOWN POSITIVE for the comparison: the model main emitted for
   # `M=0 NU=1`, M free, is a different model, and the check above can tell.

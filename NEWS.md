@@ -684,8 +684,8 @@
   `NU` fixed and `M` free, `SETG1` starts `M` at 1, and with `M` fixed and
   `NU=0` it starts `NU` at 1. `M=0 NU=1`, `M=0 NU=0 FIXM` and
   `M=0 NU=1 FIXM` now emit the same model, as they are the same job to
-  `PROC HAZARD`. On data drawn from that model the emitted fit reproduces
-  the `HAZARD` binary's estimates.
+  `PROC HAZARD`. On data drawn from that model, and from a start where the
+  `HAZARD` binary converges, the emitted fit reproduces its estimates.
 
 # TemporalHazard 1.2.12
 

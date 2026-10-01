@@ -1184,8 +1184,9 @@
 #' @param fix_delta,mnu1 Whether FIXDELTA and FIXMNU1 were given.
 #' @return `list(code, construct, reason)` for a refusal; otherwise
 #'   `list(code = NULL, moved = <named numeric>, no_result = <construct> or
-#'   NULL, no_result_kind = "no_result", "may_not_fit" or NULL)`, where
-#'   `moved` holds the start values SETG1 substitutes.
+#'   NULL, no_result_kind = "no_result", "may_not_fit" or NULL, fix =
+#'   <character>)`, where `moved` holds the start values SETG1 substitutes
+#'   and `fix` the early shapes it fixes that PARMS did not (#471).
 #' @noRd
 .hzr_setg1_check <- function(shape, fixed, delta, fix_delta, mnu1) {
   fx <- function(p) p %in% fixed
