@@ -88,7 +88,10 @@
   names and meaning. The hazard `h` of any phase type is also formed
   without a cancellation that lost it for a `nu` very close to 0 (at
   `nu = -1e-18`, `t = 2`, `t_half = 1`, `m = 1` it was 0 or 1 where it is
-  about 5e17); fitted values of `nu` near `1e-16` occur.
+  about 5e17); fitted values of `nu` near `1e-16` occur. For `nu = 0` and
+  `m` below about -52, `G` was 0 at every time, including `t_half` where it
+  is 1/2, because `1 - 2^m` rounded to 1; it is now computed without that
+  rounding.
 
   The clamp could also create an optimum. The hazard near `1e290` added
   about 668 to the log-likelihood per event, and a fit could converge on

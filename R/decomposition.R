@@ -405,9 +405,14 @@ hzr_decompos <- function(time, t_half, nu, m) {
 
   } else if (m < 0 && nu == 0) {
     # Case 2L: exponential decay (nu -> 0 limit)
-    rho   <- -t_half / log(1 - 2^m)
+    # log(1 - 2^m) as log1mexp, as in Case 2: below m = -52, 1 - 2^m rounds
+    # to 1, rho became Inf and G collapsed to 0 at t_half itself (Copilot,
+    # #583).
+    rho   <- -t_half / hzr_log1mexp(-m * log(2))
     bt    <- exp(-time / rho)
-    btm   <- 1 - bt
+    # 1 - e^(-t/rho) as -expm1(): for a large |m|, t / rho is far below 1
+    # and 1 - bt kept no digits.
+    btm   <- -expm1(-time / rho)
     G     <- btm^(-1 / m)
     g     <- -(btm^mm1) * bt / (m * rho)
     # -log(G) = log(btm) / m with btm = 1 - e^(-t/rho). Far past saturation
