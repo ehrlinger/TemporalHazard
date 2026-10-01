@@ -231,8 +231,37 @@ test_that("a failed CoE variance recompute warns once and keeps the SEs (#586)",
   expect_match(got$msgs, "conserved phase", fixed = TRUE)
   dec <- .p586_run(predict(fit, newdata = nd, type = "cumulative_hazard",
                            se.fit = TRUE, decompose = TRUE))
-  expect_length(dec$msgs, 1L)
-  expect_match(dec$msgs, "conserved phase", fixed = TRUE)
+  # The conserved phase reads only its own log_mu, which the failed
+  # recompute left fixed with no variance: nothing is left to carry its
+  # uncertainty, so its SE is unknown, not 0. d8f6b320 returned 0 there, with
+  # a zero-width interval. The other phase and the total keep theirs.
+  se_by <- split(dec$val$se.fit, dec$val$component)
+  conserved <- names(fit$spec$phases)[vapply(
+    .hzr_multiphase_used(fit$spec$phases, c(early = 0L, constant = 0L),
+                         list(early = NULL, constant = NULL),
+                         length(fit$fit$theta)),
+    function(u) all(fit$fit$fixed_mask[u]), logical(1))]
+  expect_length(conserved, 1L)
+  expect_true(all(is.na(se_by[[conserved]])))
+  kept <- setdiff(names(se_by), conserved)
+  expect_true(all(is.finite(unlist(se_by[kept])) & unlist(se_by[kept]) > 0))
+  expect_false(any(unlist(se_by) == 0, na.rm = TRUE))
+  expect_length(dec$msgs, 2L)
+  expect_true(any(grepl("conserved phase", dec$msgs, fixed = TRUE)))
+  expect_true(any(grepl("no estimated parameter", dec$msgs, fixed = TRUE)))
+  # A prediction refused for another reason says only that: the
+  # "may be understated" warning is about SEs it returns (d8f6b320 raised
+  # both).
+  ref <- fit
+  free <- which(!fit$fit$fixed_mask)
+  ref$fit$vcov[free, ] <- NA_real_
+  ref$fit$vcov[, free] <- NA_real_
+  refused <- .p586_run(predict(ref, newdata = nd, type = "cumulative_hazard",
+                               se.fit = TRUE))
+  expect_true(all(is.na(refused$val$se.fit)))
+  expect_length(refused$msgs, 1L)
+  expect_match(refused$msgs, "no variance for an estimated parameter",
+               fixed = TRUE)
   # Known negative: no warning without se.fit.
   expect_length(.p586_run(predict(fit, newdata = nd,
                                   type = "cumulative_hazard"))$msgs, 0L)

@@ -529,6 +529,18 @@ NULL
   invisible(NULL)
 }
 
+# When the failed recompute leaves a prediction reading no estimated
+# parameter at all -- the conserved phase alone -- its SE is unknown, and the
+# empty sandwich would report it as exactly 0 (#586).
+.hzr_conserved_nothing_left <- function(object, free_idx) {
+  "conserved_phase_variance" %in% object$degraded && length(free_idx) == 0L
+}
+.hzr_conserved_nothing_left_msg <- paste0(
+  "This prediction reads no estimated parameter whose variance is known: ",
+  "the conserved phase's variance could not be recomputed. Standard errors ",
+  "and CLs will be NA."
+)
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -634,7 +646,10 @@ NULL
   } else {
     fv <- .hzr_free_vcov(object$fit$vcov, p)
   }
-  .hzr_warn_conserved_variance(object)
+  if (!is.null(fv) && .hzr_conserved_nothing_left(object, fv$free_idx)) {
+    warning(.hzr_conserved_nothing_left_msg, call. = FALSE)
+    fv <- NULL
+  }
   if (is.null(fv)) {
     n <- length(target)
     fit <- if (type == "survival") exp(-target) else target
@@ -642,6 +657,7 @@ NULL
     return(data.frame(fit = fit, se.fit = na_vec,
                       lower = na_vec, upper = na_vec))
   }
+  .hzr_warn_conserved_variance(object)
   vcov_use <- fv$vcov_use
   free_idx <- fv$free_idx
 
@@ -748,6 +764,9 @@ NULL
                    warning = function(w) conditionMessage(w))
     if (!is.list(fv)) {
       return(list(cl = na_cl_of(cmp), msg = fv))
+    }
+    if (.hzr_conserved_nothing_left(object, fv$free_idx)) {
+      return(list(cl = na_cl_of(cmp), msg = .hzr_conserved_nothing_left_msg))
     }
     se <- .hzr_predict_se_from_jacobian(J[, fv$free_idx, drop = FALSE],
                                         fv$vcov_use)
