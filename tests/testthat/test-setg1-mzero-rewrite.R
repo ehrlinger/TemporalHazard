@@ -128,3 +128,95 @@ test_that("the emitted fit reproduces PROC HAZARD's estimates (#471)", {
   ll <- oracle$mzero_ll[oracle$id == "mzero_nupos"]
   expect_gt(abs(free$fit$objective - ll), 0.1)
 })
+
+# --- SETG1's other rewrites (#601) -------------------------------------------
+# M < 0 and NU < 0 has its signs flipped (setg1.c:581-613); NU = 0 with M
+# nonzero and both free has NU fixed at 0, and M's sign flipped when M > 0
+# (:631-634, :763-770); M = 0, NU = 0 with NU fixed starts M at 1 (:692-699).
+# The oracle is the binary on a 36-job grid: M in {-1, 0, 0.5}, NU in
+# {-1, 0, 1}, with no flag, FIXM, FIXNU and both.
+
+.mz_grid <- function() {
+  utils::read.csv(test_path("fixtures", "setg1-rewrite-grid.csv"),
+                  comment.char = "#", stringsAsFactors = FALSE)
+}
+.mz_operand <- function(parms, key) {
+  as.numeric(sub(paste0(".* ", key, "=(-?[0-9.]+).*"), "\\1", parms))
+}
+
+test_that("every emitted early phase is the one SETG1 leaves, on the grid (#601)", {
+  grid <- .mz_grid()
+  # Coverage before comparison: the whole grid, each case the change reaches,
+  # and the jobs SETG1 refuses.
+  expect_identical(nrow(grid), 36L)
+  m <- .mz_operand(grid$parms, "M")
+  nu <- .mz_operand(grid$parms, "NU")
+  refused <- grid$mzero == "refused"
+  expect_identical(sum(refused), 3L)
+  expect_true(any(m < 0 & nu < 0 & !refused))
+  expect_true(any(m > 0 & nu == 0 & grid$m_used < 0, na.rm = TRUE))
+  expect_true(any(nu == 0 & m != 0 & grid$nu_estimated == "No" &
+                    !grepl("FIXNU", grid$parms), na.rm = TRUE))
+  for (k in seq_len(nrow(grid))) {
+    o <- grid[k, ]
+    job <- .mz_job(o$parms)
+    if (refused[k]) {
+      expect_true(any(grepl("^refusal", names(job$calls))), info = o$parms)
+      next
+    }
+    # The phase builds: unmirrored, M < 0 with NU < 0 errored here.
+    expect_no_error(ph <- .mz_phase(job))
+    fixed <- ph$fixed %||% character(0)
+    expect_equal(ph$nu, o$nu_used, info = o$parms)
+    expect_equal(ph$m, o$m_used, info = o$parms)
+    expect_identical("m" %in% fixed, o$m_estimated == "No", info = o$parms)
+    expect_identical("nu" %in% fixed, o$nu_estimated == "No", info = o$parms)
+  }
+})
+
+test_that("the sign-flipped and NU-fixed fits reproduce the binary (#601)", {
+  skip_on_cran()
+  grid <- .mz_grid()
+  D <- .mz_data()
+  m <- .mz_operand(grid$parms, "M")
+  nu <- .mz_operand(grid$parms, "NU")
+  free_m <- !grepl("FIXM", grid$parms)
+  free_nu <- !grepl("FIXNU", grid$parms)
+  touched <- (m < 0 & nu < 0) | (nu == 0 & m != 0 & free_m) |
+    (m == 0 & nu == 0 & !free_nu & free_m)
+  runs <- grid[touched & grid$mzero == "runs", ]
+  expect_gte(nrow(runs), 5L)
+  for (k in seq_len(nrow(runs))) {
+    o <- runs[k, ]
+    fit <- .mz_run(.mz_job(o$parms), D)
+    expect_lt(abs(fit$fit$objective - o$mzero_ll), 0.006)
+    # Some of these optima lie on a flat ridge (M = -1 NU = -1 FIXM: THALF
+    # differs by 5e-4 relative, the log-likelihood by 1e-6), so the
+    # estimates are compared by what they ARE: SAS's printed point,
+    # evaluated by R's likelihood, is R's maximum.
+    sas <- c(log(o$mzero_mue), log(o$mzero_thalf), o$mzero_nu, o$mzero_m)
+    at_sas <- suppressWarnings(hzr_evaluate(fit, theta = sas))$logLik
+    expect_lt(abs(at_sas - fit$fit$objective), 1e-4)
+  }
+})
+
+test_that("a rewrite row is conditional when a macro could change SETG1's case (#601)", {
+  row <- function(parms, start) {
+    r <- .mz_job(parms)$untranslated$reason
+    r[startsWith(r, start)]
+  }
+  plain <- row("MUE=0.2 THALF=1 M=0 NU=1", "SETG1 fixes")
+  macro <- row("MUE=0.2 THALF=1 M=0 NU=1 &FLAGS", "SETG1 fixes")
+  expect_length(plain, 1L)
+  expect_length(macro, 1L)
+  expect_match(plain, "as PROC HAZARD does:", fixed = TRUE)
+  expect_no_match(plain, "macro", fixed = TRUE)
+  expect_match(macro, "as PROC HAZARD does if the macro reference",
+               fixed = TRUE)
+  # The same for a moved starting value.
+  plain <- row("MUE=0.2 THALF=1 M=-1 NU=-1", "SETG1 replaces")
+  macro <- row("MUE=0.2 THALF=1 M=-1 NU=-1 &FLAGS", "SETG1 replaces")
+  expect_length(plain, 1L)
+  expect_match(plain, "as PROC HAZARD does, and", fixed = TRUE)
+  expect_match(macro, "if the macro reference", fixed = TRUE)
+})
