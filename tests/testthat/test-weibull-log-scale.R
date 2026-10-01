@@ -84,6 +84,38 @@ test_that("a fit whose mu is representable predicts as before (#566)", {
   expect_equal(got$se.fit / se_nat, rep(1, 2), tolerance = 1e-10)
 })
 
+test_that("a mu just below 1e-154 with a normal variance keeps its SEs (#566, r-reviewer)", {
+  # mu^2 underflows here while var(mu) is still a normal double, so the fit
+  # does not need its stored log scale, and the derived one must not form
+  # 1 / mu^2 (which overflows). 1e8377fe returned NA SEs with a warning; main
+  # e7b621c5 returned the centred fit's.
+  set.seed(3)
+  n <- 300
+  x <- 1000 + stats::rnorm(n)
+  lmu <- log(1e-155)
+  b <- -lmu / 1000
+  t <- stats::rexp(n) / exp(lmu + b * x)
+  cens <- stats::rexp(n) * 2
+  d <- data.frame(time = pmin(t, cens), dead = as.integer(t <= cens),
+                  xc = x - 1000)
+  fc <- .ls_fit(survival::Surv(time, dead) ~ xc, d, c(1, 1, 0))
+  th <- unname(coef(fc))
+  shift <- (log(th[1]) - lmu) / (th[3] / th[2])
+  d$x2 <- d$xc + shift
+  f <- .ls_fit(survival::Surv(time, dead) ~ x2, d, c(1e-155, th[2], th[3]))
+  # Premise: mu in the band, its variance normal, no stored scale needed.
+  mu <- unname(coef(f))[1]
+  expect_true(mu < 1e-154 && mu > .Machine$double.xmin)
+  expect_true(vcov(f)[1, 1] >= .Machine$double.xmin)
+  expect_null(f$fit$log_scale$needed)
+  expect_true(is.infinite(1 / mu^2))
+  got <- expect_no_warning(predict(f, newdata = data.frame(
+    time = c(0.5, 1), x2 = shift + 0:1), type = "survival", se.fit = TRUE))
+  want <- predict(fc, newdata = data.frame(time = c(0.5, 1), xc = 0:1),
+                  type = "survival", se.fit = TRUE)
+  expect_equal(got$se.fit / want$se.fit, rep(1, 2), tolerance = 1e-3)
+})
+
 test_that("a left-censored row whose H is subnormal is read on the log scale (#566 acceptance 1)", {
   obj <- hazard(time = 2, status = -1, time_upper = 2, dist = "weibull",
                 theta = c(1e-81, 4), fit = FALSE)
@@ -96,6 +128,42 @@ test_that("a left-censored row whose H is subnormal is read on the log scale (#5
   # main e7b621c5 returned -743.341, with no warning.
   expect_length(got$msgs, 0L)
   expect_equal(got$ll / log_h, 1, tolerance = 1e-12)
+})
+
+test_that("an interval whose cumulative hazards are subnormal is read on the log scale (#566)", {
+  obj <- hazard(time = 1, status = 2, time_lower = 1, time_upper = 2,
+                dist = "weibull", theta = c(1e-81, 4), fit = FALSE)
+  # log(H(u) - H(l)) = log H(u) + log(1 - (l/u)^4), and -H(l) is negligible.
+  truth <- 4 * (log(1e-81) + log(2)) + log(1 - (1 / 2)^4)
+  expect_lt(exp(4 * (log(1e-81) + log(2))), .Machine$double.xmin)  # premise
+  got <- .ls_eval(obj, c(1e-81, 4))
+  expect_length(got$msgs, 0L)
+  expect_equal(got$ll / truth, 1, tolerance = 1e-12)
+})
+
+test_that("an interval-censored fit whose mu overflows is optimized through log(mu) (#566)", {
+  # The optimizer hands left- and interval-censored rows to
+  # .hzr_logl_weibull(), which must take its alpha / nu as log(mu): mu itself
+  # is Inf here. Oracle: the centred fit, the same model.
+  d <- .ls_data(200, -0.2)
+  status <- d$dead
+  lower <- d$time
+  upper <- d$time
+  ic <- which(status == 0)[1:5]
+  status[ic] <- 2L
+  lower[ic] <- d$time[ic] / 2
+  fit_on <- function(x, theta) {
+    suppressWarnings(hazard(time = d$time, status = status,
+                            time_lower = lower, time_upper = upper,
+                            x = matrix(x, ncol = 1), dist = "weibull",
+                            theta = theta, fit = TRUE))
+  }
+  s_raw <- fit_on(d$x, c(exp(50), 0.2, -0.2))
+  s_ctr <- fit_on(d$xc, c(1, 0.2, -0.2))
+  expect_true(any(s_raw$data$status == 2))        # premise: interval rows
+  expect_identical(unname(coef(s_raw))[1], Inf)    # premise: mu overflows
+  expect_true(is.finite(s_raw$fit$objective))
+  expect_equal(s_raw$fit$objective, s_ctr$fit$objective, tolerance = 1e-4)
 })
 
 test_that("an exact event whose t^(nu - 1) underflows is read on the log scale (#566 acceptance 2)", {

@@ -344,7 +344,8 @@ NULL
 #' stored log-scale estimate and covariance are used, provided they still
 #' agree with `$fit$theta` (an object whose theta was edited is read from its
 #' theta). Otherwise they are derived from theta and the natural-scale vcov:
-#' `log(mu)`, and `D V D` with `D = diag(1 / mu, 1, ...)`, which is exact.
+#' `log(mu)`, and `D V D` with `D = diag(1 / mu, 1, ...)`, formed by dividing
+#' mu's row and column by mu so that `1 / mu^2` is never formed.
 #' @return `list(theta, vcov, stored)`; `vcov` is `NULL` when there is none.
 #' @noRd
 .hzr_weibull_log_scale <- function(object) {
@@ -361,8 +362,10 @@ NULL
   }
   v <- object$fit$vcov
   if (is.matrix(v) && nrow(v) == length(theta) && ncol(v) == length(theta)) {
-    dd <- c(1 / theta[[1L]], rep(1, length(theta) - 1L))
-    v <- v * outer(dd, dd)
+    # Divided by mu twice, not by mu^2: 1 / mu^2 overflows for mu below about
+    # 1e-154, where var(mu) / mu^2 is an ordinary number.
+    v[1L, ] <- v[1L, ] / theta[[1L]]
+    v[, 1L] <- v[, 1L] / theta[[1L]]
   }
   list(theta = c(log(theta[[1L]]), theta[-1L]), vcov = v, stored = FALSE)
 }
