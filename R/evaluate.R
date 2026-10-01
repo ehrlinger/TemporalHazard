@@ -174,6 +174,60 @@ hzr_evaluate <- function(object, theta, times = NULL) {
   # The likelihood's sentinel for an out-of-model theta is Inf, which would
   # be returned as the log-likelihood (#383).
   .hzr_check_theta(theta, dist)
+  # The Weibull likelihood forms (mu * t)^nu. A mu that is itself a normal
+  # double can still underflow that product, to a subnormal number or to 0,
+  # and the log-likelihood returned was then not the model's: 23084.15 where
+  # the fit's own was 22972.56 (#566). An overflowing product already gives
+  # -Inf with a warning, so only the silent side is refused here.
+  if (identical(dist, "weibull")) {
+    # Only the times the likelihood reads for each row's status, as
+    # .hzr_logl_weibull() does: `time` for an event or right-censored row,
+    # and its entry time where time_lower is a genuine one below `time`; the
+    # upper bound for a left-censored row; both bounds for an interval. A
+    # row with weight 0 contributes nothing, so none of its times is read.
+    # A time the likelihood does not use must not refuse the evaluation.
+    # Those are all of a row's inputs here but its covariates, which do not
+    # enter mu * t. (Not named `times`: that is this function's own
+    # argument.)
+    st <- prepared$status
+    tm <- prepared$time
+    lo <- if (is.null(prepared$time_lower)) tm else prepared$time_lower
+    up <- if (is.null(prepared$time_upper)) tm else prepared$time_upper
+    counted <- if (is.null(prepared$weights)) {
+      rep(TRUE, length(tm))
+    } else {
+      prepared$weights != 0
+    }
+    epoch <- counted & st %in% c(0, 1)
+    obs_t <- c(tm[epoch], lo[epoch & lo < tm], up[counted & st == -1],
+               lo[counted & st == 2], up[counted & st == 2])
+    obs_t <- obs_t[is.finite(obs_t) & obs_t > 0]
+    n_lost <- sum(theta[[1L]] * obs_t < .Machine$double.xmin)
+    if (n_lost > 0L) {
+      stop("'theta' gives Weibull scale mu = ", format(theta[[1L]]),
+           ", and mu * time cannot be represented for ", n_lost, " of ",
+           length(obs_t), " times: the product is below the smallest normal ",
+           "double, so the likelihood would be computed from lost digits. ",
+           "A covariate far from zero is the usual cause; centre or rescale ",
+           "the covariates and refit.", call. = FALSE)
+    }
+    # The only other place the likelihood forms mu is mu^nu, in an exact
+    # event's hazard (time^(nu - 1) and exp(eta) do not involve mu). With
+    # mu = 4e-162 and nu = 2, mu * t can be 1 while mu^nu is subnormal, and
+    # the log-likelihood came out 0.0765 low. Read only where a contributing
+    # event row forms it. As for mu * t, only the underflow is refused: an
+    # overflowing mu^nu already gives -Inf with a warning, which is this
+    # function's contract for a likelihood that is not finite.
+    mu_nu <- theta[[1L]]^theta[[2L]]
+    if (any(counted & st == 1) && mu_nu < .Machine$double.xmin) {
+      stop("'theta' gives Weibull scale mu = ", format(theta[[1L]]),
+           " and shape nu = ", format(theta[[2L]]), ", and mu^nu = ",
+           format(mu_nu), " cannot be represented, so the event hazard ",
+           "would be computed from lost digits. A covariate far from zero is ",
+           "the usual cause; centre or rescale the covariates and refit.",
+           call. = FALSE)
+    }
+  }
 
   if (identical(dist, "multiphase")) {
     # As hazard(fit = FALSE) does with a supplied theta: derive the

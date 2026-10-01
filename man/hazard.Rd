@@ -537,7 +537,14 @@ workhorse parametric model: \eqn{H(t \mid \mathbf{x}) = (\mu t)^\nu
     \exp(\eta)}, with hazard \eqn{h \propto t^{\nu - 1}}.  The single shape
 \eqn{\nu} makes risk increase over time (\eqn{\nu > 1}), decrease
 (\eqn{\nu < 1}), or stay flat (\eqn{\nu = 1}).  Use it as the default when
-a single monotone trend describes the hazard.}
+a single monotone trend describes the hazard.  The scale \eqn{\mu} is
+the baseline at \eqn{\mathbf{x} = 0}, so a covariate far from zero
+(a calendar year, an age in days) can push it beyond what a number
+can hold: it is then reported as \code{Inf}, as 0, or as a value too small
+to keep its digits, with a warning of class
+\code{"hzr_unrepresentable_scale"}, and \code{\link[=predict]{predict()}} refuses the fit.
+Centering or rescaling the covariate fixes it without changing the
+model.}
 \item{\code{"exponential"}: constant hazard}{The memoryless special case
 \eqn{\nu = 1}: a time-invariant baseline rate, \eqn{H(t \mid \mathbf{x}) =
     \mu t \exp(\eta)}.  Use it when the event rate does not change with
