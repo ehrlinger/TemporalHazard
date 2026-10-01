@@ -280,9 +280,14 @@ NULL
 #' maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without
 #' one, except for the single-distribution fits: there a converged fit with
 #' a relative gradient above 1e-3 that did not stop on code 4 or 5 (so code
-#' 2 or 3, or no code because the continuation found no better point) warns,
+#' 2 or 3, or no code, which is recorded only when the continuation's point
+#' was kept: none is when it found no better point, [stats::nlm()] raised
+#' an error, or its minimum was not finite) warns,
 #' with class `"hzr_possible_false_maximum"`, that the fit may not be a
-#' maximum, and suggests other starting values. Such a stop can be a false
+#' maximum, and suggests other starting values or centring or rescaling the
+#' covariates. Badly scaled covariates can put a good fit above 1e-3, where
+#' a restart does not help and rescaling does. [hzr_bootstrap()] counts
+#' replicates that meet the same rule and warns once. Such a stop can be a false
 #' maximum far below the best one from an ordinary start, and the gradient
 #' test alone cannot always tell it from a good fit, so `converged` is left
 #' as it is. The warning is not a guarantee: a fit can stop short of its
@@ -1772,15 +1777,9 @@ hazard <- function(formula = NULL,
     # A single-distribution fit can stop at a false maximum far below the
     # best one, from an ordinary start (#518, #531). The relative gradient
     # does not separate those stops cleanly from good ones, so this warns
-    # rather than refusing, and leaves `converged` alone. 1e-3 sits above the
-    # worst good fit in the suite (6.8e-4) and below the known false maxima
-    # (1.2e-3 and up). Codes 4 and 5 warn above. The code is NA, not 2 or 3,
-    # where the polish found no lower point, since only an improving polish
-    # records one; that stop is the same kind and is included. Multiphase
-    # fits are left for 1.3.0.
-    if (isTRUE(fit_state$converged) && !identical(dist, "multiphase") &&
-        !isTRUE(fit_state$polish_code %in% c(4L, 5L)) &&
-        isTRUE(fit_state$rel_gradient > 1e-3)) {
+    # rather than refusing, and leaves `converged` alone. The rule is
+    # .hzr_possible_false_maximum(), shared with hzr_bootstrap()'s tally.
+    if (.hzr_possible_false_maximum(fit_state, dist)) {
       warning(warningCondition(paste0(
         "The fit may not be a maximum: the optimizer stopped with a relative ",
         "gradient of ", signif(fit_state$rel_gradient, 3),
@@ -1790,7 +1789,8 @@ hazard <- function(formula = NULL,
         ", where SAS/C HAZARD requires at most ",
         signif(.Machine$double.eps^(1 / 3), 3), ". A stop like this can be ",
         "far below the best log-likelihood. Refit from other starting ",
-        "values (`theta`) and keep the highest log-likelihood."),
+        "values (`theta`) and keep the highest log-likelihood, or centre or ",
+        "rescale the covariates."),
         class = "hzr_possible_false_maximum"))
     }
   }
@@ -3844,4 +3844,27 @@ vcov.hazard <- function(object, ...) {
     data[] <- lapply(data, .hzr_numeric_values, keep_dim = TRUE)
   }
   data
+}
+
+#' Whether a fit meets the possible-false-maximum rule (#531)
+#'
+#' A single-distribution fit that reports convergence with a relative
+#' gradient above 1e-3, where the `nlm()` continuation did not stop on code
+#' 4 or 5 (both of which warn on their own). 1e-3 sits above the worst good
+#' fit in the test suite (6.8e-4) and below the false maxima found (1.2e-3
+#' and up); badly scaled covariates can put a good fit above it. The code is
+#' NA, rather than 2 or 3, wherever the continuation's point was not kept:
+#' it found no lower point, `nlm()` raised an error, or its minimum was not
+#' finite. Those stops are included. Multiphase fits are left for 1.3.0.
+#' Shared by `hazard()`, which warns, and `hzr_bootstrap()`, which counts.
+#'
+#' @param fit_state The fit's `$fit` list.
+#' @param dist The fit's distribution.
+#' @return `TRUE` or `FALSE`.
+#' @keywords internal
+#' @noRd
+.hzr_possible_false_maximum <- function(fit_state, dist) {
+  isTRUE(fit_state$converged) && !identical(dist, "multiphase") &&
+    !isTRUE(fit_state$polish_code %in% c(4L, 5L)) &&
+    isTRUE(fit_state$rel_gradient > 1e-3)
 }

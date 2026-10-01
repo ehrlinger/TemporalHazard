@@ -59,6 +59,10 @@ test_that("the #518 false maxima that stop on code 2 warn, and stay converged", 
                  paste0("relative gradient of ", signif(f$rel_gradient, 3),
                         " (nlm code ", f$polish_code, ")"), fixed = TRUE)
     expect_match(conditionMessage(w[[1L]]), "theta", fixed = TRUE)
+    # Badly scaled covariates can trip it on a good fit, where rescaling,
+    # not a restart, is the remedy.
+    expect_match(conditionMessage(w[[1L]]), "centre or rescale",
+                 fixed = TRUE)
     expect_true(f$converged, label = paste(nm, "converged unchanged"))
   }
 })
@@ -184,4 +188,56 @@ test_that("multiphase fits are not flagged, whatever the stop", {
   expect_equal(r$fit$fit$rel_gradient, 1e-2)
   expect_true(r$fit$fit$converged)
   expect_length(pfm_classed(r), 0L)
+})
+
+pfm_boot_base <- function() {
+  set.seed(7)
+  df <- data.frame(time = stats::rexp(80, 0.4),
+                   status = rep(c(1, 1, 0), length.out = 80),
+                   z = stats::rnorm(80))
+  hazard(survival::Surv(time, status) ~ z, data = df, dist = "exponential",
+         theta = c(log_rate = 0, z = 0), fit = TRUE)
+}
+
+pfm_boot <- function(base) {
+  ws <- list()
+  bs <- withCallingHandlers(
+    hzr_bootstrap(base, n_boot = 4L, seed = 3L),
+    warning = function(w) {
+      ws[[length(ws) + 1L]] <<- w
+      invokeRestart("muffleWarning")
+    })
+  list(value = bs, classed = Filter(
+    function(w) inherits(w, "hzr_possible_false_maximum"), ws))
+}
+
+test_that("hzr_bootstrap() counts replicates that meet the rule, and warns once", {
+  # Replicates run with their warnings suppressed, so the per-fit warning
+  # never reaches the user; the bootstrap reads each replicate's own fit and
+  # reports the count once. Stuck BY CONSTRUCTION: the optimizer's real
+  # return with the stop overridden, so every replicate meets the rule and
+  # the count must equal n_success exactly.
+  base <- pfm_boot_base()
+  real <- .hzr_optim_exponential
+  testthat::local_mocked_bindings(.hzr_optim_exponential = function(...) {
+    r <- real(...)
+    r$polish_code <- 2L
+    r$rel_gradient <- 1e-2
+    r$convergence <- 0L
+    r
+  })
+  b <- pfm_boot(base)
+  n_ok <- b$value$n_success
+  expect_gt(n_ok, 0L)
+  expect_length(b$classed, 1L)
+  expect_match(conditionMessage(b$classed[[1L]]),
+               paste0("^", n_ok, " of ", n_ok, " successful replicates"))
+  # Still pooled: no replicate was turned into a failure by the rule.
+  expect_identical(b$value$n_failed, 0L)
+})
+
+test_that("a good fit's bootstrap raises no such count", {
+  b <- pfm_boot(pfm_boot_base())
+  expect_gt(b$value$n_success, 0L)
+  expect_length(b$classed, 0L)
 })

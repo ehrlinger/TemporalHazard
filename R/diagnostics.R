@@ -2270,6 +2270,10 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # number (#566). hazard() warns for each, but replicates run quietly, so
   # the count is read off the estimates and reported once.
   n_unrep_scale_reps <- 0L
+  # Replicates that meet the possible-false-maximum rule (#531). hazard()
+  # warns for each, but replicates run quietly, so the count is read off
+  # each replicate's own fit and reported once. Their estimates are pooled.
+  n_possible_false_max_reps <- 0L
   # Reasons are merged from EVERY select-mode replicate, not only the ones
   # that stopped. A replicate that finished having silently passed over a
   # candidate it could not score is the case a stopped-replicate count cannot
@@ -2421,6 +2425,9 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
         if (.hzr_unrepresentable(mu_rep) || mu_rep == 0) {
           n_unrep_scale_reps <- n_unrep_scale_reps + 1L
         }
+      }
+      if (.hzr_possible_false_maximum(boot_fit$fit, object$spec$dist)) {
+        n_possible_false_max_reps <- n_possible_false_max_reps + 1L
       }
       if (select_mode) {
         if (isTRUE(boot_fit$criteria$stopped_uncomputable)) {
@@ -2649,6 +2656,16 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             "other parameters are unaffected. A covariate far from zero is ",
             "the usual cause: centre or rescale the covariates and refit.",
             call. = FALSE)
+  }
+
+  if (n_possible_false_max_reps > 0L) {
+    warning(warningCondition(paste0(
+      n_possible_false_max_reps, " of ", n_success, " successful replicates ",
+      "may not be at a maximum: each converged with a relative gradient ",
+      "above 1e-3, where a fit can stop far below its best log-likelihood ",
+      "(#531). Their estimates are pooled with the others. Check the base ",
+      "fit from other starting values, or centre or rescale the covariates."),
+      class = "hzr_possible_false_maximum"))
   }
 
   if (n_wald_untested_reps > 0L) {
