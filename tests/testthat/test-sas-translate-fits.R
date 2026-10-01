@@ -2778,13 +2778,14 @@ test_that("the SETG1 documents render past the warning (#424)", {
   # Rows whose operands are ALSO outside what hzr_phase() or the likelihood
   # accepts: the fit halts after the warning, as for SETG3910-3930 above.
   # Since #601 the g1flag 4 rows emit the case SETG1 selects: M = 1 NU = 0
-  # FIXNU now starts at M = -1, which hzr_phase() accepts, and M = 0 NU = 0
-  # FIXNU at M = 1 with NU fixed at 0, which it does not -- and which PROC
-  # HAZARD cannot evaluate either (DG1RHO970 on both datasets).
+  # FIXNU now starts at M = -1, which the fit evaluates, and M = 0 NU = 0
+  # FIXNU at M = 1 with NU fixed at 0, where every start stops on
+  # "Decomposition undefined for nu = 0 with m = 1" -- the case PROC HAZARD
+  # cannot evaluate either (DG1RHO970 on both datasets).
   halts <- c("SETG1910_neg", "SETG1910_zero", "SETG1940", "SETG1950",
              "SETG1960", "SETG1920", "SETG1930", "g1flag4_mzero_fixnu")
   for (id in c(halts, "SETG1900", "SETG1901", .p424_moved, "g1flag4_mpos",
-               "g1flag4_mneg", "g1flag4_mzero_fixnu")) {
+               "g1flag4_mneg", "g1flag4_mpos_fixnu")) {
     job <- .u1_job(parms = oracle$parms[oracle$id == id])
     res <- suppressWarnings(render_sim(job, list(D = D)))
     expect_identical(res$ok, !(id %in% halts), info = id)

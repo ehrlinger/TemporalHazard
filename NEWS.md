@@ -706,7 +706,10 @@
   `M=0` and `NU=0 FIXNU` it starts `M` at 1. The translation emitted none
   of these, so the "may not fit" and "no result" notes for those jobs
   described a model the emitted call did not fit. It now emits the model
-  `PROC HAZARD` fits, and records each rewrite in `$untranslated`. When a
+  `PROC HAZARD` starts from, and records each rewrite in `$untranslated`.
+  For `M=0 NU=0 FIXNU`, which `PROC HAZARD` cannot evaluate, the emitted
+  fit now stops with an error as well, where it used to fit a model
+  `PROC HAZARD` never reaches. When a
   macro reference in `PARMS` could carry a value or flag that changes
   `SETG1`'s case, the note says the rewrite holds only if it does not.
 
