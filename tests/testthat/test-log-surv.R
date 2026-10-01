@@ -157,6 +157,16 @@ test_that("the hazard keeps its value for a tiny nu (#578)", {
   # near 1e-16 occur (#448). Oracle: t * h is the derivative of -log_surv in
   # log(t), and log_surv keeps its accuracy there.
   expect_equal(log(hzr_decompos(2, 1, -1e-18, 1)$h), 40.75338, tolerance = 1e-6)
+  # Case 2 saturated as well as tiny nu (Copilot): the exact hazard is
+  # dm / (nu * (t_half + t * dm)), dm = (1 - 2^m)^(-nu) - 1.
+  for (sh in list(c(1e-18, -1), c(1e-16, -0.5))) {
+    th <- 1e-40
+    dm <- expm1(-sh[1] * log1p(-2^sh[2]))
+    want <- dm / (sh[1] * (th + 1 * dm))
+    got <- hzr_decompos(1, t_half = th, nu = sh[1], m = sh[2])$h
+    expect_equal(got / want, 1, tolerance = 1e-8,
+                 label = paste("Case 2, nu =", sh[1], "m =", sh[2]))
+  }
   tt <- c(0.5, 2, 5)
   shapes <- list(c(1e-16, 1), c(-1e-16, 1), c(1e-18, 1), c(-1e-18, 1),
                  c(1e-16, 0), c(1e-14, 2), c(-1e-14, 2), c(1e-12, -0.5))

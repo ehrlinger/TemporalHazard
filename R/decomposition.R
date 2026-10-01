@@ -392,10 +392,16 @@ hzr_decompos <- function(time, t_half, nu, m) {
     y        <- log_bt / nu
     L        <- .hzr_log_neg_log1mexp(y) - log(-m)
     log_surv <- .hzr_log1mexp_of_log(L)
-    # No cancelled form is needed here: for a tiny nu, dm and log_bt are of
-    # order nu, so y = log_bt / nu stays of order 1 and log(g) and
-    # log(1 - G) share no huge term (a form like Cases 1, 1L and 3 was tried
-    # and made no measurable difference).
+    # num1 * log_bt carries -y, and log(1 - G) carries -y through L. For a
+    # tiny nu y = log_bt / nu stays of order 1 unless the phase is also
+    # saturated (t_half far below t), and then it is huge (Copilot, #583).
+    # Cancelled: log_h = mm1 * log_btnu - log_bt - log_rho
+    # - (y + log(-log1mexp(y))) - excess(L).
+    e_y      <- exp(-y)
+    y_excess <- ifelse(y > 30, log1p(e_y / 2 + e_y^2 / 3),
+                       y + log(-hzr_log1mexp(y)))
+    log_h    <- mm1 * log_btnu - log_bt - log_rho - y_excess -
+      .hzr_log1mexp_of_log_excess(L)
 
   } else if (m < 0 && nu == 0) {
     # Case 2L: exponential decay (nu -> 0 limit)
