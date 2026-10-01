@@ -627,6 +627,7 @@ NULL
   } else {
     fv <- .hzr_free_vcov(object$fit$vcov, p)
   }
+  .hzr_warn_conserved_variance(object)
   if (is.null(fv)) {
     n <- length(target)
     fit <- if (type == "survival") exp(-target) else target
@@ -636,7 +637,6 @@ NULL
   }
   vcov_use <- fv$vcov_use
   free_idx <- fv$free_idx
-  .hzr_warn_conserved_variance(object)
 
   # Restrict J to the free columns so the sandwich dimensions match.
   J <- J[, free_idx, drop = FALSE]
@@ -749,9 +749,7 @@ NULL
   })
   msgs <- unique(unlist(lapply(cl_list, `[[`, "msg")))
   for (m in msgs) warning(m, call. = FALSE)
-  if (any(vapply(cl_list, function(r) !length(r$msg), logical(1)))) {
-    .hzr_warn_conserved_variance(object)
-  }
+  .hzr_warn_conserved_variance(object)
   cl_list <- lapply(cl_list, `[[`, "cl")
   names(cl_list) <- components
   make_long(cl_list)
