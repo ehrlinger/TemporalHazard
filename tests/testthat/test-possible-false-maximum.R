@@ -91,3 +91,97 @@ test_that("the #518 stops on code 4 keep their own warning, not this one", {
     expect_length(pfm_classed(r), 0L)
   }
 })
+
+# The #566 fixture, copied so this file stands alone.
+pfm_w566_data <- function(alpha, b) {
+  set.seed(1)
+  n <- 400
+  x <- 1000 + stats::rnorm(n, sd = 5)
+  t <- (stats::rexp(n) / exp(alpha + b * x))^(1 / 0.2)
+  cens <- stats::rexp(n)^5 * 3
+  data.frame(time = pmin(t, cens), dead = as.integer(t <= cens),
+             x = x, xc = x - 1000)
+}
+
+test_that("a stop with no polish code (no lower point found) warns too", {
+  skip_on_cran()
+  # The nlm continuation records a code only when it improves the point, so
+  # a continuation that found no lower point leaves it NA -- the same stop as
+  # code 2 or 3. This raw-x Weibull fit stops 0.04 below its centred twin,
+  # the same model, with no code recorded.
+  d <- pfm_w566_data(60, -0.06)
+  r <- pfm_fit(hazard(survival::Surv(time, dead) ~ x, data = d,
+                      dist = "weibull", theta = c(exp(300), 0.2, -0.06),
+                      fit = TRUE))
+  ctr <- suppressWarnings(hazard(survival::Surv(time, dead) ~ xc, data = d,
+                                 dist = "weibull", theta = c(1, 0.2, -0.06),
+                                 fit = TRUE))
+  f <- r$fit$fit
+  # The premises: no code, a large gradient, and genuinely short.
+  expect_true(is.na(f$polish_code))
+  expect_gt(f$rel_gradient, 1e-3)
+  expect_gt(ctr$fit$objective - f$objective, 0.01)
+  w <- pfm_classed(r)
+  expect_length(w, 1L)
+  # No code to name, so none is named.
+  expect_false(grepl("nlm code", conditionMessage(w[[1L]]), fixed = TRUE))
+  expect_true(f$converged)
+})
+
+test_that("good fits do not warn, and a stuck fit below 1e-3 is a known miss", {
+  skip_on_cran()
+  d <- pfm_avc()
+  # A good fit: the #531 model from a start that reaches its maximum.
+  r <- pfm_fit(hazard(survival::Surv(int_dead, dead) ~ age + I(age^2),
+                      data = d, dist = "lognormal", theta = c(1, 1, 0, 0),
+                      fit = TRUE))
+  expect_lt(r$fit$fit$rel_gradient, 1e-3)
+  expect_length(pfm_classed(r), 0L)
+
+  # THE DOCUMENTED LIMITATION. An intercept-only Weibull on times near
+  # 1e-170 stops at its starting shape, 1.5, against 1.72 from the same
+  # data rescaled to O(1), with a relative gradient of about 5e-4: below the
+  # threshold, and below the worst good fit in the suite (6.8e-4), so no
+  # threshold separates it. The warning says "may not be"; its absence is
+  # not a guarantee.
+  set.seed(3)
+  t <- stats::rweibull(200, 1.4, 1)
+  cens <- stats::rexp(200, 0.3)
+  tt <- pmin(t, cens)
+  st <- as.integer(t <= cens)
+  r <- pfm_fit(hazard(time = tt * 1e-170, status = st, dist = "weibull",
+                      theta = c(mu = 1e170, nu = 1.5), fit = TRUE))
+  ref <- suppressWarnings(hazard(time = tt, status = st, dist = "weibull",
+                                 theta = c(mu = 1, nu = 1), fit = TRUE))
+  f <- r$fit$fit
+  # The premises: converged, stuck near its start, and below the line.
+  expect_true(f$converged)
+  expect_lt(abs(f$theta[[2L]] - 1.5), 1e-3)
+  expect_gt(ref$fit$theta[[2L]] - f$theta[[2L]], 0.1)
+  expect_gt(f$rel_gradient, 1e-4)
+  expect_lt(f$rel_gradient, 1e-3)
+  expect_length(pfm_classed(r), 0L)
+})
+
+test_that("multiphase fits are not flagged, whatever the stop", {
+  # Left for 1.3.0: the relative gradient does not separate good from stuck
+  # multiphase fits. The optimizer's real return, with the stop overridden.
+  real <- .hzr_optim_multiphase
+  testthat::local_mocked_bindings(.hzr_optim_multiphase = function(...) {
+    r <- real(...)
+    r$polish_code <- 2L
+    r$rel_gradient <- 1e-2
+    r$convergence <- 0L
+    r
+  })
+  set.seed(5)
+  tt <- stats::rexp(120, 0.3) + 0.05
+  r <- pfm_fit(hazard(time = tt, status = rep(1L, 120), dist = "multiphase",
+                      phases = list(a = hzr_phase("cdf"),
+                                    b = hzr_phase("constant")),
+                      fit = TRUE, control = list(n_starts = 1L)))
+  expect_identical(r$fit$fit$polish_code, 2L)  # the premise: the mock took
+  expect_equal(r$fit$fit$rel_gradient, 1e-2)
+  expect_true(r$fit$fit$converged)
+  expect_length(pfm_classed(r), 0L)
+})

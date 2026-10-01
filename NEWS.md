@@ -2,6 +2,24 @@
 
 ## Bug fixes
 
+* **A single-distribution fit (exponential, Weibull, lognormal or
+  loglogistic) could stop at a false maximum, far below the best
+  log-likelihood, and report `converged = TRUE` with no warning (#531).**
+  On the `avc` data an exponential fit with `~ age + mal` from an ordinary
+  start stopped at a log-likelihood of -80896.5 against a best of -394.8.
+  `hazard()` now warns, with class `"hzr_possible_false_maximum"`, when such
+  a fit reports convergence with a relative gradient above 1e-3 and the
+  continuation did not stop on its iteration limit or an unbounded direction
+  (`nlm()` codes 4 and 5, which already warn). The warning says the fit may not
+  be a maximum, names the relative gradient and suggests other starting
+  values. `converged` is not changed, and nothing is refused. The threshold
+  sits above every good fit in the test suite (the worst at 6.8e-4) and
+  below the false maxima found, but it does not separate every case: an
+  intercept-only Weibull on times near 1e-170, started at a shape of 1.5,
+  stops there against 1.72 with a relative gradient of about 5e-4 and raises
+  nothing. The absence of the warning is not a guarantee. Multiphase fits
+  are not flagged.
+
 * **Multiphase fits under Conservation of Events could stop short of the
   maximum and report `converged = TRUE` (#565). Multiphase estimates from
   earlier versions, fitted with `conserve = TRUE` (the default), may be

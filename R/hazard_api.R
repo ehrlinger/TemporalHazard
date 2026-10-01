@@ -278,12 +278,15 @@ NULL
 #' iteration limit (raise `control$maxit`), and code 5, where the
 #' log-likelihood kept rising along some direction and the model may have no
 #' maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without
-#' one, except for the single-distribution fits: there a code 2 or 3 stop
-#' with a relative gradient above 1e-3 warns, with class
-#' `"hzr_possible_false_maximum"`, that the fit may not be a maximum, and
-#' suggests other starting values. Such a stop can be a false maximum far
-#' below the best one from an ordinary start, and the gradient test alone
-#' cannot always tell it from a good fit, so `converged` is left as it is.
+#' one, except for the single-distribution fits: there a converged fit with
+#' a relative gradient above 1e-3 that did not stop on code 4 or 5 (so code
+#' 2 or 3, or no code because the continuation found no better point) warns,
+#' with class `"hzr_possible_false_maximum"`, that the fit may not be a
+#' maximum, and suggests other starting values. Such a stop can be a false
+#' maximum far below the best one from an ordinary start, and the gradient
+#' test alone cannot always tell it from a good fit, so `converged` is left
+#' as it is. The warning is not a guarantee: a fit can stop short of its
+#' maximum with a relative gradient below 1e-3 and raise nothing.
 #' The test is relative to the size of the log-likelihood, so a fit that
 #' meets it is within SAS's tolerance of the maximum, not exactly at it.
 #'
@@ -1766,19 +1769,25 @@ hazard <- function(formula = NULL,
         call. = FALSE
       )
     }
-    # A single-distribution fit can stop on code 2 or 3 at a false maximum
-    # far below the best one, from an ordinary start (#518, #531). The
-    # relative gradient does not separate those stops cleanly from good ones,
-    # so this warns rather than refusing, and leaves `converged` alone. 1e-3
-    # sits above the worst good fit in the suite (6.8e-4) and below the known
-    # false maxima (5.9e-3 and up). Multiphase fits are left for 1.3.0.
+    # A single-distribution fit can stop at a false maximum far below the
+    # best one, from an ordinary start (#518, #531). The relative gradient
+    # does not separate those stops cleanly from good ones, so this warns
+    # rather than refusing, and leaves `converged` alone. 1e-3 sits above the
+    # worst good fit in the suite (6.8e-4) and below the known false maxima
+    # (1.2e-3 and up). Codes 4 and 5 warn above. The code is NA, not 2 or 3,
+    # where the polish found no lower point, since only an improving polish
+    # records one; that stop is the same kind and is included. Multiphase
+    # fits are left for 1.3.0.
     if (isTRUE(fit_state$converged) && !identical(dist, "multiphase") &&
-        isTRUE(fit_state$polish_code %in% c(2L, 3L)) &&
+        !isTRUE(fit_state$polish_code %in% c(4L, 5L)) &&
         isTRUE(fit_state$rel_gradient > 1e-3)) {
       warning(warningCondition(paste0(
         "The fit may not be a maximum: the optimizer stopped with a relative ",
-        "gradient of ", signif(fit_state$rel_gradient, 3), " (nlm code ",
-        fit_state$polish_code, "), where SAS/C HAZARD requires at most ",
+        "gradient of ", signif(fit_state$rel_gradient, 3),
+        if (!is.na(fit_state$polish_code %||% NA_integer_)) {
+          paste0(" (nlm code ", fit_state$polish_code, ")")
+        },
+        ", where SAS/C HAZARD requires at most ",
         signif(.Machine$double.eps^(1 / 3), 3), ". A stop like this can be ",
         "far below the best log-likelihood. Refit from other starting ",
         "values (`theta`) and keep the highest log-likelihood."),
