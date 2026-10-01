@@ -190,16 +190,12 @@ test_that("a zero-weight event row whose mu^nu underflows leaves the likelihood 
   # zero-weight row), with the not-finite warning.
   expect_length(got_both$msgs, 0L)
   expect_identical(got_both$ll, got_alone$ll)
-  # Known positive: with weight 1 the event row does move the likelihood.
-  # (At mu = 1e-200 hzr_evaluate() refuses a counted event whose mu^nu
-  # cannot be represented (#573), so this is read at mu = 1e-100.)
+  # Known positive: with weight 1 the same event row does move the
+  # likelihood, by its log hazard, log(nu) + nu * log(mu).
   one <- hazard(time = c(1, 1), status = c(1, 0), weights = c(1, 1),
-                dist = "weibull", theta = c(1e-100, 2), fit = FALSE)
-  zero <- hazard(time = c(1, 1), status = c(1, 0), weights = c(0, 1),
-                 dist = "weibull", theta = c(1e-100, 2), fit = FALSE)
-  got_one <- .ls_eval(one, c(1e-100, 2))
-  got_zero <- .ls_eval(zero, c(1e-100, 2))
-  expect_true(is.finite(got_one$ll))
-  expect_equal(got_one$ll - got_zero$ll, log(2) + 2 * log(1e-100),
+                dist = "weibull", theta = c(1e-200, 2), fit = FALSE)
+  got_one <- .ls_eval(one, c(1e-200, 2))
+  expect_length(got_one$msgs, 0L)
+  expect_equal((got_one$ll - got_both$ll) / (log(2) + 2 * log(1e-200)), 1,
                tolerance = 1e-12)
 })

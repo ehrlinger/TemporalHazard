@@ -241,12 +241,6 @@
       withholds that phase's and the total's standard errors, not the
       others'. Before, a phase with an infinite variance got a standard
       error of 0, and the total the other phases' alone, with no warning.
-    - `hzr_evaluate()` stops when `mu` times an observed time, or `mu^nu` in
-      an exact event's hazard, is too small to be represented. It returned a
-      log-likelihood that was not the model's: 23084.15 where the fit's own
-      was 22972.56, and 0.0765 below the closed form, in the cases measured.
-      Only the times each row's status and weight make the likelihood read
-      are checked.
     - The Weibull likelihood is computed on the log scale. Formed directly,
       `mu^nu`, `(mu * t)^nu` and `t^(nu - 1)` underflow or overflow where the
       log-likelihood is an ordinary number. On a left-censored row whose
@@ -254,7 +248,10 @@
       `hzr_evaluate()` returned -743.341 with no warning, against -743.265.
       An event at a time of 1e-180 gave `-Inf`, against -137.056. A
       zero-weight event row whose `mu^nu` fell below what a double holds
-      turned the whole log-likelihood into `-Inf`.
+      turned the whole log-likelihood into `-Inf`. Where `mu * t` or `mu^nu`
+      fell below the smallest normal double, `hzr_evaluate()` returned a
+      log-likelihood that was not the model's (23084.15 where the fit's own
+      was 22972.56); it now computes it.
 
 * **Multiphase stepwise refits now start from the model they extend
   (#551). Multiphase selections, and `hzr_bootstrap()` select-mode
