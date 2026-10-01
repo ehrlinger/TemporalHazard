@@ -26,6 +26,16 @@ ub_data <- function(n = 200, seed = 1) {
   data.frame(t = rweibull(n, 1.4, 5), s = rbinom(n, 1, 0.8))
 }
 
+# The fit's unbounded_phase records, selected BY MECHANISM. $boundary can hold
+# records of several mechanisms in no guaranteed order (#261): with the
+# conserved phase's share measured from log(1 - G) (#578), a fit here can also
+# carry coe_phase_vanished (#565), and it comes first. An NA (never examined)
+# yields an empty list, so the tri-state assertions stay separate.
+ub_records <- function(b) {
+  Filter(function(r) identical(r$mechanism, "unbounded_phase"),
+         if (is.list(b)) b else list())
+}
+
 ub_fit <- function(d, phases, ...) {
   suppressWarnings(hazard(time = d$t, status = d$s, dist = "multiphase",
                           phases = phases, fit = TRUE,
@@ -54,8 +64,8 @@ test_that("a hazard phase fitted below the observed support is recorded and warn
                            "condition"))
 
   f <- ub_fit(d, ph, theta = c(log(0.1), log(min(d$t) / 1000), 1, 0, log(0.05)))
-  b <- f$fit$boundary
-  expect_true(is.list(b))
+  expect_true(is.list(f$fit$boundary))
+  b <- ub_records(f$fit$boundary)
   expect_length(b, 1L)
   expect_equal(b[[1L]]$mechanism, "unbounded_phase")
   expect_equal(b[[1L]]$phase, "early")
@@ -71,14 +81,21 @@ test_that("a hazard phase fitted below the observed support is recorded and warn
   # record, so they are compared against an independent calculation.
   t_half <- exp(unname(f$fit$theta[["early.log_t_half"]]))
   t_min <- min(d$t[d$t > 0])
-  want_mass <- 1 - hzr_decompos(t_min, t_half = t_half,
-                                nu = unname(f$fit$theta[["early.nu"]]),
-                                m = unname(f$fit$theta[["early.m"]]))$G
-  # ANCHOR the number to its phrase, and refuse a degenerate expectation.
-  # On this fixture t_half is driven so far below the data that 1 - G
-  # UNDERFLOWS TO EXACTLY 0, so format(want, digits = 4) is "0" -- a
-  # substring of nearly every figure in the message. An unanchored match
-  # therefore passed while a mutation reporting G instead of 1 - G survived.
+  dec <- hzr_decompos(t_min, t_half = t_half,
+                      nu = unname(f$fit$theta[["early.nu"]]),
+                      m = unname(f$fit$theta[["early.m"]]))
+  want_mass <- exp(dec$log_surv)
+  # The mass is reported from log(1 - G), not from 1 - G (#578). On this
+  # fixture it is about 2e-13: formed as 1 - G it kept three digits, and
+  # before #578 the fit sat further out, where it rounded to exactly 0 and
+  # the record printed "0". So the figure must be positive, and 1 - G formed
+  # the old way must agree with it to the digits it has.
+  expect_gt(want_mass, 0)
+  # As a ratio: both are about 2e-13, below any tolerance, so an absolute
+  # comparison would accept 1 - G rounding to 0 (Copilot, #583).
+  expect_equal((1 - dec$G) / want_mass, 1, tolerance = 1e-2)
+  # ANCHOR the number to its phrase. An unanchored match passed while a
+  # mutation reporting G instead of 1 - G survived.
   expect_gt(nchar(format(t_min / t_half, digits = 3)), 2L)
   expect_match(b[[1L]]$detail,
                paste0("a factor of ", format(t_min / t_half, digits = 3), "."),
@@ -89,14 +106,17 @@ test_that("a hazard phase fitted below the observed support is recorded and warn
   expect_gt(t_min / t_half, 1)          # the ratio is stated the right way up
 })
 
-test_that("a fit that was examined and found nothing reads NULL, not NA", {
+test_that("a fit that was examined and found nothing has no record, not NA", {
   # THE DISTINCTION THE TRI-STATE EXISTS FOR. A two-state field cannot tell
   # "looked and found nothing" from "never looked", and NULL is the common
   # case, so the confusion would be invisible.
+  # "Nothing" is nothing UNBOUNDED. This fit's conserved phase (late) ends
+  # switched off -- share measured at 1.16e-9 against a tol of 1e-8 -- so
+  # $boundary can hold a coe_phase_vanished record (#565) and be a list.
   d <- ub_data()
   f <- ub_fit(d, list(early = hzr_phase("hazard", t_half = 3, nu = 1, m = 0),
                       late  = hzr_phase("constant")))
-  expect_null(f$fit$boundary)
+  expect_length(ub_records(f$fit$boundary), 0L)
   expect_false("boundary_check" %in% f$degraded)
   expect_false(.hzr_is_na_scalar(f$fit$boundary))
 })
@@ -137,7 +157,7 @@ test_that("the check keys on the FITTED t_half, not the starting value", {
                       late  = hzr_phase("constant")))
   th <- exp(unname(f$fit$theta[["early.log_t_half"]]))
   expect_gt(th, min(d$t))          # converged inside the data
-  expect_null(f$fit$boundary)      # so nothing is recorded
+  expect_length(ub_records(f$fit$boundary), 0L)  # so nothing is recorded
   expect_false("boundary_check" %in% f$degraded)
 })
 
@@ -154,7 +174,7 @@ test_that("summary reports the finding, and says nothing when there is none", {
   expect_false(grepl("unbounded", out2, fixed = TRUE))
 })
 
-test_that("the suite's own marginal case is pinned, and it is marginal", {
+test_that("the suite's one former trip was the clamp, and no longer trips (#578)", {
   # THE ONE FIT IN THIS PACKAGE'S SUITE THAT TRIPS. It lives in
   # test-theta-names.R, inside a blanket suppressWarnings() covering a loop
   # over three phase specs of which only this one warns, so that file needs no
@@ -176,17 +196,33 @@ test_that("the suite's own marginal case is pinned, and it is marginal", {
   fit <- suppressWarnings(hazard(time = tt, status = st, dist = "multiphase",
                                  phases = ph, fit = TRUE,
                                  control = list(n_starts = 1)))
+  # UNTIL #578 THIS FIT TRIPPED, and the trip was the defect's own work. The
+  # hazard phase's cumulative hazard was formed from 1 - G and clamped once
+  # G rounded to 1: the hazard came back near 1e290, each event added about
+  # +668 to the log-likelihood, and the optimizer converged on that at
+  # +60479.26 with 120 events, t_half at 0.133 below a first time of 0.174.
+  # With log(1 - G) carried (#578) that point no longer exists. The fit ends
+  # with the phase inside its data and an ordinary log-likelihood (-260.495
+  # when measured), so there is nothing below the support to report.
+  expect_lt(fit$fit$objective, 0)
+  expect_true(all(is.finite(predict(fit, type = "hazard"))))
   b <- fit$fit$boundary
-  expect_true(is.list(b))
   # By mechanism, not position: $boundary can hold several records in no
   # guaranteed order (#261).
-  ub <- Filter(function(r) identical(r$mechanism, "unbounded_phase"), b)
-  expect_length(ub, 1L)
-  expect_equal(ub[[1L]]$phase, "a")
+  ub <- Filter(function(r) identical(r$mechanism, "unbounded_phase"),
+               if (is.list(b)) b else list())
+  expect_length(ub, 0L)
   t_half <- exp(unname(fit$fit$theta[["a.log_t_half"]]))
-  ratio <- min(tt) / t_half
-  expect_gt(ratio, 1)            # it does trip
-  expect_lt(ratio, 2)            # and it is marginal, unlike cabgkul's 93x
+  expect_gt(t_half, min(tt))
+  # A known positive for the detector would be a fixture whose hazard phase
+  # genuinely fits below its support. None was found: nine fits of late
+  # follow-up and left-shifted Weibull data (three seeds each, hazard phase
+  # with m = 0 and m = 1, five starts) all put t_half inside the data. The
+  # fixture above ("a hazard phase fitted below the observed support") still
+  # trips, but from a start at t_min / 1000 that the optimizer does not
+  # leave: its log-likelihood is -430.69 there against -410.13 from a start
+  # inside the data. Whether the detector has a genuine case to catch is the
+  # review of #444, done separately.
 })
 
 test_that("every observed time counts, not just `time`", {
@@ -246,8 +282,11 @@ test_that("a weight-0 row does not supply the first observed time", {
   # The premise: the ghost row sits below the fitted t_half.
   expect_lt(1e-12, exp(unname(padded$fit$theta[["early.log_t_half"]])))
   expect_true(is.list(padded$fit$boundary))
-  expect_identical(padded$fit$boundary[[1L]]$detail,
-                   base$fit$boundary[[1L]]$detail)
+  ub_padded <- ub_records(padded$fit$boundary)
+  ub_base <- ub_records(base$fit$boundary)
+  expect_length(ub_padded, 1L)
+  expect_length(ub_base, 1L)
+  expect_identical(ub_padded[[1L]]$detail, ub_base[[1L]]$detail)
 })
 
 test_that("a row the designs drop for an NA covariate is not an observed time", {
@@ -268,7 +307,9 @@ test_that("a row the designs drop for an NA covariate is not an observed time", 
   t_half <- exp(unname(fit$fit$theta[["early.log_t_half"]]))
   expect_lt(1e-12, t_half)  # the premise: the dropped row is below t_half
   expect_true(is.list(fit$fit$boundary))
-  expect_match(fit$fit$boundary[[1L]]$detail,
+  ub <- ub_records(fit$fit$boundary)
+  expect_length(ub, 1L)
+  expect_match(ub[[1L]]$detail,
                paste0("below the first observed time (",
                       format(min(d$t), digits = 4), ")"), fixed = TRUE)
 })
@@ -290,7 +331,9 @@ test_that("a bound the likelihood never reads is not an observed time", {
   t_half <- exp(unname(fit$fit$theta[["early.log_t_half"]]))
   expect_lt(1e-12, t_half)  # the premise: the unused bound is below t_half
   expect_true(is.list(fit$fit$boundary))
-  expect_match(fit$fit$boundary[[1L]]$detail,
+  ub <- ub_records(fit$fit$boundary)
+  expect_length(ub, 1L)
+  expect_match(ub[[1L]]$detail,
                paste0("below the first observed time (",
                       format(min(d$t), digits = 4), ")"), fixed = TRUE)
 })
@@ -312,7 +355,9 @@ test_that("a `time` an explicit bound replaces is not an observed time", {
   t_half <- exp(unname(fit$fit$theta[["early.log_t_half"]]))
   expect_lt(1e-12, t_half)
   expect_true(is.list(fit$fit$boundary))
-  expect_match(fit$fit$boundary[[1L]]$detail,
+  ub <- ub_records(fit$fit$boundary)
+  expect_length(ub, 1L)
+  expect_match(ub[[1L]]$detail,
                paste0("below the first observed time (",
                       format(min(d$t), digits = 4), ")"), fixed = TRUE)
 })

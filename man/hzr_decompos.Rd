@@ -19,7 +19,7 @@ SAS early: \code{NU}.  SAS late: relates to \code{GAMMA}/\code{ETA}.}
 SAS early: \code{M}.  SAS late: relates to \code{GAMMA}/\code{ALPHA}.}
 }
 \value{
-A named list with three numeric vectors, each the same length
+A named list with four numeric vectors, each the same length
 as \code{time}:
 \describe{
 \item{G}{Cumulative distribution \eqn{G(t) \in [0, 1]}.}
@@ -27,6 +27,11 @@ as \code{time}:
 temporal pattern.}
 \item{h}{Hazard \eqn{h(t) = g(t)/(1 - G(t)) \ge 0}.  The "late"
 phase temporal pattern.}
+\item{log_surv}{\eqn{\log(1 - G(t))}, computed from each case's
+own log-scale terms rather than from \code{G}, so it keeps its accuracy
+where \code{G} rounds to 1.  \code{-log_surv} is the cumulative hazard of a
+\code{"hazard"} phase, and \code{h} is computed as
+\eqn{\exp(\log g - \log(1 - G))}.}
 }
 }
 \description{
