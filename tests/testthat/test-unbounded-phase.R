@@ -81,7 +81,9 @@ test_that("a hazard phase fitted below the observed support is recorded and warn
   # the record printed "0". So the figure must be positive, and 1 - G formed
   # the old way must agree with it to the digits it has.
   expect_gt(want_mass, 0)
-  expect_equal(1 - dec$G, want_mass, tolerance = 1e-2)
+  # As a ratio: both are about 2e-13, below any tolerance, so an absolute
+  # comparison would accept 1 - G rounding to 0 (Copilot, #583).
+  expect_equal((1 - dec$G) / want_mass, 1, tolerance = 1e-2)
   # ANCHOR the number to its phrase. An unanchored match passed while a
   # mutation reporting G instead of 1 - G survived.
   expect_gt(nchar(format(t_min / t_half, digits = 3)), 2L)

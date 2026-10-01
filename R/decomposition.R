@@ -146,23 +146,6 @@
   out
 }
 
-#' y + log(-log(1 - exp(-y))), without forming either, for y > 0
-#'
-#' The correction [.hzr_log_neg_log1mexp()] adds to `-y`.
-#' @param y Numeric vector, positive.
-#' @return Numeric vector.
-#' @keywords internal
-#' @noRd
-.hzr_log_neg_log1mexp_excess <- function(y) {
-  out <- rep(NA_real_, length(y))
-  high <- !is.na(y) & y > 30
-  e <- exp(-y[high])
-  out[high] <- log1p(e / 2 + e^2 / 3)
-  rest <- !is.na(y) & !high
-  out[rest] <- y[rest] + log(-hzr_log1mexp(y[rest]))
-  out
-}
-
 #' log(log(1 + exp(a))) without underflow
 #'
 #' For very negative `a`, `log(1 + exp(a))` is `exp(a)` to first order and
@@ -408,11 +391,21 @@ hzr_decompos <- function(time, t_half, nu, m) {
     # log(g) each carry it, so their difference would lose the hazard to
     # rounding. The hazard is assembled from the corrections alone.
     y        <- time / rho
-    L        <- .hzr_log_neg_log1mexp(y) - log(-m)
+    # log(1 - e^-y), taken from log(y) where y is small: there it is
+    # log(y) - y/2 to relative y^2, and y = t / rho itself can underflow to
+    # 0 (a time near 0 with a large t_half) while log(y) cannot (Copilot,
+    # #583). hzr_log1mexp(0) is NA.
+    log_y    <- log(time) - log(rho)
+    lm1e     <- ifelse(y < 1e-5, log_y - y / 2, hzr_log1mexp(y))
+    # y + log(-log(1 - e^-y)), the correction to -y; its own series where
+    # -log(1 - e^-y) would underflow (y > 30).
+    e_y      <- exp(-y)
+    y_excess <- ifelse(y > 30, log1p(e_y / 2 + e_y^2 / 3), y + log(-lm1e))
+    L        <- y_excess - y - log(-m)
     log_surv <- .hzr_log1mexp_of_log(L)
-    log_g    <- mm1 * hzr_log1mexp(y) - y - log(-m * rho)
-    log_h    <- mm1 * hzr_log1mexp(y) - log(rho) -
-      .hzr_log_neg_log1mexp_excess(y) - .hzr_log1mexp_of_log_excess(L)
+    log_g    <- mm1 * lm1e - y - log(-m * rho)
+    log_h    <- mm1 * lm1e - log(rho) - y_excess -
+      .hzr_log1mexp_of_log_excess(L)
 
   } else if (m > 0 && nu < 0) {
     # Case 3: bounded cumulative (C HAZARD g1flag = 5, "Mixed Generic")

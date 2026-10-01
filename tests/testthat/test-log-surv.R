@@ -122,7 +122,23 @@ test_that("near t = 0, and where bt underflows, log_surv is 0, not NA (#578)", {
   # Case 2L where t / rho underflows to 0: a large t_half, or a very
   # negative m, at the time-0 entry (second review).
   expect_identical(hzr_decompos(0, t_half = 1e16, nu = 0, m = -1)$log_surv, 0)
-  expect_identical(hzr_decompos(0, t_half = 100, nu = 0, m = -50)$log_surv, 0)
+  # At m = -50, t / rho is about 2e-325 at the time-0 clamp and underflows,
+  # but G = (1 - e^(-t / rho))^(1/50) is still about 3e-7: log(1 - G) is
+  # about -3e-7, not 0. Closed form from log(t / rho).
+  rho <- 100 / -log1p(-2^-50)
+  log_g_cdf <- (log(.Machine$double.xmin) - log(rho)) / 50
+  want <- log1p(-exp(log_g_cdf))
+  got <- hzr_decompos(0, t_half = 100, nu = 0, m = -50)$log_surv
+  expect_lt(want, -1e-8)
+  expect_equal(got / want, 1, tolerance = 1e-6)
+  # And its hazard there (Copilot, #583). At m = -1 the hazard is exactly
+  # 1 / rho, rho = t_half / log(2), at every time; t / rho underflows to 0
+  # at these times, which made it NA.
+  for (th in c(1e16, 1e300)) {
+    h <- hzr_decompos(c(0, 1e-300, 1), t_half = th, nu = 0, m = -1)$h
+    expect_equal(h / (log(2) / th), c(1, 1, 1), tolerance = 1e-10,
+                 label = paste("t_half =", th))
+  }
   # Case 2L at m = -1 has 1 - G = exp(-t / rho), rho = t_half / log(2): the
   # value must keep its relative accuracy as t goes to 0, not cancel away.
   # As a ratio: these values are far below any tolerance, and an absolute
