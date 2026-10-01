@@ -287,7 +287,8 @@ NULL
 #' maximum, and suggests other starting values or centring or rescaling the
 #' covariates. Badly scaled covariates can put a good fit above 1e-3, where
 #' a restart does not help and rescaling does. [hzr_bootstrap()] counts
-#' replicates that meet the same rule and warns once. Such a stop can be a false
+#' the replicates in which any fit (the base refit, a stepwise refit or the
+#' final fit) meets the same rule, and warns once. Such a stop can be a false
 #' maximum far below the best one from an ordinary start, and the gradient
 #' test alone cannot always tell it from a good fit, so `converged` is left
 #' as it is. The warning is not a guarantee: a fit can stop short of its
@@ -1778,7 +1779,7 @@ hazard <- function(formula = NULL,
     # best one, from an ordinary start (#518, #531). The relative gradient
     # does not separate those stops cleanly from good ones, so this warns
     # rather than refusing, and leaves `converged` alone. The rule is
-    # .hzr_possible_false_maximum(), shared with hzr_bootstrap()'s tally.
+    # .hzr_possible_false_maximum(); hzr_bootstrap() counts this warning.
     if (.hzr_possible_false_maximum(fit_state, dist)) {
       warning(warningCondition(paste0(
         "The fit may not be a maximum: the optimizer stopped with a relative ",
@@ -3856,7 +3857,8 @@ vcov.hazard <- function(object, ...) {
 #' NA, rather than 2 or 3, wherever the continuation's point was not kept:
 #' it found no lower point, `nlm()` raised an error, or its minimum was not
 #' finite. Those stops are included. Multiphase fits are left for 1.3.0.
-#' Shared by `hazard()`, which warns, and `hzr_bootstrap()`, which counts.
+#' `hazard()` warns on it; `hzr_bootstrap()` counts that warning from every
+#' fit in a replicate.
 #'
 #' @param fit_state The fit's `$fit` list.
 #' @param dist The fit's distribution.

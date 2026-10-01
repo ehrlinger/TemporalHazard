@@ -2274,6 +2274,16 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # warns for each, but replicates run quietly, so the count is read off
   # each replicate's own fit and reported once. Their estimates are pooled.
   n_possible_false_max_reps <- 0L
+  # Every fit in a replicate -- the base refit and each stepwise refit in
+  # select mode, not only the final fit -- raises hazard()'s classed warning
+  # when it meets the rule, whatever path it took. Caught here INSIDE the
+  # replicate's suppressWarnings(), which would otherwise muffle it first: a
+  # calling handler further in is asked before one further out.
+  pfm_state <- new.env(parent = emptyenv())
+  pfm_flag <- function(w) {
+    pfm_state$seen <- TRUE
+    invokeRestart("muffleWarning")
+  }
   # Reasons are merged from EVERY select-mode replicate, not only the ones
   # that stopped. A replicate that finished having silently passed over a
   # candidate it could not score is the case a stopped-replicate count cannot
@@ -2331,13 +2341,14 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     # the console over n_boot fits. Suppress them here -- structural problems
     # (e.g. a mistyped `scope` column) still surface once from the up-front
     # validation call above, and hard failures are caught below and counted.
+    pfm_state$seen <- FALSE
     if (select_mode) {
       # Refit the (shape-fixed) base model on the resampled data first, so
       # the stepwise search's entry/retention tests compare candidates
       # against a base likelihood computed on the SAME resampled data --
       # then run a fresh stepwise selection from that base.
       boot_fit <- tryCatch(
-        suppressWarnings({
+        suppressWarnings(withCallingHandlers({
           cl_base <- cl
           cl_base$data <- quote(boot_data)
           if (!is.null(orig_weights)) cl_base$weights <- quote(boot_weights)
@@ -2365,7 +2376,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             ),
             extra_args
           ))
-        }),
+        }, hzr_possible_false_maximum = pfm_flag)),
         # Keep the condition: its message is the replicate's failure reason.
         error = function(e) e
       )
@@ -2373,7 +2384,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       # Refit using the same call but with resampled data (and weights, if any)
       # (boot_data/boot_weights are referenced via quote() inside eval)
       boot_fit <- tryCatch(
-        suppressWarnings({
+        suppressWarnings(withCallingHandlers({
           cl_boot <- cl
           cl_boot$data <- quote(boot_data)
           if (!is.null(orig_weights)) cl_boot$weights <- quote(boot_weights)
@@ -2382,7 +2393,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           }
           cl_boot$fit <- TRUE
           eval(cl_boot, envir = rep_env)
-        }),
+        }, hzr_possible_false_maximum = pfm_flag)),
         # Keep the condition: its message is the replicate's failure reason.
         error = function(e) e
       )
@@ -2426,7 +2437,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           n_unrep_scale_reps <- n_unrep_scale_reps + 1L
         }
       }
-      if (.hzr_possible_false_maximum(boot_fit$fit, object$spec$dist)) {
+      if (isTRUE(pfm_state$seen)) {
         n_possible_false_max_reps <- n_possible_false_max_reps + 1L
       }
       if (select_mode) {
@@ -2661,10 +2672,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   if (n_possible_false_max_reps > 0L) {
     warning(warningCondition(paste0(
       n_possible_false_max_reps, " of ", n_success, " successful replicates ",
-      "may not be at a maximum: each converged with a relative gradient ",
-      "above 1e-3, where a fit can stop far below its best log-likelihood ",
-      "(#531). Their estimates are pooled with the others. Check the base ",
-      "fit from other starting values, or centre or rescale the covariates."),
+      "had a fit that may not be at a maximum, in the base fit or a refit: ",
+      "it converged with a relative gradient above 1e-3, where a fit can ",
+      "stop far below its best log-likelihood (#531). Their estimates, and ",
+      "in a stepwise screen their selections, are pooled with the others. ",
+      "Check the base fit from other starting values, or centre or rescale ",
+      "the covariates."),
       class = "hzr_possible_false_maximum"))
   }
 

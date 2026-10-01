@@ -236,6 +236,105 @@ test_that("hzr_bootstrap() counts replicates that meet the rule, and warns once"
   expect_identical(b$value$n_failed, 0L)
 })
 
+pfm_select_data <- function() {
+  set.seed(11)
+  n <- 150
+  z <- stats::rnorm(n)
+  t <- stats::rexp(n, 0.3 * exp(0.9 * z))
+  data.frame(time = pmin(t, 6), status = as.integer(t <= 6), z = z)
+}
+
+test_that("only the replicate that met the rule is counted", {
+  # One stuck call among clean ones: the count is per replicate, so it must
+  # be exactly 1, not every replicate after it.
+  base <- pfm_boot_base()
+  calls <- new.env()
+  calls$n <- 0L
+  real <- .hzr_optim_exponential
+  testthat::local_mocked_bindings(.hzr_optim_exponential = function(...) {
+    r <- real(...)
+    calls$n <- calls$n + 1L
+    if (calls$n == 2L) {
+      r$polish_code <- 2L
+      r$rel_gradient <- 1e-2
+      r$convergence <- 0L
+    }
+    r
+  })
+  b <- pfm_boot(base)
+  n_ok <- b$value$n_success
+  expect_gt(n_ok, 2L)                  # the premise: clean ones followed
+  expect_gt(calls$n, 2L)
+  expect_length(b$classed, 1L)
+  expect_match(conditionMessage(b$classed[[1L]]),
+               paste0("^1 of ", n_ok, " successful replicates"))
+})
+
+test_that("a stepwise bootstrap counts a stuck BASE refit, not only the final fit", {
+  skip_on_cran()
+  # The reviewer's shape: in select mode each replicate refits the base model
+  # and then runs a stepwise screen. The base refit is stuck BY CONSTRUCTION
+  # (the intercept-only exponential's return overridden to code 2 and a
+  # relative gradient of 0.01); every refit with z in it is left clean, so
+  # the final fit is clean. The replicate's base drove its candidate scores,
+  # so the replicate counts.
+  df <- pfm_select_data()
+  base <- hazard(survival::Surv(time, status) ~ 1, data = df,
+                 dist = "exponential", theta = c(log_rate = 0), fit = TRUE)
+  calls <- new.env()
+  calls$stuck <- 0L
+  calls$clean_with_z <- 0L
+  real <- .hzr_optim_exponential
+  testthat::local_mocked_bindings(.hzr_optim_exponential = function(...) {
+    r <- real(...)
+    if (length(r$par) == 1L) {
+      r$polish_code <- 2L
+      r$rel_gradient <- 1e-2
+      r$convergence <- 0L
+      calls$stuck <- calls$stuck + 1L
+    } else {
+      calls$clean_with_z <- calls$clean_with_z + 1L
+    }
+    r
+  })
+  ws <- list()
+  bs <- withCallingHandlers(
+    hzr_bootstrap(base, n_boot = 3L, seed = 2L, scope = ~ z,
+                  direction = "forward", criterion = "wald"),
+    warning = function(w) {
+      ws[[length(ws) + 1L]] <<- w
+      invokeRestart("muffleWarning")
+    })
+  # The premises: base refits were stuck, and refits with z ran clean.
+  expect_gt(calls$stuck, 0L)
+  expect_gt(calls$clean_with_z, 0L)
+  hit <- Filter(function(w) inherits(w, "hzr_possible_false_maximum"), ws)
+  n_ok <- bs$n_success
+  expect_gt(n_ok, 0L)
+  expect_length(hit, 1L)
+  expect_match(conditionMessage(hit[[1L]]),
+               paste0("^", n_ok, " of ", n_ok, " successful replicates"))
+  expect_match(conditionMessage(hit[[1L]]), "in the base fit or a refit",
+               fixed = TRUE)
+})
+
+test_that("a stepwise bootstrap with every fit clean raises no such count", {
+  skip_on_cran()
+  df <- pfm_select_data()
+  base <- hazard(survival::Surv(time, status) ~ 1, data = df,
+                 dist = "exponential", theta = c(log_rate = 0), fit = TRUE)
+  ws <- list()
+  bs <- withCallingHandlers(
+    hzr_bootstrap(base, n_boot = 3L, seed = 2L, scope = ~ z,
+                  direction = "forward", criterion = "wald"),
+    warning = function(w) {
+      ws[[length(ws) + 1L]] <<- w
+      invokeRestart("muffleWarning")
+    })
+  expect_gt(bs$n_success, 0L)
+  expect_false(any(vapply(ws, inherits, TRUE, "hzr_possible_false_maximum")))
+})
+
 test_that("a good fit's bootstrap raises no such count", {
   b <- pfm_boot(pfm_boot_base())
   expect_gt(b$value$n_success, 0L)

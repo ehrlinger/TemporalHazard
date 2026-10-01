@@ -14,8 +14,9 @@
   be a maximum, names the relative gradient and suggests other starting
   values, or centring or rescaling the covariates. `converged` is not
   changed, and nothing is refused. `hzr_bootstrap()`, whose replicates run
-  with their warnings suppressed, counts the replicates that meet the same
-  rule and warns once; their estimates are still pooled. The threshold sits
+  with their warnings suppressed, counts the replicates in which any fit
+  meets the same rule (the base refit and every stepwise refit, not only
+  the final fit) and warns once; their estimates are still pooled. The threshold sits
   above every good fit in the test suite (the worst at 6.8e-4) and below
   the false maxima found, but it does not separate every case. A good fit
   on badly scaled covariates (one multiplied by 1e4 or more) can exceed it,

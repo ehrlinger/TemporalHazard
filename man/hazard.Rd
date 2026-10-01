@@ -527,7 +527,8 @@ with class \code{"hzr_possible_false_maximum"}, that the fit may not be a
 maximum, and suggests other starting values or centring or rescaling the
 covariates. Badly scaled covariates can put a good fit above 1e-3, where
 a restart does not help and rescaling does. \code{\link[=hzr_bootstrap]{hzr_bootstrap()}} counts
-replicates that meet the same rule and warns once. Such a stop can be a false
+the replicates in which any fit (the base refit, a stepwise refit or the
+final fit) meets the same rule, and warns once. Such a stop can be a false
 maximum far below the best one from an ordinary start, and the gradient
 test alone cannot always tell it from a good fit, so \code{converged} is left
 as it is. The warning is not a guarantee: a fit can stop short of its
