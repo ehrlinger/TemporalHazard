@@ -353,8 +353,12 @@ NULL
 #'   variables, so it cannot see inside a function: a helper that indexes a
 #'   vector from outside `data` by position, such as
 #'   `function(a) a + g[seq_along(a)]`, sees only the retained rows and pairs
-#'   them with the first elements of `g`, as it would under
-#'   `stats::lm(subset = )`. Put such a vector in `data`.
+#'   them with the first elements of `g`, so every row after the first
+#'   dropped one is paired with the wrong value. Only the drop itself is
+#'   warned about; the mis-pairing is not.
+#'   `stats::lm(subset = )` is not a guide here: it evaluates the terms on
+#'   every row and subsets afterwards, so the same helper pairs correctly
+#'   there. Put such a vector in `data`, where it is dropped with its rows.
 #'   A caller-supplied row-aligned input whose row count differs from
 #'   `time`'s is refused before any row is dropped: `x` and `weights` on the
 #'   `time =`/`status =` interface, and `data` wherever a formula reads it row

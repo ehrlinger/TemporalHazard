@@ -99,8 +99,12 @@ value from outside \code{data}. That check reads the formula's own
 variables, so it cannot see inside a function: a helper that indexes a
 vector from outside \code{data} by position, such as
 \code{function(a) a + g[seq_along(a)]}, sees only the retained rows and pairs
-them with the first elements of \code{g}, as it would under
-\code{stats::lm(subset = )}. Put such a vector in \code{data}.
+them with the first elements of \code{g}, so every row after the first
+dropped one is paired with the wrong value. Only the drop itself is
+warned about; the mis-pairing is not.
+\code{stats::lm(subset = )} is not a guide here: it evaluates the terms on
+every row and subsets afterwards, so the same helper pairs correctly
+there. Put such a vector in \code{data}, where it is dropped with its rows.
 A caller-supplied row-aligned input whose row count differs from
 \code{time}'s is refused before any row is dropped: \code{x} and \code{weights} on the
 \verb{time =}/\verb{status =} interface, and \code{data} wherever a formula reads it row
