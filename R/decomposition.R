@@ -131,7 +131,7 @@
 
 #' log(1 - exp(-exp(L))) minus L, without forming either
 #'
-#' The correction [.hzr_log1mexp_of_log()] adds to `L`. Wanted on its own
+#' The correction `.hzr_log1mexp_of_log()` adds to `L`. Wanted on its own
 #' where `L` is huge and would swamp it.
 #' @param L Numeric vector, `log(x)`.
 #' @return Numeric vector.
