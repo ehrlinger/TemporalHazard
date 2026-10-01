@@ -80,7 +80,7 @@ se.fit paths.</p>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">.hzr_free_vcov</span><span class="op">(</span><span class="va">vcov_mat</span>, <span class="va">p</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">.hzr_free_vcov</span><span class="op">(</span><span class="va">vcov_mat</span>, <span class="va">p</span>, unused <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">integer</a></span><span class="op">(</span><span class="fl">0</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -93,6 +93,12 @@ se.fit paths.</p>
 
 <dt id="arg-p">p<a class="anchor" aria-label="anchor" href="#arg-p"></a></dt>
 <dd><p>Length of the parameter vector.</p></dd>
+
+
+<dt id="arg-unused">unused<a class="anchor" aria-label="anchor" href="#arg-unused"></a></dt>
+<dd><p>Indices of parameters the prediction does not depend on
+(an all-zero Jacobian column). One whose variance cannot be represented
+is dropped, which is exact, instead of withholding the standard error.</p></dd>
 
 </dl></div>
     <div class="section level2">

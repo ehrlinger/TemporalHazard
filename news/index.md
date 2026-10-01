@@ -163,6 +163,65 @@
   [`AIC()`](https://rdrr.io/r/stats/AIC.html) have no method for a
   `hazard` fit and still stop.
 
+- **A Weibull fit whose scale cannot be represented now says so, and
+  [`predict()`](https://rdrr.io/r/stats/predict.html) refuses it
+  ([\#566](https://github.com/ehrlinger/TemporalHazard/issues/566)).**
+  The Weibull scale `mu` is the baseline at `x = 0`, so with a covariate
+  far from zero, such as a calendar year, it can leave the range a
+  number can hold at a sound fit. It was then reported as `Inf`, as 0,
+  or as a value so small that most of its digits were lost. With `Inf`,
+  [`predict()`](https://rdrr.io/r/stats/predict.html) returned survival
+  0 and cumulative hazard `Inf` with no warning, where the same model
+  with the covariate centered gave 0.217, and
+  [`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
+  reported an expected count of `Inf`.
+
+  - [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+    now warns, with class `"hzr_unrepresentable_scale"`, and says to
+    centre or rescale the covariates. The fit still reports
+    `converged = TRUE`: it is sound, and only its scale cannot be
+    reported.
+  - [`predict()`](https://rdrr.io/r/stats/predict.html) stops with an
+    error on such a fit, for every `type`, and so do
+    [`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md),
+    [`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md)
+    and
+    [`hzr_evaluate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_evaluate.md).
+    This includes an intercept-only fit, whose parameters
+    [`predict()`](https://rdrr.io/r/stats/predict.html) did not check
+    before.
+  - [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+    warns with the number of replicates whose `mu` cannot be
+    represented; the summary of `mu` is not usable there.
+  - A finite `mu` whose product with a large time overflowed gave a
+    cumulative hazard of `Inf` from
+    [`predict()`](https://rdrr.io/r/stats/predict.html).
+    [`predict()`](https://rdrr.io/r/stats/predict.html) now computes it
+    on the log scale.
+  - Where `mu` is finite but its variance overflows or underflows,
+    `predict(se.fit = TRUE)` returned a wrong standard error: 187 times
+    too large in one case measured, 75% too large in another. It now
+    returns `NA` standard errors and limits, with a warning. A
+    prediction that does not depend on `mu`, such as the linear
+    predictor, keeps its standard error.
+    [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+    warns about such a fit too, with the same class, because the
+    standard error it reports for `mu` is `Inf`, 0 or too small there.
+  - The same screen applies to any parameter’s variance, and a negative
+    variance is now named as one: `predict(se.fit = TRUE)` had reported
+    a standard error of 0 for it. Under `decompose = TRUE` each phase is
+    screened on its own parameters, so a bad variance in one phase
+    withholds that phase’s and the total’s standard errors, not the
+    others’. Before, a phase with an infinite variance got a standard
+    error of 0, and the total the other phases’ alone, with no warning.
+  - [`hzr_evaluate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_evaluate.md)
+    stops when `mu` times an observed time, or `mu^nu` in an exact
+    event’s hazard, is too small to be represented. It returned a
+    log-likelihood that was not the model’s: 23084.15 where the fit’s
+    own was 22972.56, and 0.0765 below the closed form, in the cases
+    measured. Only the times each row’s status and weight make the
+    likelihood read are checked.
+
 - **Multiphase stepwise refits now start from the model they extend
   ([\#551](https://github.com/ehrlinger/TemporalHazard/issues/551)).
   Multiphase selections, and

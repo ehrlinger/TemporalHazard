@@ -11,7 +11,7 @@ computed. Shared by the aggregate and decomposed se.fit paths.
 ## Usage
 
 ``` r
-.hzr_free_vcov(vcov_mat, p)
+.hzr_free_vcov(vcov_mat, p, unused = integer(0))
 ```
 
 ## Arguments
@@ -23,6 +23,12 @@ computed. Shared by the aggregate and decomposed se.fit paths.
 - p:
 
   Length of the parameter vector.
+
+- unused:
+
+  Indices of parameters the prediction does not depend on (an all-zero
+  Jacobian column). One whose variance cannot be represented is dropped,
+  which is exact, instead of withholding the standard error.
 
 ## Value
 
