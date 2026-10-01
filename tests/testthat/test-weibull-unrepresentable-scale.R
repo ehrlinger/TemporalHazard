@@ -269,9 +269,12 @@ test_that("an underflowed variance of mu is read on the log scale; a NaN one is 
     "variance that cannot be represented", fixed = TRUE
   )
   expect_true(all(is.na(p_nan$se.fit)))
+  # Marked fixed in fixed_mask: an NA on a parameter that is not fixed is a
+  # mask, and withholds the SE (#586).
   fixed <- ctr
   fixed$fit$vcov[1, ] <- NA_real_
   fixed$fit$vcov[, 1] <- NA_real_
+  fixed$fit$fixed_mask <- c(TRUE, FALSE, FALSE)
   p_fixed <- expect_no_warning(predict(fixed, newdata = nd,
                                        type = "cumulative_hazard",
                                        se.fit = TRUE))
