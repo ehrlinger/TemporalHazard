@@ -422,7 +422,9 @@ hzr_decompos <- function(time, t_half, nu, m) {
     # 0 (a time near 0 with a large t_half) while log(y) cannot (Copilot,
     # #583). hzr_log1mexp(0) is NA.
     log_y    <- log(time) - log(rho)
-    lm1e     <- ifelse(y < 1e-5, log_y - y / 2, hzr_log1mexp(y))
+    # Where y overflows (t_half near the smallest double), 1 - e^-y is 1.
+    lm1e     <- ifelse(y < 1e-5, log_y - y / 2,
+                       ifelse(is.infinite(y), 0, hzr_log1mexp(y)))
     # y + log(-log(1 - e^-y)), the correction to -y; its own series where
     # -log(1 - e^-y) would underflow (y > 30).
     e_y      <- exp(-y)

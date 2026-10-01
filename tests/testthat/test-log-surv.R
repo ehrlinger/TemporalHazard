@@ -137,6 +137,10 @@ test_that("near t = 0, and where bt underflows, log_surv is 0, not NA (#578)", {
   # And its hazard there (Copilot, #583). At m = -1 the hazard is exactly
   # 1 / rho, rho = t_half / log(2), at every time; t / rho underflows to 0
   # at these times, which made it NA.
+  # And where t / rho overflows instead (t_half at the smallest double).
+  th <- .Machine$double.xmin
+  expect_equal(hzr_decompos(10, t_half = th, nu = 0, m = -1)$h /
+                 (log(2) / th), 1, tolerance = 1e-10)
   for (th in c(1e16, 1e300)) {
     h <- hzr_decompos(c(0, 1e-300, 1), t_half = th, nu = 0, m = -1)$h
     expect_equal(h / (log(2) / th), c(1, 1, 1), tolerance = 1e-10,
