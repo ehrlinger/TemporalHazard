@@ -59,7 +59,11 @@ test_that("predict() runs at the SET DESIGN covariates, not at zero (#494a)", {
   ))
   sim <- suppressWarnings(render_sim(job, list(AVCS = AVCS)))
   expect_true(sim$ok, info = paste(names(sim$results), sim$results, collapse = " | "))
-  got <- eval(job$calls$pred, sim$env)$fit
+  # This fit masks three free variances as non-positive, so the HAZPRED
+  # chunk's limits are withheld, with a warning (#586); its estimates stand.
+  expect_warning(pred <- eval(job$calls$pred, sim$env),
+                 "no variance for an estimated parameter", fixed = TRUE)
+  got <- pred$fit
   fit <- get("fit", envir = sim$env)
   at_mal1 <- predict(fit, newdata = data.frame(time = c(1, 6, 12), MAL = 1),
                      type = "survival")

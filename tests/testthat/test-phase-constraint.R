@@ -365,6 +365,32 @@ for (constraint in names(e2e_cases)) {
     expect_equal(sqrt(vcov(fit)[derived, derived]),
                  sqrt(as.numeric(grad_derived %*% v_numeric %*% grad_derived)),
                  tolerance = 1e-3)
+
+    # predict() keeps the derived slot in its sandwich (#586): it is fixed in
+    # fixed_mask but carries a variance, and dropping it lost the
+    # constraint's chain rule. Truth: the numeric Jacobian of H over the
+    # searched parameters, through the constraint, with their covariance.
+    tt <- c(1, 5, 10, 20)
+    h_of <- function(p) {
+      full <- theta
+      full[free] <- p
+      full <- .hzr_apply_constraints(full, phases, counts)
+      .hzr_multiphase_cumhaz(tt, full, phases, counts, list(late = NULL))
+    }
+    jh <- numDeriv::jacobian(h_of, theta[free])
+    se_truth <- sqrt(rowSums((jh %*% unname(vcov(fit))[free, free]) * jh))
+    se_got <- predict(fit, newdata = data.frame(time = tt),
+                      type = "cumulative_hazard", se.fit = TRUE)$se.fit
+    expect_equal(se_got / se_truth, rep(1, length(tt)), tolerance = 1e-6)
+    # A NaN variance on the derived slot is not "fixed, known": it withholds.
+    nan_fit <- fit
+    nan_fit$fit$vcov[derived, derived] <- NaN
+    expect_warning(
+      se_nan <- predict(nan_fit, newdata = data.frame(time = tt),
+                        type = "cumulative_hazard", se.fit = TRUE)$se.fit,
+      "variance that cannot be represented", fixed = TRUE
+    )
+    expect_true(all(is.na(se_nan)))
   })
 }
 

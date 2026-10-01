@@ -406,29 +406,46 @@ NULL
     nrow(vcov_mat) == p && ncol(vcov_mat) == p
 }
 
-#' Free-parameter vcov submatrix for the delta-method sandwich
+#' Vcov submatrix for the delta-method sandwich
 #'
-#' Fixed parameters (e.g. `fixed = "shapes"`) leave NA rows/cols in the expanded
-#' vcov. Treat them as known-with-zero-variance: restrict the sandwich to the
-#' free submatrix. (The CoE-conserved `log_mu` normally participates, because
-#' CoE fits use the full-information vcov, but it leaves an NA row, like a fixed
-#' parameter, when that recomputation was unavailable.) Returns `NULL` (with a
-#' warning) when CLs cannot be computed. Shared by the aggregate and decomposed
-#' se.fit paths.
+#' Restricts the sandwich to the parameters the prediction uses. A parameter
+#' held fixed (`fixed`, from the fit's `fixed_mask`; e.g. `fixed = "shapes"`)
+#' with an NA row is dropped as known. (The CoE-conserved `log_mu` is one when
+#' its full-information recompute failed; the caller warns.) A fixed one with
+#' a variance, such as a shape a g3 constraint derives, stays in. An NA
+#' variance on a parameter that is NOT fixed was masked by `.hzr_safe_solve()`
+#' as non-positive: it withholds the standard error if the prediction uses
+#' it (#586). Returns `NULL` (with a warning) when CLs cannot be computed.
+#' Shared by the aggregate and decomposed se.fit paths.
 #'
 #' @param vcov_mat The fitted vcov (or NULL / wrong shape).
 #' @param p Length of the parameter vector.
-#' @param unused Indices of parameters the prediction does not depend on
-#'   (an all-zero Jacobian column). One whose variance cannot be represented
-#'   is dropped, which is exact, instead of withholding the standard error.
+#' @param unused Indices of parameters the prediction does not depend on, by
+#'   the prediction's form (`.hzr_weibull_used()`, `.hzr_multiphase_used()`),
+#'   never read off numeric zeros in the Jacobian. They are dropped exactly,
+#'   whatever their variance.
+#' @param fixed Logical, `TRUE` for a parameter held fixed in the fit, or
+#'   `NULL` when nothing is fixed (every single-distribution fit).
+#' @param param_names Names for the warning, or `NULL`.
 #' @return `list(vcov_use, free_idx)`, or `NULL` if unusable.
 #' @keywords internal
-.hzr_free_vcov <- function(vcov_mat, p, unused = integer(0)) {
+.hzr_free_vcov <- function(vcov_mat, p, unused = integer(0), fixed = NULL,
+                           param_names = NULL) {
   if (!.hzr_vcov_shape_ok(vcov_mat, p)) {
     warning("Variance-covariance matrix is unavailable; ",
             "standard errors and CLs will be NA.", call. = FALSE)
     return(NULL)
   }
+  is_fixed <- if (length(fixed) == p) as.logical(fixed) %in% TRUE else
+    rep(FALSE, p)
+  # The sandwich runs over these: neither unused by the prediction nor fixed
+  # without a variance. A shape a g3 constraint derives from the others is
+  # fixed in fixed_mask but carries its delta-method variance and
+  # covariances (#325), and the Jacobian treats it as its own column, so it
+  # stays in; dropping it lost the constraint's chain-rule term.
+  d_all <- diag(vcov_mat)
+  known <- which(is_fixed & is.na(d_all) & !is.nan(d_all))
+  free_idx <- setdiff(seq_len(p), union(unused, known))
   # A fixed or masked parameter carries an NA variance and is dropped from the
   # sandwich below. A variance that overflowed or underflowed is not that. A
   # Weibull mu's variance carries mu^2: it is Inf for mu near exp(600), and
@@ -436,44 +453,95 @@ NULL
   # ordinary numbers. Dropping such a parameter computed the standard error
   # as if it were known exactly, and keeping a variance of 0 loses the
   # sandwich's positive term; both gave finite, wrong standard errors (#566).
-  d <- diag(vcov_mat)
-  unrep <- which(.hzr_variance_unrepresentable(d))
+  d <- diag(vcov_mat)[free_idx]
+  # An NA here is not a fixed parameter: .hzr_safe_solve() masks a
+  # non-positive variance with NA, the same mark. Dropping it computed the
+  # standard error as if the parameter were known exactly (#586).
+  masked <- free_idx[is.na(d) & !is.nan(d)]
+  if (length(masked)) {
+    nms <- if (length(param_names) == p) param_names[masked] else
+      paste0("par", masked)
+    warning("Variance-covariance matrix has no variance for an estimated ",
+            "parameter (", paste(nms, collapse = ", "), "): it was masked ",
+            "as non-positive when the Hessian was inverted; standard errors ",
+            "and CLs will be NA.", call. = FALSE)
+    return(NULL)
+  }
   # A negative variance is a different fault: the covariance is not positive
   # definite (possible after the Weibull back-transform when the internal one
   # is indefinite). Name it; main returned an SE of 0 there.
-  negative <- which(!is.na(d) & d < 0)
-  if (length(setdiff(negative, unused))) {
+  if (any(!is.na(d) & d < 0)) {
     warning("Variance-covariance matrix has a negative variance, so it is not ",
             "positive definite; standard errors and CLs will be NA.",
             call. = FALSE)
     return(NULL)
   }
-  if (length(setdiff(unrep, unused))) {
+  # A variance that overflowed or underflowed is not that either. A Weibull
+  # mu's variance carries mu^2: it is Inf for mu near exp(600), and subnormal
+  # or 0 for mu near exp(-400), while its covariances are still ordinary
+  # numbers (#566).
+  if (any(.hzr_variance_unrepresentable(d))) {
     warning("Variance-covariance matrix has a variance that cannot be ",
             "represented (it overflowed or underflowed, as for a parameter ",
             "far outside the usual range); standard errors and CLs will be ",
             "NA. Centre or rescale the covariates and refit.", call. = FALSE)
     return(NULL)
   }
-  # Any left are unused by this prediction, so they drop out exactly.
-  free_idx <- setdiff(which(is.finite(d)), unrep)
-  if (length(free_idx) < p) {
-    free_submat <- vcov_mat[free_idx, free_idx, drop = FALSE]
-    if (anyNA(free_submat)) {
-      warning("Variance-covariance matrix has NA entries outside the ",
-              "fixed-parameter rows/cols; standard errors and CLs will be NA.",
+  vcov_use <- vcov_mat[free_idx, free_idx, drop = FALSE]
+  # Unused and fixed parameters are already out, so an infinite or NA
+  # covariance here is one the prediction reads (#587 item 1).
+  if (!all(is.finite(vcov_use))) {
+    warning("Variance-covariance matrix has a covariance that is not finite ",
+            "among the parameters this prediction uses; standard errors and ",
+            "CLs will be NA.", call. = FALSE)
+    return(NULL)
+  }
+  # A positive diagonal does not make a covariance: an indefinite one gave a
+  # negative quadratic form, clamped to an SE of 0, or a positive one that is
+  # no variance (#586). Screened on the correlation scale, so the tolerance
+  # does not depend on the parameters' units.
+  if (length(free_idx) > 0L) {
+    s <- sqrt(diag(vcov_use))
+    e <- eigen(vcov_use / outer(s, s), symmetric = TRUE,
+               only.values = TRUE)$values
+    if (min(e) < -length(e) * .Machine$double.eps * max(abs(e))) {
+      warning("Variance-covariance matrix is not positive definite over the ",
+              "parameters this prediction uses (the fit's Hessian was not at ",
+              "a proper maximum); standard errors and CLs will be NA.",
               call. = FALSE)
       return(NULL)
     }
-    return(list(vcov_use = free_submat, free_idx = free_idx))
   }
-  if (anyNA(vcov_mat)) {
-    warning("Variance-covariance matrix has NA entries; ",
-            "standard errors and CLs will be NA.", call. = FALSE)
-    return(NULL)
-  }
-  list(vcov_use = vcov_mat, free_idx = free_idx)
+  list(vcov_use = vcov_use, free_idx = free_idx)
 }
+
+#' Warn when a failed CoE recompute leaves a phase's variance out (#586)
+#'
+#' The conserved `log_mu` is then held fixed in `fixed_mask` and dropped from
+#' the sandwich, and the object does not record which position it is.
+#' @noRd
+.hzr_warn_conserved_variance <- function(object) {
+  if ("conserved_phase_variance" %in% object$degraded) {
+    warning("Conservation of Events could not recompute the conserved ",
+            "phase's variance for this fit, so these standard errors leave ",
+            "it out and may be understated.", call. = FALSE)
+  }
+  invisible(NULL)
+}
+
+# When the failed recompute leaves a prediction reading no estimated
+# parameter at all -- the conserved phase alone -- its SE is unknown, and the
+# empty sandwich would report it as exactly 0 (#586). Only a decomposed
+# component can: CoE applies with two or more phases, no phase's log_mu can
+# be fixed, so a total always reads a free one.
+.hzr_conserved_nothing_left <- function(object, free_idx) {
+  "conserved_phase_variance" %in% object$degraded && length(free_idx) == 0L
+}
+.hzr_conserved_nothing_left_msg <- paste0(
+  "This prediction reads no estimated parameter whose variance is known: ",
+  "the conserved phase's variance could not be recomputed. Standard errors ",
+  "and CLs will be NA."
+)
 
 # ---------------------------------------------------------------------------
 # Public entry point
@@ -574,7 +642,9 @@ NULL
     } else {
       rep(TRUE, p)
     }
-    fv <- .hzr_free_vcov(object$fit$vcov, p, unused = which(!used))
+    fv <- .hzr_free_vcov(object$fit$vcov, p, unused = which(!used),
+                         fixed = object$fit$fixed_mask,
+                         param_names = names(theta))
   } else {
     fv <- .hzr_free_vcov(object$fit$vcov, p)
   }
@@ -585,6 +655,7 @@ NULL
     return(data.frame(fit = fit, se.fit = na_vec,
                       lower = na_vec, upper = na_vec))
   }
+  .hzr_warn_conserved_variance(object)
   vcov_use <- fv$vcov_use
   free_idx <- fv$free_idx
 
@@ -685,10 +756,15 @@ NULL
   cl_list <- lapply(components, function(cmp) {
     J <- J_by_comp[[cmp]]
     fv <- tryCatch(.hzr_free_vcov(vcov_mat, p,
-                                  unused = which(!used_by_comp[[cmp]])),
+                                  unused = which(!used_by_comp[[cmp]]),
+                                  fixed = object$fit$fixed_mask,
+                                  param_names = names(theta)),
                    warning = function(w) conditionMessage(w))
     if (!is.list(fv)) {
       return(list(cl = na_cl_of(cmp), msg = fv))
+    }
+    if (.hzr_conserved_nothing_left(object, fv$free_idx)) {
+      return(list(cl = na_cl_of(cmp), msg = .hzr_conserved_nothing_left_msg))
     }
     se <- .hzr_predict_se_from_jacobian(J[, fv$free_idx, drop = FALSE],
                                         fv$vcov_use)
@@ -697,6 +773,7 @@ NULL
   })
   msgs <- unique(unlist(lapply(cl_list, `[[`, "msg")))
   for (m in msgs) warning(m, call. = FALSE)
+  .hzr_warn_conserved_variance(object)
   cl_list <- lapply(cl_list, `[[`, "cl")
   names(cl_list) <- components
   make_long(cl_list)
