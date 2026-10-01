@@ -522,7 +522,22 @@ the test not met, under Conservation of Events or without it. A warning is raise
 iteration limit (raise \code{control$maxit}), and code 5, where the
 log-likelihood kept rising along some direction and the model may have no
 maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without
-one. The test is relative to the size of the log-likelihood, so a fit that
+one, except for the single-distribution fits: there a converged fit with
+a relative gradient above 1e-3 that did not stop on code 4 or 5 (so code
+2 or 3, or no code, which is recorded only when the continuation's point
+was kept: none is when it found no better point, \code{\link[stats:nlm]{stats::nlm()}} raised
+an error, or its minimum was not finite) warns,
+with class \code{"hzr_possible_false_maximum"}, that the fit may not be a
+maximum, and suggests other starting values or centring or rescaling the
+covariates. Badly scaled covariates can put a good fit above 1e-3, where
+a restart does not help and rescaling does. \code{\link[=hzr_bootstrap]{hzr_bootstrap()}} counts
+the replicates in which any fit (the base refit, a stepwise refit or the
+final fit) meets the same rule, and warns once. Such a stop can be a false
+maximum far below the best one from an ordinary start, and the gradient
+test alone cannot always tell it from a good fit, so \code{converged} is left
+as it is. The warning is not a guarantee: a fit can stop short of its
+maximum with a relative gradient below 1e-3 and raise nothing.
+The test is relative to the size of the log-likelihood, so a fit that
 meets it is within SAS's tolerance of the maximum, not exactly at it.
 
 The optimizer treats a score it cannot use as zero, so it can stop on
