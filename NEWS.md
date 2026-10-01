@@ -2,9 +2,9 @@
 
 ## Bug fixes
 
-* **`predict(se.fit = TRUE)` could return standard errors that were too
-  small, or exactly 0, with no warning, when the fit's covariance was
-  incomplete or not positive definite (#586).**
+* **`predict(se.fit = TRUE)` could return wrong standard errors, including
+  exactly 0, with no warning, when the fit's covariance was incomplete or not
+  positive definite (#586).**
     - When inverting the Hessian finds a variance that is not positive, the
       fit stores it as `NA`, the same mark a fixed parameter carries.
       `predict()` dropped such a parameter as if it were known. On a Weibull
