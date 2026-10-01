@@ -101,7 +101,12 @@ test_that("hazard() warns only on the polish's hard failures, and records every 
     expect_warning(f3 <- fit_with(3L), class = "hzr_possible_false_maximum"),
     message = "relative-gradient test"
   )
+  # The line is 1e-3: pinned from both sides, just above and below it.
+  expect_warning(fit_with(3L, rel = 1.1e-3),
+                 class = "hzr_possible_false_maximum")
   # ...not below 1e-3, nor when the optimizer did not report convergence.
+  expect_no_warning(fit_with(3L, rel = 9e-4),
+                    class = "hzr_possible_false_maximum")
   expect_no_warning(fit_with(3L, rel = 5e-4),
                     class = "hzr_possible_false_maximum")
   expect_no_warning(fit_with(3L, conv = 1L),

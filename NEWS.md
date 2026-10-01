@@ -18,7 +18,8 @@
   intercept-only Weibull on times near 1e-170, started at a shape of 1.5,
   stops there against 1.72 with a relative gradient of about 5e-4 and raises
   nothing. The absence of the warning is not a guarantee. Multiphase fits
-  are not flagged.
+  are not flagged, and `hzr_bootstrap()` replicates, whose warnings are
+  suppressed, are not either.
 
 * **`predict(se.fit = TRUE)` could return wrong standard errors, including
   exactly 0, with no warning, when the fit's covariance was incomplete or not
