@@ -26,6 +26,16 @@ ub_data <- function(n = 200, seed = 1) {
   data.frame(t = rweibull(n, 1.4, 5), s = rbinom(n, 1, 0.8))
 }
 
+# The fit's unbounded_phase records, selected BY MECHANISM. $boundary can hold
+# records of several mechanisms in no guaranteed order (#261): with the
+# conserved phase's share measured from log(1 - G) (#578), a fit here can also
+# carry coe_phase_vanished (#565), and it comes first. An NA (never examined)
+# yields an empty list, so the tri-state assertions stay separate.
+ub_records <- function(b) {
+  Filter(function(r) identical(r$mechanism, "unbounded_phase"),
+         if (is.list(b)) b else list())
+}
+
 ub_fit <- function(d, phases, ...) {
   suppressWarnings(hazard(time = d$t, status = d$s, dist = "multiphase",
                           phases = phases, fit = TRUE,
@@ -54,8 +64,8 @@ test_that("a hazard phase fitted below the observed support is recorded and warn
                            "condition"))
 
   f <- ub_fit(d, ph, theta = c(log(0.1), log(min(d$t) / 1000), 1, 0, log(0.05)))
-  b <- f$fit$boundary
-  expect_true(is.list(b))
+  expect_true(is.list(f$fit$boundary))
+  b <- ub_records(f$fit$boundary)
   expect_length(b, 1L)
   expect_equal(b[[1L]]$mechanism, "unbounded_phase")
   expect_equal(b[[1L]]$phase, "early")
@@ -96,14 +106,17 @@ test_that("a hazard phase fitted below the observed support is recorded and warn
   expect_gt(t_min / t_half, 1)          # the ratio is stated the right way up
 })
 
-test_that("a fit that was examined and found nothing reads NULL, not NA", {
+test_that("a fit that was examined and found nothing has no record, not NA", {
   # THE DISTINCTION THE TRI-STATE EXISTS FOR. A two-state field cannot tell
   # "looked and found nothing" from "never looked", and NULL is the common
   # case, so the confusion would be invisible.
+  # "Nothing" is nothing UNBOUNDED. This fit's conserved phase (late) ends
+  # switched off -- share measured at 1.16e-9 against a tol of 1e-8 -- so
+  # $boundary can hold a coe_phase_vanished record (#565) and be a list.
   d <- ub_data()
   f <- ub_fit(d, list(early = hzr_phase("hazard", t_half = 3, nu = 1, m = 0),
                       late  = hzr_phase("constant")))
-  expect_null(f$fit$boundary)
+  expect_length(ub_records(f$fit$boundary), 0L)
   expect_false("boundary_check" %in% f$degraded)
   expect_false(.hzr_is_na_scalar(f$fit$boundary))
 })
@@ -144,7 +157,7 @@ test_that("the check keys on the FITTED t_half, not the starting value", {
                       late  = hzr_phase("constant")))
   th <- exp(unname(f$fit$theta[["early.log_t_half"]]))
   expect_gt(th, min(d$t))          # converged inside the data
-  expect_null(f$fit$boundary)      # so nothing is recorded
+  expect_length(ub_records(f$fit$boundary), 0L)  # so nothing is recorded
   expect_false("boundary_check" %in% f$degraded)
 })
 
@@ -269,8 +282,11 @@ test_that("a weight-0 row does not supply the first observed time", {
   # The premise: the ghost row sits below the fitted t_half.
   expect_lt(1e-12, exp(unname(padded$fit$theta[["early.log_t_half"]])))
   expect_true(is.list(padded$fit$boundary))
-  expect_identical(padded$fit$boundary[[1L]]$detail,
-                   base$fit$boundary[[1L]]$detail)
+  ub_padded <- ub_records(padded$fit$boundary)
+  ub_base <- ub_records(base$fit$boundary)
+  expect_length(ub_padded, 1L)
+  expect_length(ub_base, 1L)
+  expect_identical(ub_padded[[1L]]$detail, ub_base[[1L]]$detail)
 })
 
 test_that("a row the designs drop for an NA covariate is not an observed time", {
@@ -291,7 +307,9 @@ test_that("a row the designs drop for an NA covariate is not an observed time", 
   t_half <- exp(unname(fit$fit$theta[["early.log_t_half"]]))
   expect_lt(1e-12, t_half)  # the premise: the dropped row is below t_half
   expect_true(is.list(fit$fit$boundary))
-  expect_match(fit$fit$boundary[[1L]]$detail,
+  ub <- ub_records(fit$fit$boundary)
+  expect_length(ub, 1L)
+  expect_match(ub[[1L]]$detail,
                paste0("below the first observed time (",
                       format(min(d$t), digits = 4), ")"), fixed = TRUE)
 })
@@ -313,7 +331,9 @@ test_that("a bound the likelihood never reads is not an observed time", {
   t_half <- exp(unname(fit$fit$theta[["early.log_t_half"]]))
   expect_lt(1e-12, t_half)  # the premise: the unused bound is below t_half
   expect_true(is.list(fit$fit$boundary))
-  expect_match(fit$fit$boundary[[1L]]$detail,
+  ub <- ub_records(fit$fit$boundary)
+  expect_length(ub, 1L)
+  expect_match(ub[[1L]]$detail,
                paste0("below the first observed time (",
                       format(min(d$t), digits = 4), ")"), fixed = TRUE)
 })
@@ -335,7 +355,9 @@ test_that("a `time` an explicit bound replaces is not an observed time", {
   t_half <- exp(unname(fit$fit$theta[["early.log_t_half"]]))
   expect_lt(1e-12, t_half)
   expect_true(is.list(fit$fit$boundary))
-  expect_match(fit$fit$boundary[[1L]]$detail,
+  ub <- ub_records(fit$fit$boundary)
+  expect_length(ub, 1L)
+  expect_match(ub[[1L]]$detail,
                paste0("below the first observed time (",
                       format(min(d$t), digits = 4), ")"), fixed = TRUE)
 })
