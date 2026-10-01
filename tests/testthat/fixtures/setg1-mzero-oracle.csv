@@ -13,6 +13,7 @@
 "mzero_nupos_fixnu","MUE=1 THALF=0.5 M=0 NU=2 FIXNU",2,"No",1,"Yes","runs","",-351.654,1.282237,2,0.01707375,2.15546,"runs","","no_result","DG1RHO960",NA
 "mzero_nuneg_fixnu","MUE=1 THALF=0.5 M=0 NU=-1 FIXNU",-1,"No",1,"Yes","runs","",-361.572,1.350625,-1,1.984433,2.153539,"runs","","no_result","DTRSFM1120",NA
 "mzero_both_fixed","MUE=1 THALF=0.5 M=0 NU=2 FIXM FIXNU",2,"No",0,"No","runs","",-351.701,1.231213,2,0,2.133854,"runs","","runs","",-654.953
+"mzero_nuzero_free","MUE=1 THALF=0.5 M=0 NU=0",1,"Yes",1,"Yes","no_result","DG1RHO960",NA,NA,NA,NA,NA,"runs","","no_result","DTRSFM1120",NA
 "issue_nupos","MUE=0.2 THALF=1 M=0 NU=1",1,"Yes",0,"No","no_result","DG1RHO960",NA,NA,NA,NA,NA,"no_result","DTRSFM1120","runs","",-426.108
 "issue_nuzero_fixm","MUE=0.2 THALF=1 M=0 NU=0 FIXM",1,"Yes",0,"No","no_result","DG1RHO960",NA,NA,NA,NA,NA,"no_result","DTRSFM1120","runs","",-426.108
 "issue_nupos_fixm","MUE=0.2 THALF=1 M=0 NU=1 FIXM",1,"Yes",0,"No","no_result","DG1RHO960",NA,NA,NA,NA,NA,"no_result","DTRSFM1120","runs","",-426.108

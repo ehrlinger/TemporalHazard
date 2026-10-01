@@ -74,6 +74,9 @@ grid <- c(
   mzero_nupos_fixnu = "MUE=1 THALF=0.5 M=0 NU=2 FIXNU",
   mzero_nuneg_fixnu = "MUE=1 THALF=0.5 M=0 NU=-1 FIXNU",
   mzero_both_fixed  = "MUE=1 THALF=0.5 M=0 NU=2 FIXM FIXNU",
+  # M = 0 and NU = 0, which the rows above must not reach: both free moves
+  # both to 1 (:686-691).
+  mzero_nuzero_free = "MUE=1 THALF=0.5 M=0 NU=0",
   # #471's own three spellings, at #471's starting values.
   issue_nupos       = "MUE=0.2 THALF=1 M=0 NU=1",
   issue_nuzero_fixm = "MUE=0.2 THALF=1 M=0 NU=0 FIXM",
