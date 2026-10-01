@@ -270,11 +270,11 @@ NULL
 #' that needed a point where the log-likelihood is not usable, say nothing
 #' against them. Which route it took is recorded in
 #' `fit$fit$rel_gradient_reason`, `NA_character_` when the test did run, and
-#' `print()` and `summary()` show it. Under Conservation of Events
-#' the analytic score omits how the conserved scale moves, so the test is
-#' computed from finite differences of the log-likelihood with that scale
-#' re-solved, as SAS/C does; the continuation still uses the analytic score,
-#' so a CoE fit can honestly end with the test not met. A warning is raised only for code 4, the
+#' `print()` and `summary()` show it. Under Conservation of Events the
+#' conserved scale is re-solved from the other parameters at every step, as
+#' SAS/C does, and the score used by the optimizer, the continuation and the
+#' test includes how that scale moves with them. A fit can still end with
+#' the test not met, under Conservation of Events or without it. A warning is raised only for code 4, the
 #' iteration limit (raise `control$maxit`), and code 5, where the
 #' log-likelihood kept rising along some direction and the model may have no
 #' maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without
@@ -302,7 +302,14 @@ NULL
 #'     \exp(\eta)}, with hazard \eqn{h \propto t^{\nu - 1}}.  The single shape
 #'     \eqn{\nu} makes risk increase over time (\eqn{\nu > 1}), decrease
 #'     (\eqn{\nu < 1}), or stay flat (\eqn{\nu = 1}).  Use it as the default when
-#'     a single monotone trend describes the hazard.}
+#'     a single monotone trend describes the hazard.  The scale \eqn{\mu} is
+#'     the baseline at \eqn{\mathbf{x} = 0}, so a covariate far from zero
+#'     (a calendar year, an age in days) can push it beyond what a number
+#'     can hold: it is then reported as `Inf`, as 0, or as a value too small
+#'     to keep its digits, with a warning of class
+#'     `"hzr_unrepresentable_scale"`, and [predict()] refuses the fit.
+#'     Centering or rescaling the covariate fixes it without changing the
+#'     model.}
 #'   \item{`"exponential"`: constant hazard}{The memoryless special case
 #'     \eqn{\nu = 1}: a time-invariant baseline rate, \eqn{H(t \mid \mathbf{x}) =
 #'     \mu t \exp(\eta)}.  Use it when the event rate does not change with
@@ -850,11 +857,18 @@ NULL
 #'   where no events remain for that phase. Both records also carry
 #'   \code{gain} and the higher point as \code{certificate_theta} with its
 #'   \code{certificate_loglik} (the corner record adds \code{gamma_hat}); the
-#'   estimates are not changed. A fit can carry several records, in no
+#'   estimates are not changed. \code{"coe_phase_vanished"} is a fit under
+#'   Conservation of Events that has itself run to that boundary, or beside
+#'   it: the conserved phase's largest share of the cumulative hazard is
+#'   below \code{control$phase_share_tol}. Its record carries \code{share}
+#'   and \code{tol}, and \code{warned_by = "phase_share"}: the
+#'   identifiability warning has already reported the phase, so this record
+#'   raises no warning of its own. A fit can carry several records, in no
 #'   guaranteed order, so select them by \code{mechanism}. Only rows the
 #'   likelihood reads
-#'   count as observed times. A fit with any record raises one warning whose
-#'   classes are \code{"hzr_"} plus each mechanism present, all inheriting
+#'   count as observed times. A fit with any record that has no
+#'   \code{warned_by} raises one warning whose classes are \code{"hzr_"}
+#'   plus each such record's mechanism, all inheriting
 #'   \code{"hzr_boundary"}, so one handler catches the whole family.
 #' @export
 hazard <- function(formula = NULL,
@@ -1656,6 +1670,45 @@ hazard <- function(formula = NULL,
     fit_state$par   <- optim_result$par
     fit_state$objective <- optim_result$value
     fit_state$converged <- (optim_result$convergence == 0)
+    # A Weibull fit is optimized on (nu * log(mu), log(nu)) and reports mu by
+    # exp(). With a covariate far from zero that logarithm can leave the range
+    # a double holds at a sound maximum, and mu comes back as Inf, 0 or a
+    # subnormal number that has lost most of its digits (#566).
+    # The fit is not wrong for it, so `converged` is left alone; but mu, its
+    # standard error and every prediction need a scale this object does not
+    # carry, and predict() refuses it (.hzr_check_theta()).
+    if (identical(dist, "weibull") && length(optim_result$par) >= 1L &&
+          (.hzr_unrepresentable(optim_result$par[[1L]]) ||
+             optim_result$par[[1L]] == 0)) {
+      warning(structure(
+        class = c("hzr_unrepresentable_scale", "warning", "condition"),
+        list(message = paste0(
+          "The Weibull scale mu is reported as ",
+          format(optim_result$par[[1L]]), ", which cannot be represented: ",
+          "its logarithm is outside the range a double holds at full ",
+          "precision, usually because a covariate is far from zero. mu, its ",
+          "standard error and predictions from this fit cannot be used. ",
+          "Centre or rescale the covariates and refit."
+        ), call = NULL)
+      ))
+    } else if (identical(dist, "weibull") && is.matrix(optim_result$vcov) &&
+                 .hzr_variance_unrepresentable(optim_result$vcov[1L, 1L])) {
+      # mu itself is fine, but its variance carries mu^2 and is not: Inf for
+      # mu beyond about 1e154, subnormal or 0 below about 1e-154. The standard
+      # error shown for mu was then Inf, exactly 0, or short of the truth,
+      # with nothing said.
+      warning(structure(
+        class = c("hzr_unrepresentable_scale", "warning", "condition"),
+        list(message = paste0(
+          "The variance of the Weibull scale mu cannot be represented (mu = ",
+          format(optim_result$par[[1L]]), "), usually because a covariate ",
+          "is far from zero. The standard error reported for mu cannot be ",
+          "used, and predict() will return NA standard errors for any ",
+          "prediction that depends on mu. Centre or ",
+          "rescale the covariates and refit."
+        ), call = NULL)
+      ))
+    }
     fit_state$se <- .hzr_safe_se_from_vcov(optim_result$vcov)
     fit_state$vcov <- optim_result$vcov
     fit_state$rcond <- optim_result$rcond
@@ -1680,7 +1733,8 @@ hazard <- function(formula = NULL,
     fit_state$rel_gradient_reason <- optim_result$rel_gradient_reason
     fit_state$polish_code  <- optim_result$polish_code
     # Codes 4 and 5 imply a failed test when nlm() and the statistic use the
-    # same gradient; under CoE they need not, so the statistic is checked too.
+    # same gradient. They do on every path now (#565); the statistic is still
+    # checked, which costs nothing.
     if (isTRUE(fit_state$converged) &&
         isTRUE(fit_state$polish_code %in% c(4L, 5L)) &&
         !isTRUE(fit_state$rel_gradient <= .Machine$double.eps^(1 / 3))) {
@@ -1805,6 +1859,12 @@ hazard <- function(formula = NULL,
       fit_state$boundary <- c(optim_held, fit_state$boundary)
       boundary_records <- fit_state$boundary
     }
+  }
+  # A record another warning has already announced is kept on $boundary and
+  # not announced again (`warned_by`, #565).
+  if (is.list(boundary_records)) {
+    boundary_records <- Filter(function(r) is.null(r$warned_by),
+                               boundary_records)
   }
   if (is.list(boundary_records) && length(boundary_records)) {
     warning(.hzr_boundary_condition(boundary_records))
@@ -2323,6 +2383,12 @@ predict.hazard <- function(object, newdata = NULL,
     .hzr_check_theta(theta, object$spec$dist,
                      n_coef = if (is.null(x_stored)) 0L else ncol(x_stored),
                      windowed = !is.null(time_windows))
+  } else if (!identical(object$spec$dist, "multiphase")) {
+    # No stored design, so no length to check against (see above), but a
+    # Weibull scale or shape the model cannot use is refused all the same:
+    # an intercept-only fit stores no design, and its theta went unchecked
+    # (#566).
+    .hzr_check_theta(theta, object$spec$dist)
   }
 
   # The other families predict from an unfitted object perfectly well, and
@@ -2718,7 +2784,9 @@ predict.hazard <- function(object, newdata = NULL,
         if (th[1] <= 0 || th[2] <= 0) return(rep(NA_real_, length(time)))
         beta_cand <- if (length(th) > 2) th[3:length(th)] else numeric(0)
         eta_cand <- if (has_cov) as.numeric(x %*% beta_cand) else rep(0, length(time))
-        unname((th[1] * time) ^ th[2] * exp(eta_cand))
+        # On the log scale: (mu * t)^nu overflows to Inf once mu * t does,
+        # where the cumulative hazard itself is finite (#566).
+        unname(exp(th[2] * (log(th[1]) + log(time)) + eta_cand))
       }
     } else if (dist_lbl == "exponential") {
       function(th) {

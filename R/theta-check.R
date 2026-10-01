@@ -25,6 +25,16 @@
 #' defined only for positive `mu` and `nu`, since the likelihood takes their
 #' logarithms, so a non-positive value is refused and named.
 #'
+#' **Representability (#566):** a fitted `mu` can be `Inf`, or a subnormal
+#' number. The model depends on it only through `nu * log(mu)`, and with a
+#' covariate far from zero that logarithm leaves the range a double holds at
+#' a sound maximum. `Inf` passed the positivity rule, and `predict()` then
+#' returned survival 0 and cumulative hazard `Inf` as if they were results; a
+#' subnormal `mu` has lost most of its digits, and gave a cumulative hazard of
+#' 0.4888 where the truth was 0.5243. A `mu` or `nu` that is not finite, or
+#' is positive but below the smallest normal double, is refused and named,
+#' ahead of positivity.
+#'
 #' @param theta The supplied parameter vector, natural scale.
 #' @param dist The distribution.
 #' @param n_coef Design columns, after any time-window expansion; `NULL`
@@ -51,6 +61,19 @@
   if (!identical(dist, "weibull") || length(theta) < 2L) {
     return(invisible(NULL))
   }
+  unrep <- c(if (.hzr_unrepresentable(theta[[1L]])) {
+               paste0("scale mu = ", format(theta[[1L]]))
+             },
+             if (.hzr_unrepresentable(theta[[2L]])) {
+               paste0("shape nu = ", format(theta[[2L]]))
+             })
+  if (length(unrep)) {
+    stop("'theta' gives Weibull ", paste(unrep, collapse = " and "),
+         ", which cannot be represented: the value is outside the range a ",
+         "double holds at full precision. Where it came from a fit, a ",
+         "covariate far from zero is the usual cause; centre or rescale the ",
+         "covariates and refit.", call. = FALSE)
+  }
   parts <- c(if (theta[[1L]] <= 0) {
                paste0("scale mu = ", format(theta[[1L]], digits = 4))
              },
@@ -66,4 +89,15 @@
            "its logarithm", ".", call. = FALSE)
   }
   invisible(NULL)
+}
+
+#' Whether a positive parameter's value is outside what a double holds
+#'
+#' `TRUE` for a non-finite value, and for a positive one below
+#' `.Machine$double.xmin`: subnormal numbers carry fewer than 53 bits, so
+#' `log()` of one is not the logarithm the fit found (#566). Zero and
+#' negative values are `FALSE` here; the positivity rule names those.
+#' @noRd
+.hzr_unrepresentable <- function(value) {
+  !is.finite(value) || (value > 0 && value < .Machine$double.xmin)
 }

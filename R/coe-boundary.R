@@ -115,3 +115,47 @@
     )
   )
 }
+
+#' Record a conserved phase that has left the model
+#'
+#' With the gradient of the CoE objective (#565) a fit can run towards the
+#' boundary the certificate above points at, where before it stopped well
+#' short: the conserved phase's scale heads for zero and the phase
+#' contributes nothing the data can see. It need not arrive. The objective
+#' is discontinuous there, and the fit can stop beside the boundary with the
+#' gradient test not met. The identifiability check already warns about such a
+#' phase, whichever phase it is. This records that it is the CONSERVED one,
+#' under a mechanism of its own, `coe_phase_vanished`: the certificate's
+#' record, `coe_no_events_left`, carries a higher point and this one does
+#' not, and one mechanism has one record shape. It raises no warning of its
+#' own: `warned_by` names the warning that has already said so.
+#'
+#' @param phase_share The frame from `.hzr_check_phase_identifiability()`.
+#' @param fixmu_phase The conserved phase.
+#' @param tol The threshold that check used.
+#' @return A boundary record, or `NULL`.
+#' @keywords internal
+#' @noRd
+.hzr_coe_vanished_record <- function(phase_share, fixmu_phase, tol) {
+  share <- phase_share$share[match(fixmu_phase, phase_share$phase)]
+  if (length(share) != 1L || !is.finite(share) || !(share < tol)) {
+    return(NULL)
+  }
+  list(
+    mechanism = "coe_phase_vanished",
+    phase = fixmu_phase,
+    parameter = "log_mu",
+    share = share,
+    tol = tol,
+    warned_by = "phase_share",
+    detail = paste0(
+      "Conservation of Events solved phase '", fixmu_phase, "''s log_mu to ",
+      "absorb the events the other phases leave, and they leave almost ",
+      "none: that phase contributes at most ", signif(share, 3), " of the ",
+      "cumulative hazard at any observed time. The estimates are at or ",
+      "beside the boundary where the conserved phase is switched off, and ",
+      "need not be the maximum there. Consider the model without phase '",
+      fixmu_phase, "', or conserve = FALSE."
+    )
+  )
+}

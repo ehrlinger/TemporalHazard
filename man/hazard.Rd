@@ -286,11 +286,18 @@ log-likelihood is higher with the conserved phase's scale sent to zero,
 where no events remain for that phase. Both records also carry
 \code{gain} and the higher point as \code{certificate_theta} with its
 \code{certificate_loglik} (the corner record adds \code{gamma_hat}); the
-estimates are not changed. A fit can carry several records, in no
+estimates are not changed. \code{"coe_phase_vanished"} is a fit under
+Conservation of Events that has itself run to that boundary, or beside
+it: the conserved phase's largest share of the cumulative hazard is
+below \code{control$phase_share_tol}. Its record carries \code{share}
+and \code{tol}, and \code{warned_by = "phase_share"}: the
+identifiability warning has already reported the phase, so this record
+raises no warning of its own. A fit can carry several records, in no
 guaranteed order, so select them by \code{mechanism}. Only rows the
 likelihood reads
-count as observed times. A fit with any record raises one warning whose
-classes are \code{"hzr_"} plus each mechanism present, all inheriting
+count as observed times. A fit with any record that has no
+\code{warned_by} raises one warning whose classes are \code{"hzr_"}
+plus each such record's mechanism, all inheriting
 \code{"hzr_boundary"}, so one handler catches the whole family.
 }
 \description{
@@ -503,11 +510,11 @@ estimates are unreliable, while others, such as a finite-difference score
 that needed a point where the log-likelihood is not usable, say nothing
 against them. Which route it took is recorded in
 \code{fit$fit$rel_gradient_reason}, \code{NA_character_} when the test did run, and
-\code{print()} and \code{summary()} show it. Under Conservation of Events
-the analytic score omits how the conserved scale moves, so the test is
-computed from finite differences of the log-likelihood with that scale
-re-solved, as SAS/C does; the continuation still uses the analytic score,
-so a CoE fit can honestly end with the test not met. A warning is raised only for code 4, the
+\code{print()} and \code{summary()} show it. Under Conservation of Events the
+conserved scale is re-solved from the other parameters at every step, as
+SAS/C does, and the score used by the optimizer, the continuation and the
+test includes how that scale moves with them. A fit can still end with
+the test not met, under Conservation of Events or without it. A warning is raised only for code 4, the
 iteration limit (raise \code{control$maxit}), and code 5, where the
 log-likelihood kept rising along some direction and the model may have no
 maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without
@@ -537,7 +544,14 @@ workhorse parametric model: \eqn{H(t \mid \mathbf{x}) = (\mu t)^\nu
     \exp(\eta)}, with hazard \eqn{h \propto t^{\nu - 1}}.  The single shape
 \eqn{\nu} makes risk increase over time (\eqn{\nu > 1}), decrease
 (\eqn{\nu < 1}), or stay flat (\eqn{\nu = 1}).  Use it as the default when
-a single monotone trend describes the hazard.}
+a single monotone trend describes the hazard.  The scale \eqn{\mu} is
+the baseline at \eqn{\mathbf{x} = 0}, so a covariate far from zero
+(a calendar year, an age in days) can push it beyond what a number
+can hold: it is then reported as \code{Inf}, as 0, or as a value too small
+to keep its digits, with a warning of class
+\code{"hzr_unrepresentable_scale"}, and \code{\link[=predict]{predict()}} refuses the fit.
+Centering or rescaling the covariate fixes it without changing the
+model.}
 \item{\code{"exponential"}: constant hazard}{The memoryless special case
 \eqn{\nu = 1}: a time-invariant baseline rate, \eqn{H(t \mid \mathbf{x}) =
     \mu t \exp(\eta)}.  Use it when the event rate does not change with

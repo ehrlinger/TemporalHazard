@@ -114,8 +114,11 @@ test_that("newdata carrying the fit's design columns by name is accepted", {
                c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
   # Design-only newdata is unchanged by #272: values computed at 7edcee6,
   # before the rule changed. Optimizer results, so a loose tolerance.
+  # Re-measured for #565 (was c(0.1798473913724, 0.0561517857091)): the
+  # log-likelihood held at -215.76983954 and the estimates moved in the
+  # sixth digit.
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard"),
-               c(0.1798473913724, 0.0561517857091),
+               c(0.17984755866295, 0.05615164221977),
                tolerance = 1e-6, ignore_attr = TRUE)
   expect_equal(predict(fit, newdata = nd, type = "hazard"),
                c(0.18008683518445, 0.00599828867018),
@@ -197,8 +200,10 @@ test_that("a fit with neither the stored design nor its data predicts from desig
                "phase 'early' of this fit was saved without its design.*refit")
   nd <- data.frame(time = c(1, 1))
   nd$grpyoung <- c(0, 1)
+  # Re-measured for #565 (was c(0.04647389634149, 0.23995615103791)): the
+  # same fit as above, log-likelihood unchanged at -215.76983954.
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard"),
-               c(0.04647389634149, 0.23995615103791),
+               c(0.04647377856878, 0.23995637319111),
                tolerance = 1e-6, ignore_attr = TRUE)
 })
 
@@ -415,14 +420,18 @@ test_that("all columns present: predictions unchanged from main 8a26c0e", {
   expect_true(fit$fit$converged)
   nd <- data.frame(time = c(0.5, 2, 6), mal = c(0, 1, 1), age = c(30, 60, 120))
   # Optimizer results, so a tolerance well above the optimizer's noise.
+  # The cumulative hazard and hazard were re-measured for #565 (they were
+  # c(0.08822505274, 0.42642619050, 0.49399211094) and
+  # c(0.088515938428, 0.043098312832, 0.006837292565)): the log-likelihood
+  # held at -220.03818202 and the estimates moved in the sixth digit.
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard"),
-               c(0.08822505274, 0.42642619050, 0.49399211094),
+               c(0.08822459923464, 0.42642669474582, 0.49399273958405),
                tolerance = 1e-6, ignore_attr = TRUE)
   expect_equal(predict(fit, newdata = nd, type = "survival"),
                c(0.9155548054, 0.6528380494, 0.6101855969),
                tolerance = 1e-6, ignore_attr = TRUE)
   expect_equal(predict(fit, newdata = nd, type = "hazard"),
-               c(0.088515938428, 0.043098312832, 0.006837292565),
+               c(0.088515493156538, 0.043098375695453, 0.006837313347978),
                tolerance = 1e-6, ignore_attr = TRUE)
 })
 

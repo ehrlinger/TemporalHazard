@@ -2,6 +2,30 @@
 
 ## Bug fixes
 
+* **Multiphase fits under Conservation of Events could stop short of the
+  maximum and report `converged = TRUE` (#565). Multiphase estimates from
+  earlier versions, fitted with `conserve = TRUE` (the default), may be
+  wrong.** Under Conservation of Events one phase's scale is re-solved from
+  the other parameters at every step. The optimizer was given the score at
+  that solved scale without the term for how the scale moves with the other
+  parameters, so it followed a direction that was not the gradient of the
+  log-likelihood it was maximizing. On the `avc` data, a two-phase model
+  with six covariates stopped at a log-likelihood of -184.462 where SAS
+  reaches -182.659. The optimizer now receives the full gradient, and that
+  fit reaches -182.659 from the default start. Refit any multiphase model
+  fitted with Conservation of Events; `conserve = FALSE` fits are not
+  affected. On that fit the relative-gradient test recorded in
+  `fit$fit$rel_gradient` had failed (0.311 against a limit of about 6e-6),
+  with no warning.
+  A fit can now run towards the point where the conserved phase leaves
+  the model, where before it stopped well short, and it can still stop
+  beside that point with the gradient test not met. When the conserved
+  phase's share of the cumulative hazard falls below
+  `control$phase_share_tol`, the identifiability warning reports the phase
+  as it did, and the fit also carries a `"coe_phase_vanished"` record in
+  `fit$fit$boundary`, with that share. The record raises no second
+  warning.
+
 * **In a two-way `hzr_stepwise()` screen, a variable frozen by `max_move`
   is now frozen in the state it ends the iteration in (#580).** A variable
   that reached `max_move` by entering was frozen at once, but the
@@ -151,6 +175,47 @@
   the two objectives agree, and nothing changes. The new `summary()` fields
   come last, so no existing element moves. `logLik()` and `AIC()` have
   no method for a `hazard` fit and still stop.
+
+* **A Weibull fit whose scale cannot be represented now says so, and
+  `predict()` refuses it (#566).** The Weibull scale `mu` is the baseline at
+  `x = 0`, so with a covariate far from zero, such as a calendar year, it
+  can leave the range a number can hold at a sound fit. It was then reported
+  as `Inf`, as 0, or as a value so small that most of its digits were lost.
+  With `Inf`, `predict()` returned survival 0 and cumulative hazard `Inf`
+  with no warning, where the same model with the covariate centered gave
+  0.217, and `hzr_gof()` reported an expected count of `Inf`.
+    - `hazard()` now warns, with class `"hzr_unrepresentable_scale"`, and
+      says to centre or rescale the covariates. The fit still reports
+      `converged = TRUE`: it is sound, and only its scale cannot be reported.
+    - `predict()` stops with an error on such a fit, for every `type`, and so
+      do `hzr_gof()`, `hzr_deciles()` and `hzr_evaluate()`. This includes an
+      intercept-only fit, whose parameters `predict()` did not check before.
+    - `hzr_bootstrap()` warns with the number of replicates whose `mu`
+      cannot be represented; the summary of `mu` is not usable there.
+    - A finite `mu` whose product with a large time overflowed gave a
+      cumulative hazard of `Inf` from `predict()`. `predict()` now computes
+      it on the log scale.
+    - Where `mu` is finite but its variance overflows or underflows,
+      `predict(se.fit = TRUE)` returned a wrong standard error: 187 times too
+      large in one case measured, 75% too large in another. It now returns
+      `NA` standard errors and limits, with a warning. A prediction that does
+      not depend on `mu`, such as the linear predictor, keeps its standard
+      error. `hazard()` warns about such a fit too, with the same class,
+      because the standard error it reports for `mu` is `Inf`, 0 or too
+      small there.
+    - The same screen applies to any parameter's variance, and a negative
+      variance is now named as one: `predict(se.fit = TRUE)` had reported a
+      standard error of 0 for it. Under `decompose = TRUE` each phase is
+      screened on its own parameters, so a bad variance in one phase
+      withholds that phase's and the total's standard errors, not the
+      others'. Before, a phase with an infinite variance got a standard
+      error of 0, and the total the other phases' alone, with no warning.
+    - `hzr_evaluate()` stops when `mu` times an observed time, or `mu^nu` in
+      an exact event's hazard, is too small to be represented. It returned a
+      log-likelihood that was not the model's: 23084.15 where the fit's own
+      was 22972.56, and 0.0765 below the closed form, in the cases measured.
+      Only the times each row's status and weight make the likelihood read
+      are checked.
 
 * **Multiphase stepwise refits now start from the model they extend
   (#551). Multiphase selections, and `hzr_bootstrap()` select-mode
