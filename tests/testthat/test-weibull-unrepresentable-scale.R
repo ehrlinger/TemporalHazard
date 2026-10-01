@@ -518,6 +518,37 @@ test_that("a numerically zero Jacobian column does not exempt a parameter (#566,
   expect_identical(expect_no_warning(hz_of(inf_mal))$se.fit, base$se.fit)
 })
 
+test_that("a multiphase coefficient whose covariate is 0 in every row is dropped (#566)", {
+  set.seed(3)
+  n <- 120
+  df <- data.frame(time = stats::rexp(n, 0.3),
+                   status = stats::rbinom(n, 1, 0.7),
+                   x = stats::rnorm(n))
+  fit <- suppressWarnings(hazard(
+    survival::Surv(time, status) ~ 1, data = df, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 0.3, nu = 1, m = 1,
+                                    fixed = "shapes", formula = ~ x),
+                  constant = hzr_phase("constant")),
+    fit = TRUE, control = list(n_starts = 1)))
+  k <- grep("^early.*x$", names(fit$fit$theta))
+  expect_length(k, 1L)
+  ch <- function(o, x) {
+    predict(o, newdata = data.frame(time = c(0.5, 2), x = x),
+            type = "cumulative_hazard", se.fit = TRUE)$se.fit
+  }
+  base <- ch(fit, 0)
+  expect_true(all(is.finite(base) & base > 0))
+  bad <- fit
+  bad$fit$vcov[k, k] <- Inf
+  # x is 0 in every row, so the prediction does not depend on its
+  # coefficient: the Inf variance drops out exactly.
+  expect_equal(expect_no_warning(ch(bad, 0)), base, tolerance = 1e-12)
+  # Known positive: with x = 1 it does, and the SE is withheld.
+  expect_warning(se1 <- ch(bad, 1), "variance that cannot be represented",
+                 fixed = TRUE)
+  expect_true(all(is.na(se1)))
+})
+
 test_that("a negative variance of mu is not called an overflow at fit time (#566, Copilot on #573)", {
   expect_false(.hzr_variance_unrepresentable(-1))
   expect_false(.hzr_variance_unrepresentable(-1e-320))
