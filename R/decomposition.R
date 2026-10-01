@@ -402,6 +402,10 @@ hzr_decompos <- function(time, t_half, nu, m) {
                        y + log(-hzr_log1mexp(y)))
     log_h    <- mm1 * log_btnu - log_bt - log_rho - y_excess -
       .hzr_log1mexp_of_log_excess(L)
+    # Where G is NA -- past the 2^m underflow (m < -1074), or where
+    # log(bt) / nu underflows to 0 for one row -- log(1 - G) must not read
+    # as 0, a plausible cumulative hazard (Copilot and review, #583).
+    log_surv[is.na(G)] <- NA_real_
 
   } else if (m < 0 && nu == 0) {
     # Case 2L: exponential decay (nu -> 0 limit)
@@ -409,12 +413,21 @@ hzr_decompos <- function(time, t_half, nu, m) {
     # to 1, rho became Inf and G collapsed to 0 at t_half itself (Copilot,
     # #583).
     rho   <- -t_half / hzr_log1mexp(-m * log(2))
+    # Below about m = -1024, 2^m is under 1 / .Machine$double.xmax and rho
+    # overflows: G(t_half) came back as 0, plausible and wrong. Unavailable,
+    # as Case 2 is past its own underflow (Copilot, #583).
+    if (!is.finite(rho)) {
+      na <- rep(NA_real_, length(time))
+      return(list(G = na, g = na, h = na, log_surv = na))
+    }
     bt    <- exp(-time / rho)
     # 1 - e^(-t/rho) as -expm1(): for a large |m|, t / rho is far below 1
     # and 1 - bt kept no digits.
     btm   <- -expm1(-time / rho)
     G     <- btm^(-1 / m)
-    g     <- -(btm^mm1) * bt / (m * rho)
+    # Divided in turn: m * rho overflows for |m| * rho > .Machine$double.xmax
+    # (m from about -1015 at t_half = 1) and g read 0 (review, #583).
+    g     <- -(btm^mm1) * bt / m / rho
     # -log(G) = log(btm) / m with btm = 1 - e^(-t/rho). Far past saturation
     # btm rounds to 1 and G to 1; carried as a log, it does not (#578).
     # Here, unlike every other case, the large term is t / rho itself, not
@@ -436,7 +449,7 @@ hzr_decompos <- function(time, t_half, nu, m) {
     y_excess <- ifelse(y > 30, log1p(e_y / 2 + e_y^2 / 3), y + log(-lm1e))
     L        <- y_excess - y - log(-m)
     log_surv <- .hzr_log1mexp_of_log(L)
-    log_g    <- mm1 * lm1e - y - log(-m * rho)
+    log_g    <- mm1 * lm1e - y - log(-m) - log(rho)
     log_h    <- mm1 * lm1e - log(rho) - y_excess -
       .hzr_log1mexp_of_log_excess(L)
 

@@ -233,3 +233,62 @@ test_that("a hazard phase with entry times and nu below 1 fits (#578)", {
   p[["late.nu"]] <- 0.4
   expect_true(is.finite(as.numeric(hzr_evaluate(fit, p)$logLik)))
 })
+
+test_that("past the 2^m underflow, log_surv is NA with G, not a plausible 0", {
+  # Case 2 (m < 0, nu > 0) returns G = NA once 2^m underflows to 0 below
+  # m = -1074; test-decompos-large-m.R pins that line. log_surv must not
+  # report 0 there -- a cumulative hazard of 0, a plausible number, where G
+  # itself says the value is unavailable (Copilot, #583).
+  for (m in c(-1075, -5000)) {
+    d <- hzr_decompos(c(0.5, 1, 2), t_half = 1, nu = 2, m = m)
+    expect_true(all(is.na(d$G)))       # the premise: the pinned line
+    expect_true(all(is.na(d$log_surv)), label = sprintf("Case 2 m = %g", m))
+    expect_true(all(is.na(d$h)))
+  }
+  # ...and just above the cliff it is still exact: G(t_half) = 0.5.
+  d <- hzr_decompos(1, t_half = 1, nu = 2, m = -1074)
+  expect_equal(d$log_surv / -log(2), 1, tolerance = 1e-12)
+  # G is also NA ROW BY ROW where log(bt) / nu underflows to 0, with
+  # 2^m still non-zero (review, #583): at m = -1074 below t_half, and for a
+  # tiny nu at an ordinary m. log_surv is NA on exactly those rows.
+  for (a in list(list(t = c(0.25, 0.5, 0.75, 1), nu = 2, m = -1074),
+                 list(t = c(1e-4, 1e-3, 0.01, 1), nu = 1e-5, m = -1050),
+                 list(t = 1, nu = 1e-300, m = -100))) {
+    d <- hzr_decompos(a$t, t_half = 1, nu = a$nu, m = a$m)
+    expect_true(any(is.na(d$G)))       # the premise: some row is NA
+    expect_identical(is.na(d$log_surv), is.na(d$G),
+                     label = sprintf("Case 2 nu = %g m = %g", a$nu, a$m))
+  }
+})
+
+test_that("Case 2L is exact to where rho overflows, and NA past it", {
+  # rho = -t_half / log(1 - 2^m) overflows once |log(1 - 2^m)| = 2^m falls
+  # below 1 / .Machine$double.xmax, near m = -1024. Before, G(t_half) came
+  # back as 0 there -- plausible, and wrong by the half-life invariant, which
+  # puts it at 0.5 (Copilot, #583). As in Case 2, the value is NA past the line.
+  for (m in c(-60, -1000, -1023)) {
+    d <- hzr_decompos(1, t_half = 1, nu = 0, m = m)
+    expect_equal(d$G, 0.5, tolerance = 1e-12, label = sprintf("G, m = %g", m))
+    expect_equal(d$log_surv / -log(2), 1, tolerance = 1e-12)
+    expect_true(is.finite(d$h) && d$h > 0)
+  }
+  # g as well: m * rho overflowed from about m = -1015 and g read 0
+  # (review, #583). Against a central difference of G.
+  for (m in c(-1014, -1015, -1020, -1023)) {
+    e <- 1e-6
+    fd <- (hzr_decompos(0.5 + e, t_half = 1, nu = 0, m = m)$G -
+             hzr_decompos(0.5 - e, t_half = 1, nu = 0, m = m)$G) / (2 * e)
+    expect_gt(fd, 0)
+    expect_equal(hzr_decompos(0.5, t_half = 1, nu = 0, m = m)$g / fd, 1,
+                 tolerance = 1e-6, label = sprintf("Case 2L g at m = %g", m))
+  }
+  for (m in c(-1100, -5000)) {
+    d <- hzr_decompos(c(0.5, 1, 2), t_half = 1, nu = 0, m = m)
+    # The premise: rho overflows at this m.
+    expect_false(is.finite(-1 / hzr_log1mexp(-m * log(2))))
+    for (nm in c("G", "g", "h", "log_surv")) {
+      expect_true(all(is.na(d[[nm]])),
+                  label = sprintf("Case 2L %s at m = %g", nm, m))
+    }
+  }
+})
