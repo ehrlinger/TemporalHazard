@@ -449,7 +449,7 @@ hzr_decompos <- function(time, t_half, nu, m) {
     y_excess <- ifelse(y > 30, log1p(e_y / 2 + e_y^2 / 3), y + log(-lm1e))
     L        <- y_excess - y - log(-m)
     log_surv <- .hzr_log1mexp_of_log(L)
-    log_g    <- mm1 * lm1e - y - log(-m) - log(rho)
+    log_g    <- mm1 * lm1e - y - log(-m * rho)
     log_h    <- mm1 * lm1e - log(rho) - y_excess -
       .hzr_log1mexp_of_log_excess(L)
 
