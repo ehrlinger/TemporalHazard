@@ -531,7 +531,9 @@ NULL
 
 # When the failed recompute leaves a prediction reading no estimated
 # parameter at all -- the conserved phase alone -- its SE is unknown, and the
-# empty sandwich would report it as exactly 0 (#586).
+# empty sandwich would report it as exactly 0 (#586). Only a decomposed
+# component can: CoE applies with two or more phases, no phase's log_mu can
+# be fixed, so a total always reads a free one.
 .hzr_conserved_nothing_left <- function(object, free_idx) {
   "conserved_phase_variance" %in% object$degraded && length(free_idx) == 0L
 }
@@ -645,10 +647,6 @@ NULL
                          param_names = names(theta))
   } else {
     fv <- .hzr_free_vcov(object$fit$vcov, p)
-  }
-  if (!is.null(fv) && .hzr_conserved_nothing_left(object, fv$free_idx)) {
-    warning(.hzr_conserved_nothing_left_msg, call. = FALSE)
-    fv <- NULL
   }
   if (is.null(fv)) {
     n <- length(target)
