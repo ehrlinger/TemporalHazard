@@ -36,7 +36,7 @@ hzr_decompos(time, t_half, nu, m)
 
 ## Value
 
-A named list with three numeric vectors, each the same length as `time`:
+A named list with four numeric vectors, each the same length as `time`:
 
 - G:
 
@@ -50,6 +50,13 @@ A named list with three numeric vectors, each the same length as `time`:
 
   Hazard \\h(t) = g(t)/(1 - G(t)) \ge 0\\. The "late" phase temporal
   pattern.
+
+- log_surv:
+
+  \\\log(1 - G(t))\\, computed from each case's own log-scale terms
+  rather than from `G`, so it keeps its accuracy where `G` rounds to 1.
+  `-log_surv` is the cumulative hazard of a `"hazard"` phase, and `h` is
+  computed as \\\exp(\log g - \log(1 - G))\\.
 
 ## Parameter mapping from SAS/C HAZARD
 

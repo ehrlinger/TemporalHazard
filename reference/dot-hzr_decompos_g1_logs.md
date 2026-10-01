@@ -33,7 +33,9 @@ becomes `Inf` and `btnu^(-1/m)` collapses silently to 0.
 
 ## Value
 
-List with `log_S` (\\= -\log(\mathrm{btnu})/m\\) and `log_g`.
+List with `log_S` (\\= -\log(\mathrm{btnu})/m\\), `log_g`, `a`, the
+softplus argument, so that `log(btnu) = log1pexp(a)`, and the terms
+`log_g` is built from (`e`, `log_bt`, `log_rho`).
 
 ## Details
 

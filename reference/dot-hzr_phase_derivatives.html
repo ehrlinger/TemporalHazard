@@ -5,7 +5,7 @@
       fontURL: "https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/output/chtml/fonts/woff-v2"
     }
   };
-</script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Derivatives of phase cumulative and instantaneous hazard w.r.t. shape params — .hzr_phase_derivatives"><meta name="description" content='Computes \(\Phi_j(t)\), \(\phi_j(t)\), and their derivatives with
+</script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Derivatives of phase cumulative and instantaneous hazard w.r.t. shape params — .hzr_phase_derivatives"><meta name="description" content="Computes \(\Phi_j(t)\), \(\phi_j(t)\), and their derivatives with
 respect to log_t_half, nu, and m using finite differences on
 hzr_decompos(): central in log_t_half and nu, and in m central except
 near m = 0, where the stencil keeps the sign of m.  hzr_decompos()
@@ -16,11 +16,9 @@ order), and for m &amp;lt; 0 the step is capped at 1% of |m| (floored at
 log_t_half derivative is a central difference in log_t_half itself,
 so its step is proportional to t_half at every scale. It is NaN where
 the two points of the difference cannot both be used: t_half too small
-or too large to step, or a point at which hzr_decompos() fails. For a
-"hazard" phase far
-past saturation it is unreliable and then exactly 0, because 1 - G runs
-out of digits; where that starts depends on the shape (from about
-t_half = exp(-25) at nu = 1, m = 1 and times of order 1).'><meta property="og:description" content='Computes \(\Phi_j(t)\), \(\phi_j(t)\), and their derivatives with
+or too large to step, or a point at which hzr_decompos() fails. A
+&quot;hazard&quot; phase's value is -log_surv from hzr_decompos(), which keeps
+its accuracy far past saturation, so the derivative does too."><meta property="og:description" content="Computes \(\Phi_j(t)\), \(\phi_j(t)\), and their derivatives with
 respect to log_t_half, nu, and m using finite differences on
 hzr_decompos(): central in log_t_half and nu, and in m central except
 near m = 0, where the stencil keeps the sign of m.  hzr_decompos()
@@ -31,11 +29,9 @@ order), and for m &amp;lt; 0 the step is capped at 1% of |m| (floored at
 log_t_half derivative is a central difference in log_t_half itself,
 so its step is proportional to t_half at every scale. It is NaN where
 the two points of the difference cannot both be used: t_half too small
-or too large to step, or a point at which hzr_decompos() fails. For a
-"hazard" phase far
-past saturation it is unreliable and then exactly 0, because 1 - G runs
-out of digits; where that starts depends on the shape (from about
-t_half = exp(-25) at nu = 1, m = 1 and times of order 1).'></head><body>
+or too large to step, or a point at which hzr_decompos() fails. A
+&quot;hazard&quot; phase's value is -log_surv from hzr_decompos(), which keeps
+its accuracy far past saturation, so the derivative does too."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -98,11 +94,9 @@ order), and for <code>m &lt; 0</code> the step is capped at 1% of <code>|m|</cod
 <code>log_t_half</code> derivative is a central difference in <code>log_t_half</code> itself,
 so its step is proportional to <code>t_half</code> at every scale. It is <code>NaN</code> where
 the two points of the difference cannot both be used: <code>t_half</code> too small
-or too large to step, or a point at which <code><a href="hzr_decompos.html">hzr_decompos()</a></code> fails. For a
-<code>"hazard"</code> phase far
-past saturation it is unreliable and then exactly 0, because <code>1 - G</code> runs
-out of digits; where that starts depends on the shape (from about
-<code>t_half = exp(-25)</code> at <code>nu = 1</code>, <code>m = 1</code> and times of order 1).</p>
+or too large to step, or a point at which <code><a href="hzr_decompos.html">hzr_decompos()</a></code> fails. A
+<code>"hazard"</code> phase's value is <code>-log_surv</code> from <code><a href="hzr_decompos.html">hzr_decompos()</a></code>, which keeps
+its accuracy far past saturation, so the derivative does too.</p>
     </div>
 
     <div class="section level2">

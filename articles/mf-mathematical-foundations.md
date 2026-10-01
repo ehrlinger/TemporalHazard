@@ -88,7 +88,7 @@ cat("G(t_half) =", round(d_half$G, 6), "\n")
 # Verify the identity: h(t) = g(t) / (1 - G(t))
 h_check <- d$g / (1 - d$G)
 cat("Max |h - g/(1-G)| =", max(abs(d$h - h_check)), "\n")
-#> Max |h - g/(1-G)| = 0
+#> Max |h - g/(1-G)| = 4.440892e-16
 ```
 
 ### 1.2 The six valid cases

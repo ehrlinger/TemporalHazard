@@ -102,7 +102,7 @@ SAS early: <code>M</code>.  SAS late: relates to <code>GAMMA</code>/<code>ALPHA<
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>A named list with three numeric vectors, each the same length
+    <p>A named list with four numeric vectors, each the same length
 as <code>time</code>:</p><dl><dt>G</dt>
 <dd><p>Cumulative distribution \(G(t) \in [0, 1]\).</p></dd>
 
@@ -113,6 +113,13 @@ temporal pattern.</p></dd>
 <dt>h</dt>
 <dd><p>Hazard \(h(t) = g(t)/(1 - G(t)) \ge 0\).  The "late"
 phase temporal pattern.</p></dd>
+
+<dt>log_surv</dt>
+<dd><p>\(\log(1 - G(t))\), computed from each case's
+own log-scale terms rather than from <code>G</code>, so it keeps its accuracy
+where <code>G</code> rounds to 1.  <code>-log_surv</code> is the cumulative hazard of a
+<code>"hazard"</code> phase, and <code>h</code> is computed as
+\(\exp(\log g - \log(1 - G))\).</p></dd>
 
 
 </dl></div>
