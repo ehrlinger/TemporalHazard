@@ -140,8 +140,17 @@ test_that("the emitted fit reproduces PROC HAZARD's estimates (#471)", {
   utils::read.csv(test_path("fixtures", "setg1-rewrite-grid.csv"),
                   comment.char = "#", stringsAsFactors = FALSE)
 }
+# The value of `key=` in each PARMS string. A string it cannot read stops the
+# test rather than becoming NA, which would silently drop rows from the
+# cases a test selects; an exponent is read whole, not truncated at the `e`.
 .mz_operand <- function(parms, key) {
-  as.numeric(sub(paste0(".* ", key, "=(-?[0-9.]+).*"), "\\1", parms))
+  pat <- paste0("(^|.* )", key, "=([-+]?[0-9.]+([eE][-+]?[0-9]+)?)( .*)?$")
+  hit <- grepl(pat, parms)
+  if (!all(hit)) {
+    stop("`", key, "=` could not be read from: ",
+         paste(parms[!hit], collapse = "; "), call. = FALSE)
+  }
+  as.numeric(sub(pat, "\\2", parms))
 }
 
 test_that("every emitted early phase is the one SETG1 leaves, on the grid (#601)", {
