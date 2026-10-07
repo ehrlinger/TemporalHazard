@@ -1,0 +1,41 @@
+# Scratch probe, not for merge: what does the #596 lognormal_covariates fit do on Windows?
+on:
+  push:
+    branches: [scratch/win-pfm-probe]
+name: scratch-win-probe
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::pkgload
+          needs: check
+      - name: Probe
+        shell: Rscript {0}
+        run: |
+          pkgload::load_all(".", quiet = TRUE)
+          data(avc, package = "TemporalHazard"); d <- stats::na.omit(avc)
+          cov <- survival::Surv(int_dead, dead) ~ age + mal
+          run <- function(theta) {
+            ws <- character(0)
+            f <- withCallingHandlers(hazard(cov, data = d, dist = "lognormal", theta = theta, fit = TRUE),
+                   warning = function(w) { ws <<- c(ws, paste(class(w)[1], substr(conditionMessage(w), 1, 90))); invokeRestart("muffleWarning") })
+            cat(sprintf("start=%s | conv=%s code=%s relgrad=%.4g LL=%.6f\n", paste(theta, collapse = ","),
+                        f$fit$converged, format(f$fit$polish_code %||% NA), f$fit$rel_gradient %||% NA, f$fit$objective))
+            cat(sprintf("   warn: %s\n", ws), sep = "")
+            invisible(f)
+          }
+          cat("R", R.version.string, "| BLAS:", extSoftVersion()[["BLAS"]], "\n")
+          bad <- run(c(-100, 1, 1, 1))
+          good <- run(c(1, 1, 0, 0))
+          cat(sprintf("shortfall of the -100 start vs ordinary start: %.6f\n", good$fit$objective - bad$fit$objective))
