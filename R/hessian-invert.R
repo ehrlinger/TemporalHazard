@@ -24,8 +24,9 @@ NULL
 #' preconditioner; if that is not positive definite either, the default is
 #' kept, so a saddle is still reported as one. Each column of `L` is shrunk
 #' so that its step does not exceed numDeriv's own first step in any
-#' coordinate: a direction with almost no information otherwise gets a step
-#' far outside the quadratic region.
+#' coordinate (an off-diagonal evaluation steps along two directions at
+#' once, so up to twice that): a direction with almost no information
+#' otherwise gets a step far outside the quadratic region.
 #'
 #' @param fn Objective (a negative log-likelihood) of a numeric vector.
 #' @param par Point at which to differentiate.
@@ -62,8 +63,11 @@ NULL
                         method.args = list(eps = 0.1)),
       error = function(e) NULL)
     if (!is.matrix(hu) || !all(is.finite(hu))) break
-    Li <- solve(L)
+    # A badly conditioned L keeps the Hessian of the previous pass.
+    Li <- tryCatch(solve(L), error = function(e) NULL)
+    if (is.null(Li)) break
     h <- t(Li) %*% hu %*% Li
+    h <- (h + t(h)) / 2
     L <- whitener(h)
   }
   h

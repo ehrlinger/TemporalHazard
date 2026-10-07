@@ -22,9 +22,10 @@
   SE was 1e-28 of it, a Weibull fit had no covariance, and a lognormal
   fit's standard errors were `NA`.
     - The step is now set from the curvature: 0.1 standard error along each
-      direction of the Hessian, refined twice, and never larger than
-      numDeriv's own first step in any parameter. The same fits now agree
-      with the centred fit's standard errors at offsets of 100 and 1000.
+      direction of the Hessian, refined twice, with each direction's step
+      capped at numDeriv's own first step in every parameter. The same fits
+      now agree with the centred fit's standard errors at offsets of 100
+      and 1000.
     - A Hessian that is not positive definite is still reported as found.
     - The remaining limit is double precision: at an offset of 1e4 the
       exact Hessian's reciprocal condition number is about 1e-16, so no

@@ -153,8 +153,6 @@ test_that(".hzr_numeric_hessian() caps the step on a direction with almost no in
   h <- .hzr_numeric_hessian(fn, c(0.3, 1))
   expect_equal(h[2, 2] / 1e-4, 1, tolerance = 1e-6)
   expect_equal(h[1, 1], 1, tolerance = 1e-6)
-  # Premise: uncapped, the step would read that far out.
-  expect_gt(0.1 / sqrt(h[2, 2]) / (0.1 * 1), 50)
 })
 
 test_that("the score paths' numerical Hessians match the analytic ones at an offset (#598)", {
