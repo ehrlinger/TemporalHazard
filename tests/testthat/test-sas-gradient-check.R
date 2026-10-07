@@ -94,8 +94,23 @@ test_that("hazard() warns only on the polish's hard failures, and records every 
   # A fit that did not converge is not "converged over a failing point": no
   # gradient warning even with a hard-failure code attached.
   expect_no_warning(fit_with(4L, conv = 1L), message = "relative-gradient test")
-  # nlm code 3, where SAS/C prints a caution and retries: recorded, not warned.
-  expect_no_warning(f3 <- fit_with(3L), message = "relative-gradient test")
+  # nlm code 3, where SAS/C prints a caution and retries: recorded, and not
+  # warned as a hard failure. A single-distribution fit with a relative
+  # gradient above 1e-3 warns instead that it may not be a maximum (#531).
+  expect_no_warning(
+    expect_warning(f3 <- fit_with(3L), class = "hzr_possible_false_maximum"),
+    message = "relative-gradient test"
+  )
+  # The line is 1e-3: pinned from both sides, just above and below it.
+  expect_warning(fit_with(3L, rel = 1.1e-3),
+                 class = "hzr_possible_false_maximum")
+  # ...not below 1e-3, nor when the optimizer did not report convergence.
+  expect_no_warning(fit_with(3L, rel = 9e-4),
+                    class = "hzr_possible_false_maximum")
+  expect_no_warning(fit_with(3L, rel = 5e-4),
+                    class = "hzr_possible_false_maximum")
+  expect_no_warning(fit_with(3L, conv = 1L),
+                    class = "hzr_possible_false_maximum")
   expect_identical(f3$fit$polish_code, 3L)
   expect_equal(f3$fit$rel_gradient, 1e-2)
   expect_output(print(f3), "relative 0.01 .*not met, nlm code 3")
