@@ -34,7 +34,7 @@
   list(fit = fit, n_scale = length(msgs), msgs = msgs)
 }
 
-test_that("a fit whose mu overflows warns, and its readers refuse (#566)", {
+test_that("a fit whose mu overflows warns, and its readers use log(mu) (#566)", {
   d <- .w566_data(200, -0.2)
   res <- .w566_fit(survival::Surv(time, dead) ~ x, d, c(exp(50), 0.2, -0.2))
   f <- res$fit
@@ -53,20 +53,42 @@ test_that("a fit whose mu overflows warns, and its readers refuse (#566)", {
 
   nd <- d[1:2, ]
   nd$time <- c(0.5, 2)
-  # The centred fit predicts these rows; on main the raw fit returned 0 for
-  # both, as if that were the survival.
-  s_ctr <- predict(ctr$fit, newdata = nd, type = "survival")
+  # The centred fit predicts these rows; on main fcc6501d the raw fit
+  # returned 0 for both, as if that were the survival, and after #573 every
+  # reader refused it. Now every reader goes through the log(mu) the fit
+  # kept, and agrees with the centred fit, the same model.
+  nd_ctr <- transform(nd, xc = x - 1000)
+  s_ctr <- predict(ctr$fit, newdata = nd_ctr, type = "survival")
   expect_true(all(s_ctr > 0.05 & s_ctr < 0.95))
-  # Every type is refused, including the two that never read mu.
   for (type in c("survival", "cumulative_hazard", "hazard",
                  "linear_predictor")) {
-    expect_error(predict(f, newdata = nd, type = type),
-                 "scale mu = Inf, which cannot be represented", fixed = TRUE)
+    got <- predict(f, newdata = nd, type = type)
+    want <- predict(ctr$fit, newdata = nd_ctr, type = type)
+    if (type == "linear_predictor") {
+      # The linear predictors differ by the centring constant, b * 1000.
+      want <- want + unname(coef(ctr$fit)[[3]]) * 1000
+    }
+    if (type == "hazard") {
+      want <- want * exp(unname(coef(ctr$fit)[[3]]) * 1000)
+    }
+    expect_equal(got / want, rep(1, 2), tolerance = 1e-3, info = type)
   }
-  expect_error(predict(f, type = "cumulative_hazard"),
-               "scale mu = Inf", fixed = TRUE)
-  expect_error(hzr_gof(f), "scale mu = Inf", fixed = TRUE)
-  expect_error(hzr_deciles(f, time = 1), "scale mu = Inf", fixed = TRUE)
+  got_ci <- predict(f, newdata = nd, type = "survival", se.fit = TRUE)
+  want_ci <- predict(ctr$fit, newdata = nd_ctr, type = "survival",
+                     se.fit = TRUE)
+  expect_equal(got_ci$se.fit / want_ci$se.fit, rep(1, 2), tolerance = 1e-2)
+  expect_equal(got_ci$lower / want_ci$lower, rep(1, 2), tolerance = 1e-2)
+  g_raw <- hzr_gof(f)
+  g_ctr <- hzr_gof(ctr$fit)
+  expect_true(all(is.finite(g_raw$cum_expected)))
+  last <- nrow(g_ctr)
+  expect_gt(g_ctr$cum_expected[last], 0)
+  expect_equal(g_raw$cum_expected[last] / g_ctr$cum_expected[last], 1,
+               tolerance = 1e-3)
+  dc_raw <- hzr_deciles(f, time = 1)
+  dc_ctr <- hzr_deciles(ctr$fit, time = 1)
+  expect_equal(dc_raw$expected / dc_ctr$expected, rep(1, nrow(dc_ctr)),
+               tolerance = 1e-3)
 })
 
 test_that("a fit whose mu underflows to 0 warns too (#566)", {
@@ -79,8 +101,15 @@ test_that("a fit whose mu underflows to 0 warns too (#566)", {
   expect_match(res$msgs, "scale mu is reported as 0", fixed = TRUE)
   nd <- d[1:2, ]
   nd$time <- c(0.5, 2)
-  expect_error(predict(f, newdata = nd, type = "survival"),
-               "scale mu = 0, which must be positive", fixed = TRUE)
+  # Read through log(mu), against the centred fit of the same model. After
+  # #573 this refused ("scale mu = 0, which must be positive").
+  ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, 0.2))
+  expect_equal(f$fit$objective, ctr$fit$fit$objective, tolerance = 1e-4)
+  got <- predict(f, newdata = nd, type = "survival", se.fit = TRUE)
+  want <- predict(ctr$fit, newdata = transform(nd, xc = x - 1000),
+                  type = "survival", se.fit = TRUE)
+  expect_equal(got$fit / want$fit, rep(1, 2), tolerance = 1e-3)
+  expect_equal(got$se.fit / want$se.fit, rep(1, 2), tolerance = 1e-2)
 })
 
 test_that("an intercept-only object is checked without a stored design (#566)", {
@@ -159,36 +188,43 @@ test_that("mu * time overflowing does not make the cumulative hazard Inf (#566)"
 })
 
 
-test_that("an overflowed variance gives NA standard errors, not wrong ones (#566)", {
+test_that("an overflowed variance of mu is read on the log scale, not withheld (#566)", {
   # log(mu) is about 600: mu is finite, but its variance carries mu^2 and is
   # Inf. predict() read that as a fixed parameter and returned a standard
   # error 187 times the centred fit's (16.85 against 0.0901) on main
-  # fcc6501d, and summary() showed the SE of mu with no warning.
+  # fcc6501d; after #573 it withheld it. The variance of log(mu) is an
+  # ordinary number, and the fit keeps it.
   d <- .w566_data(115, -0.115)
   raw <- .w566_fit(survival::Surv(time, dead) ~ x, d, c(exp(500), 0.2, -0.115))
   ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, -0.115))
-  # The fit says so: it is the variance here, not mu, that cannot be held.
+  # The fit says so: it is the variance here, not mu, that cannot be held,
+  # and the warning says what each reader now does.
   expect_identical(raw$n_scale, 1L)
   expect_match(raw$msgs, "variance of the Weibull scale mu", fixed = TRUE)
-  # The warning promises NA SEs only where a prediction reads mu; the linear
-  # predictor and hazard below keep theirs (Copilot on #573).
-  expect_match(raw$msgs, "for any prediction that depends on mu", fixed = TRUE)
+  expect_match(raw$msgs, "vcov() gives NA for mu", fixed = TRUE)
+  expect_match(raw$msgs, "summary() and predict() use the variance of log(mu)",
+               fixed = TRUE)
   expect_true(is.finite(coef(raw$fit)[[1]]))
-  expect_identical(unname(vcov(raw$fit)[1, 1]), Inf)
+  # vcov(): mu's row and column are NA, with the reason recorded -- no Inf,
+  # no NaN, no false 0. After #573 vcov(raw)[1, 1] was Inf.
+  v <- vcov(raw$fit)
+  expect_true(all(is.na(v[1, ])) && all(is.na(v[, 1])))
+  expect_false(any(is.nan(v)))
+  expect_true(all(is.finite(v[-1, -1])))
+  expect_match(raw$fit$degraded_causes[["standard_errors"]],
+               "log(mu) and its standard error are kept instead", fixed = TRUE)
   nd <- d[1:2, ]
   nd$time <- c(0.5, 2)
   p_ctr <- predict(ctr$fit, newdata = nd, type = "cumulative_hazard",
                    se.fit = TRUE)
-  expect_warning(
-    p_raw <- predict(raw$fit, newdata = nd, type = "cumulative_hazard",
-                     se.fit = TRUE),
-    "variance that cannot be represented", fixed = TRUE
-  )
-  # The value is right; its standard error and limits are withheld. The two
-  # fits are separate optimizer runs, hence the tolerance.
-  expect_equal(p_raw$fit, p_ctr$fit, tolerance = 1e-2)
-  expect_true(all(is.na(p_raw$se.fit)))
-  expect_true(all(is.na(p_raw$lower)) && all(is.na(p_raw$upper)))
+  p_raw <- expect_no_warning(predict(raw$fit, newdata = nd,
+                                     type = "cumulative_hazard",
+                                     se.fit = TRUE))
+  # Against the centred fit, the same model: separate optimizer runs, hence
+  # the tolerance.
+  expect_equal(p_raw$fit / p_ctr$fit, rep(1, 2), tolerance = 1e-2)
+  expect_equal(p_raw$se.fit / p_ctr$se.fit, rep(1, 2), tolerance = 1e-2)
+  expect_equal(p_raw$lower / p_ctr$lower, rep(1, 2), tolerance = 1e-2)
   expect_true(all(is.finite(p_ctr$se.fit)))
 
   # The linear predictor and the relative hazard do not depend on mu, so
@@ -203,28 +239,27 @@ test_that("an overflowed variance gives NA standard errors, not wrong ones (#566
   expect_equal(hz$se.fit, hz$fit * se_eta, tolerance = 1e-10)
 })
 
-test_that("an underflowed or NaN variance is withheld too (#566)", {
+test_that("an underflowed variance of mu is read on the log scale; a NaN one is withheld (#566)", {
   # log(mu) is about -400: mu is an ordinary double, but its variance is
   # subnormal while its covariances are not. The sandwich then gave a
-  # standard error of 0.1018 where the centred fit gives 0.0583.
+  # standard error of 0.1018 where the centred fit gives 0.0583; after #573
+  # it withheld it.
   d <- .w566_data(-80, 0.08)
   raw <- .w566_fit(survival::Surv(time, dead) ~ x, d, c(exp(-400), 0.2, 0.08))
   expect_identical(raw$n_scale, 1L)
   expect_match(raw$msgs, "variance of the Weibull scale mu", fixed = TRUE)
-  v11 <- unname(vcov(raw$fit)[1, 1])
-  expect_true(!is.na(v11) && v11 < .Machine$double.xmin)
+  expect_true(all(is.na(vcov(raw$fit)[1, ])))
+  ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, 0.08))$fit
   nd <- d[1:2, ]
   nd$time <- c(0.5, 2)
-  expect_warning(
-    p <- predict(raw$fit, newdata = nd, type = "cumulative_hazard",
-                 se.fit = TRUE),
-    "variance that cannot be represented", fixed = TRUE
-  )
-  expect_true(all(is.finite(p$fit)) && all(is.na(p$se.fit)))
+  p <- expect_no_warning(predict(raw$fit, newdata = nd,
+                                 type = "cumulative_hazard", se.fit = TRUE))
+  p_ctr <- predict(ctr, newdata = nd, type = "cumulative_hazard",
+                   se.fit = TRUE)
+  expect_equal(p$se.fit / p_ctr$se.fit, rep(1, 2), tolerance = 1e-2)
 
   # A NaN variance is not a fixed parameter either: it is Inf - Inf in the
   # delta method. A fixed one is NA, and is still dropped without a warning.
-  ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, 0.08))$fit
   nan <- ctr
   nan$fit$vcov[1, ] <- NaN
   nan$fit$vcov[, 1] <- NaN
@@ -307,6 +342,15 @@ test_that("hzr_bootstrap() counts replicates whose mu cannot be represented (#56
   ctr <- .w566_fit(survival::Surv(time, dead) ~ xc, d, c(1, 0.2, -0.2))$fit
   bs_ctr <- collect(hzr_bootstrap(ctr, n_boot = 3, seed = 3))
   expect_false(any(grepl(pattern, bs_ctr$msgs, fixed = TRUE)))
+  # Warn only (#566, decision B): the result has the same shape as the
+  # centred fit's, with no column or element added for log(mu).
+  expect_identical(names(bs$value), names(bs_ctr$value))
+  for (el in names(bs$value)) {
+    if (is.data.frame(bs$value[[el]])) {
+      expect_identical(names(bs$value[[el]]), names(bs_ctr$value[[el]]),
+                       info = el)
+    }
+  }
   # A mu that reached exactly 0 is counted too.
   d0 <- .w566_data(-200, 0.2)
   f0 <- .w566_fit(survival::Surv(time, dead) ~ x, d0,
@@ -338,15 +382,20 @@ test_that("the rule's edges: the smallest normal double, and a subnormal nu (#56
   expect_null(.hzr_check_theta(c(Inf, 1), "lognormal"))
 })
 
-test_that("hzr_evaluate() refuses a product mu * time it cannot hold (#566)", {
-  # mu is an ordinary double here, so the rule on mu alone passes it, but the
-  # likelihood forms (mu * t)^nu and mu * t underflows: it is exactly 0 on
+# The log-likelihood written out on the log scale, event and right-censored
+# rows only: an oracle independent of .hzr_logl_weibull().
+.w566_ll <- function(mu, nu, time, status, eta = 0) {
+  log_h <- log(nu) + nu * log(mu) + (nu - 1) * log(time) + eta
+  big_h <- exp(nu * (log(mu) + log(time)) + eta)
+  sum(ifelse(status == 1, log_h, 0) - big_h)
+}
+
+test_that("hzr_evaluate() reads a product mu * time below the smallest normal double (#566)", {
+  # mu is an ordinary double here, but mu * t underflows: it is exactly 0 on
   # some rows and subnormal on others. On a fit of this data whose mu was
   # about 1e-291, hzr_evaluate() returned 23084.15 at the fit's own
-  # estimates, whose log-likelihood is 22972.56, with no warning.
-  #
-  # The parameters are supplied, not fitted: the data are seeded, so which
-  # products underflow is the same on every platform.
+  # estimates, whose log-likelihood is 22972.56, with no warning; #573
+  # refused it. On the log scale it is computed, and equals the oracle.
   set.seed(4)
   n <- 500
   age <- stats::rnorm(n, 60, 10)
@@ -354,8 +403,7 @@ test_that("hzr_evaluate() refuses a product mu * time it cannot hold (#566)", {
   b <- 0.57
   t <- (stats::rexp(n) / exp(b * (age - 60)))^(1 / nu)
   cc <- (stats::rexp(n) * 2)^(1 / nu)
-  d <- data.frame(time = pmin(t, cc), dead = as.integer(t <= cc), age = age,
-                  agec = age - 60)
+  d <- data.frame(time = pmin(t, cc), dead = as.integer(t <= cc), age = age)
   mu <- 1e-290
   raw <- hazard(survival::Surv(time, dead) ~ age, data = d, dist = "weibull",
                 theta = c(mu, nu, b), fit = FALSE)
@@ -364,21 +412,17 @@ test_that("hzr_evaluate() refuses a product mu * time it cannot hold (#566)", {
   expect_true(mu >= .Machine$double.xmin)
   n_lost <- sum(mu * d$time < .Machine$double.xmin)
   expect_true(n_lost > 0L && n_lost < n)
-  expect_error(hzr_evaluate(raw, c(mu, nu, b)),
-               paste0("mu * time cannot be represented for ", n_lost, " of ",
-                      n, " times"), fixed = TRUE)
-  # Known negative: the same model in centred coordinates, where mu is near
-  # 1 and no product is lost, evaluates to a finite log-likelihood.
-  ctr <- hazard(survival::Surv(time, dead) ~ agec, data = d,
-                dist = "weibull", theta = c(1, nu, b), fit = FALSE)
-  expect_true(is.finite(as.numeric(hzr_evaluate(ctr, c(1, nu, b))$logLik)))
+  got <- as.numeric(expect_no_warning(hzr_evaluate(raw, c(mu, nu, b)))$logLik)
+  want <- .w566_ll(mu, nu, d$time, d$dead, eta = b * d$age)
+  expect_equal(got / want, 1, tolerance = 1e-12)
 })
 
-test_that("the product guard reads only the times each row's status uses (#566)", {
+test_that("hzr_evaluate() reads only the times each row's status uses (#566)", {
   # The likelihood reads `time` on an event or right-censored row, plus its
   # entry time when there is one; the upper bound on a left-censored row; and
   # both bounds on an interval-censored row. A bound it does not read must
-  # not refuse the evaluation (Copilot, #573).
+  # not change the result; one it reads is computed, even where mu * t is
+  # below the smallest normal double (Copilot, #573).
   mu <- 1e-290
   nu <- 0.5
   tm <- c(1, 2, 3, 4, 5, 6)
@@ -391,7 +435,7 @@ test_that("the product guard reads only the times each row's status uses (#566)"
   expect_false(mu * tiny >= .Machine$double.xmin)
   right <- c(1, 0, 1, 0, 1, 0)
   reference <- ev(status = right)
-  expect_true(is.finite(reference))
+  expect_equal(reference / .w566_ll(mu, nu, tm, right), 1, tolerance = 1e-12)
   # Unread: an upper bound on event and right-censored rows.
   expect_identical(ev(status = right, time_upper = rep(tiny, 6)), reference)
   # Unread: a lower bound on a left-censored row.
@@ -399,19 +443,23 @@ test_that("the product guard reads only the times each row's status uses (#566)"
   with_lower <- ev(status = left, time_lower = c(rep(0, 5), tiny),
                    time_upper = tm)
   expect_identical(with_lower, ev(status = left, time_upper = tm))
-  # Read: a left-censored row's upper bound, an entry time on an event row,
-  # and either bound of an interval-censored row. One time is lost in each.
-  lost <- "mu * time cannot be represented for 1 of "
-  expect_error(ev(status = left, time_upper = c(tm[1:5], tiny)), lost,
-               fixed = TRUE)
-  expect_error(ev(status = right, time_lower = c(tiny, rep(0, 5))), lost,
-               fixed = TRUE)
+  # Read: a left-censored row's upper bound. Its term is log(1 - exp(-H)),
+  # which for so small an H is log H = nu * (log mu + log t).
+  got_left <- ev(status = left, time_upper = c(tm[1:5], tiny))
+  want_left <- .w566_ll(mu, nu, tm[1:5], left[1:5]) +
+    nu * (log(mu) + log(tiny))
+  expect_equal(got_left / want_left, 1, tolerance = 1e-12)
+  # Read: an entry time on an event row, and an interval row's lower bound.
+  expect_true(is.finite(ev(status = right, time_lower = c(tiny, rep(0, 5)))))
   interval <- c(1, 0, 1, 0, 1, 2)
-  expect_error(ev(status = interval, time_lower = c(rep(0, 5), tiny),
-                  time_upper = tm), lost, fixed = TRUE)
+  got_int <- ev(status = interval, time_lower = c(rep(0, 5), tiny),
+                time_upper = tm)
+  expect_true(is.finite(got_int))
+  expect_false(identical(got_int, ev(status = interval,
+                                     time_lower = c(rep(0, 5), 3),
+                                     time_upper = tm)))
 
-  # A row with weight 0 contributes nothing, whatever its time, so its time
-  # is not read either. With weight 1 the same row is refused.
+  # A row with weight 0 contributes nothing, whatever its time.
   ev_w <- function(time, weights) {
     obj <- hazard(time = time, status = right, weights = weights,
                   dist = "weibull", theta = c(mu, nu), fit = FALSE)
@@ -419,33 +467,33 @@ test_that("the product guard reads only the times each row's status uses (#566)"
   }
   w0 <- c(1, 1, 1, 1, 1, 0)
   expect_identical(ev_w(c(tm[1:5], tiny), w0), ev_w(tm, w0))
-  expect_error(ev_w(c(tm[1:5], tiny), rep(1, 6)), lost, fixed = TRUE)
 })
 
-test_that("the event hazard's mu^nu is guarded too (#566, Copilot on #573)", {
-  # The likelihood forms mu in two ways: mu * time, guarded above, and mu^nu
-  # in an exact event's hazard. With mu = 4e-162 and nu = 2, mu * t is 1 but
-  # mu^nu is subnormal, and hzr_evaluate() returned -372.0158 where the
-  # closed form gives -371.9393, with no warning.
+test_that("hzr_evaluate() reads an event hazard whose mu^nu is subnormal (#566, Copilot on #573)", {
+  # With mu = 4e-162 and nu = 2, mu * t is 1 but mu^nu is subnormal:
+  # hzr_evaluate() returned -372.0158 where the closed form gives -371.9393,
+  # with no warning, and #573 refused it. On the log scale it is computed.
   one_event <- function(mu, nu, t, status = 1) {
     obj <- hazard(time = t, status = status, dist = "weibull",
                   theta = c(mu, nu), fit = FALSE)
     as.numeric(suppressWarnings(hzr_evaluate(obj, c(mu, nu)))$logLik)
   }
-  closed <- function(mu, nu, t) {
-    log(nu) + nu * log(mu) + (nu - 1) * log(t) - exp(nu * (log(mu) + log(t)))
-  }
   expect_true(4e-162^2 < .Machine$double.xmin)
-  expect_error(one_event(4e-162, 2, 2.5e161),
-               "cannot be represented, so the event hazard", fixed = TRUE)
-  # Known negative: mu^nu = 1e-200, a normal double, and the evaluation is
-  # the closed form.
-  expect_equal(one_event(1e-100, 2, 1e100), closed(1e-100, 2, 1e100),
-               tolerance = 1e-12)
-  # A right-censored row never forms the hazard, so mu^nu is not read there.
-  expect_true(is.finite(one_event(4e-162, 2, 2.5e161, status = 0)))
-  # An overflowing mu^nu is not refused: hzr_evaluate() reports a likelihood
-  # that is not finite as -Inf, with a warning (test-evaluate-at-parameters.R).
+  expect_equal(one_event(4e-162, 2, 2.5e161) /
+                 .w566_ll(4e-162, 2, 2.5e161, 1), 1, tolerance = 1e-12)
+  # Many rows at times around 1e161 (the substitute review's case).
+  set.seed(7)
+  tt <- stats::runif(50, 0.5, 2) * 1e161
+  st <- rep(c(1, 0), 25)
+  obj <- hazard(time = tt, status = st, dist = "weibull",
+                theta = c(4e-162, 2), fit = FALSE)
+  got <- as.numeric(expect_no_warning(hzr_evaluate(obj, c(4e-162, 2)))$logLik)
+  expect_equal(got / .w566_ll(4e-162, 2, tt, st), 1, tolerance = 1e-12)
+  # Known negative: mu^nu = 1e-200, a normal double.
+  expect_equal(one_event(1e-100, 2, 1e100) / .w566_ll(1e-100, 2, 1e100, 1),
+               1, tolerance = 1e-12)
+  # An overflowing mu^nu still gives -Inf with a warning: hzr_evaluate()'s
+  # contract for a likelihood that is not finite (test-evaluate-at-parameters.R).
   obj <- hazard(time = 3, status = 1, dist = "weibull", theta = c(2, 1e5),
                 fit = FALSE)
   expect_warning(ll <- hzr_evaluate(obj, c(2, 1e5))$logLik,

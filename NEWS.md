@@ -1,3 +1,10 @@
+# TemporalHazard (unreleased)
+
+* Now requires R 4.4.0 or newer, up from 4.1.0, to match the rest of the
+  HVTI family. `hvtiR::install()` installs the members together, and several
+  already required 4.4.0, so on an older R the install failed whatever this
+  package declared.
+
 # TemporalHazard 1.2.13
 
 ## Bug fixes
@@ -226,8 +233,8 @@
   come last, so no existing element moves. `logLik()` and `AIC()` have
   no method for a `hazard` fit and still stop.
 
-* **A Weibull fit whose scale cannot be represented now says so, and
-  `predict()` refuses it (#566).** The Weibull scale `mu` is the baseline at
+* **A Weibull fit whose scale cannot be represented now says so, and is
+  read through `log(mu)` (#566).** The Weibull scale `mu` is the baseline at
   `x = 0`, so with a covariate far from zero, such as a calendar year, it
   can leave the range a number can hold at a sound fit. It was then reported
   as `Inf`, as 0, or as a value so small that most of its digits were lost.
@@ -235,10 +242,17 @@
   with no warning, where the same model with the covariate centered gave
   0.217, and `hzr_gof()` reported an expected count of `Inf`.
     - `hazard()` now warns, with class `"hzr_unrepresentable_scale"`, and
-      says to centre or rescale the covariates. The fit still reports
-      `converged = TRUE`: it is sound, and only its scale cannot be reported.
-    - `predict()` stops with an error on such a fit, for every `type`, and so
-      do `hzr_gof()`, `hzr_deciles()` and `hzr_evaluate()`. This includes an
+      says to centre or rescale the covariates to report `mu` itself. The
+      fit still reports `converged = TRUE`: it is sound, and only its scale
+      cannot be reported.
+    - The fit keeps `log(mu)`, which always holds a number, with its
+      standard error. `predict()`, and through it `hzr_gof()` and
+      `hzr_deciles()`, read it, and agree with the centered fit of the same
+      model. `summary()` shows it as a `log(mu)` row under `mu`. `coef()`
+      shows `mu` as it is, and `vcov()` gives `NA` for its row and column,
+      with the reason in the fit's `degraded_causes`.
+    - `hzr_evaluate()` and `predict()` still refuse a `theta` given with such
+      a `mu`, which carries no `log(mu)` to read. This includes an
       intercept-only fit, whose parameters `predict()` did not check before.
     - `hzr_bootstrap()` warns with the number of replicates whose `mu`
       cannot be represented; the summary of `mu` is not usable there.
@@ -247,12 +261,11 @@
       it on the log scale.
     - Where `mu` is finite but its variance overflows or underflows,
       `predict(se.fit = TRUE)` returned a wrong standard error: 187 times too
-      large in one case measured, 75% too large in another. It now returns
-      `NA` standard errors and limits, with a warning. A prediction that does
-      not depend on `mu`, such as the linear predictor, keeps its standard
-      error. `hazard()` warns about such a fit too, with the same class,
-      because the standard error it reports for `mu` is `Inf`, 0 or too
-      small there.
+      large in one case measured, 75% too large in another. It now reads the
+      variance of `log(mu)`, an ordinary number, and agrees with the
+      centered fit. `hazard()` warns about such a fit too, with the same
+      class, and `vcov()` gives `NA` for `mu`, because its variance there is
+      `Inf`, 0 or too small.
     - The same screen applies to any parameter's variance, and a negative
       variance is now named as one: `predict(se.fit = TRUE)` had reported a
       standard error of 0 for it. Under `decompose = TRUE` each phase is
@@ -260,12 +273,17 @@
       withholds that phase's and the total's standard errors, not the
       others'. Before, a phase with an infinite variance got a standard
       error of 0, and the total the other phases' alone, with no warning.
-    - `hzr_evaluate()` stops when `mu` times an observed time, or `mu^nu` in
-      an exact event's hazard, is too small to be represented. It returned a
-      log-likelihood that was not the model's: 23084.15 where the fit's own
-      was 22972.56, and 0.0765 below the closed form, in the cases measured.
-      Only the times each row's status and weight make the likelihood read
-      are checked.
+    - The Weibull likelihood is computed on the log scale. Formed directly,
+      `mu^nu`, `(mu * t)^nu` and `t^(nu - 1)` underflow or overflow where the
+      log-likelihood is an ordinary number. On a left-censored row whose
+      cumulative hazard was below the smallest normal double,
+      `hzr_evaluate()` returned -743.341 with no warning, against -743.265.
+      An event at a time of 1e-180 gave `-Inf`, against -137.056. A
+      zero-weight event row whose `mu^nu` fell below what a double holds
+      turned the whole log-likelihood into `-Inf`. Where `mu * t` or `mu^nu`
+      fell below the smallest normal double, `hzr_evaluate()` returned a
+      log-likelihood that was not the model's (23084.15 where the fit's own
+      was 22972.56); it now computes it.
 
 * **Multiphase stepwise refits now start from the model they extend
   (#551). Multiphase selections, and `hzr_bootstrap()` select-mode
@@ -698,6 +716,29 @@
   macro call, as in `%F(A,,B)`, belongs to the macro and is not flagged.
   A quoting function such as `%STR()` passes its argument through as text,
   so `%STR(A,,B)` is judged as `A,,B`.
+* **`?hazard` no longer says a position-indexing helper behaves as it would
+  under `stats::lm(subset = )` (#484).** When `hazard()` drops a time-0
+  row, it builds the design on the retained rows. A term such as
+  `hf(age)`, with `hf <- function(a) a + g[seq_along(a)]` and `g` outside
+  `data`, then pairs the retained rows with the first elements of `g`.
+  Every row after the first dropped one gets the wrong value, and only the
+  drop is warned about. `lm(subset = )` evaluates its terms on every row
+  before subsetting, so the same helper pairs correctly there; the page
+  wrongly implied the two agree. The advice is unchanged: put such a vector
+  in `data`. Evaluating terms as `lm()` does is #590.
+* **`hzr_translate_sas()` translated an early phase that starts at `M=0` as
+  a different model from the one `PROC HAZARD` fits (#471).** For
+  `PARMS ... M=0 NU=1`, with `M` not fixed, `SETG1` fixes `M` at 0 before the
+  fit, and it does the same for a negative `NU`. The translation left `M`
+  free, so the emitted `hazard()` call estimated a parameter `PROC HAZARD`
+  holds, and it could reach a different optimum with no warning. The
+  translation now fixes `M` as `SETG1` does, and records the rewrite in
+  `$untranslated`. Two related starting values are mirrored as well: with
+  `NU` fixed and `M` free, `SETG1` starts `M` at 1, and with `M` fixed and
+  `NU=0` it starts `NU` at 1. `M=0 NU=1`, `M=0 NU=0 FIXM` and
+  `M=0 NU=1 FIXM` now emit the same model, as they are the same job to
+  `PROC HAZARD`. On data drawn from that model, and from a start where the
+  `HAZARD` binary converges, the emitted fit reproduces its estimates.
 
 # TemporalHazard 1.2.12
 

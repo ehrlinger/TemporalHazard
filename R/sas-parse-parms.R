@@ -1184,8 +1184,9 @@
 #' @param fix_delta,mnu1 Whether FIXDELTA and FIXMNU1 were given.
 #' @return `list(code, construct, reason)` for a refusal; otherwise
 #'   `list(code = NULL, moved = <named numeric>, no_result = <construct> or
-#'   NULL, no_result_kind = "no_result", "may_not_fit" or NULL)`, where
-#'   `moved` holds the start values SETG1 substitutes.
+#'   NULL, no_result_kind = "no_result", "may_not_fit" or NULL, fix =
+#'   <character>)`, where `moved` holds the start values SETG1 substitutes
+#'   and `fix` the early shapes it fixes that PARMS did not (#471).
 #' @noRd
 .hzr_setg1_check <- function(shape, fixed, delta, fix_delta, mnu1) {
   fx <- function(p) p %in% fixed
@@ -1249,12 +1250,26 @@
       no_result_kind <- if (m == 0) "no_result" else "may_not_fit"
     } else if (m == 0 && !fx("m") && !fx("nu")) {
       moved <- c(moved, nu = 1, m = 1)       # setg1.c:686-691
-    } else if (m != 0 && fx("m") && !fx("nu")) {
-      moved <- c(moved, nu = 1)              # setg1.c:627-630, :759-762
+    } else if (fx("m") && !fx("nu")) {
+      # setg1.c:627-630 (M < 0), :700-707 (M = 0), :759-762 (M > 0).
+      moved <- c(moved, nu = 1)
+    }
+  }
+  # M = 0 with NU nonzero: the limiting case at M = 0, which SETG1 fits with
+  # M FIXED at 0 (setg1.c:664-666 for NU < 0, :728-730 for NU > 0), unless NU
+  # is fixed and M free, when it moves M to 1 instead (:660-663, :724-727).
+  # The fix is part of the model, not a starting value: with M free the
+  # emitted phase estimates a parameter PROC HAZARD holds (#471).
+  fix <- character(0)
+  if (!mnu1 && m == 0 && nu != 0) {
+    if (fx("nu") && !fx("m")) {
+      moved <- c(moved, m = 1)
+    } else if (!fx("m")) {
+      fix <- "m"
     }
   }
   list(code = NULL, moved = moved, no_result = no_result,
-       no_result_kind = no_result_kind)
+       no_result_kind = no_result_kind, fix = fix)
 }
 
 #' Map a SAS `PARMS` statement's operands to phases and a starting theta.
@@ -1621,10 +1636,22 @@
                            was, setg1$moved), collapse = " "),
              paste0(
                "SETG1 replaces this starting value before fitting ",
-               "(setg1.c:343-349 for THALF, :627-630, :686-691 and ",
-               ":759-762 for M and NU), as PROC HAZARD does and reports ",
+               "(setg1.c:343-349 for THALF, :627-630, :660-663, :686-691, ",
+               ":700-707, :724-727 and :759-762 for M and NU), as PROC ",
+               "HAZARD does and reports ",
                "through hzr_parm_changed(). The emitted phase starts where ",
                "PROC HAZARD's fit starts, not at the operands written here"))
+  }
+  if (length(setg1$fix)) {
+    # The hand-off: the phase call and n_free below both read fixed_early.
+    fixed_early <- intersect(unname(.hzr_parms_early_arg),
+                             union(fixed_early, setg1$fix))
+    flag_bad(sprintf("M=%g NU=%g", early_full[["m"]], early_full[["nu"]]),
+             paste0(
+               "SETG1 fixes M at 0 for an early phase that starts at M = 0 ",
+               "with NU nonzero and M not fixed (setg1.c:664-666 for NU < 0, ",
+               ":728-730 for NU > 0), as PROC HAZARD does: the emitted phase ",
+               "holds M at 0 although PARMS did not write FIXM"))
   }
 
   if (!is.null(delta_seen) && has_early && !setg1_refused) {

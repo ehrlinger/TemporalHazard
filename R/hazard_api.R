@@ -322,9 +322,11 @@ NULL
 #'     (a calendar year, an age in days) can push it beyond what a number
 #'     can hold: it is then reported as `Inf`, as 0, or as a value too small
 #'     to keep its digits, with a warning of class
-#'     `"hzr_unrepresentable_scale"`, and [predict()] refuses the fit.
-#'     Centering or rescaling the covariate fixes it without changing the
-#'     model.}
+#'     `"hzr_unrepresentable_scale"`. The fit keeps \eqn{\log \mu} and its
+#'     standard error, which `summary()` shows as a `log(mu)` row and
+#'     [predict()] reads; `coef()` shows \eqn{\mu} as it is, and `vcov()`
+#'     gives `NA` for it. Centering or rescaling the covariate reports
+#'     \eqn{\mu} itself, without changing the model.}
 #'   \item{`"exponential"`: constant hazard}{The memoryless special case
 #'     \eqn{\nu = 1}: a time-invariant baseline rate, \eqn{H(t \mid \mathbf{x}) =
 #'     \mu t \exp(\eta)}.  Use it when the event rate does not change with
@@ -366,8 +368,12 @@ NULL
 #'   variables, so it cannot see inside a function: a helper that indexes a
 #'   vector from outside `data` by position, such as
 #'   `function(a) a + g[seq_along(a)]`, sees only the retained rows and pairs
-#'   them with the first elements of `g`, as it would under
-#'   `stats::lm(subset = )`. Put such a vector in `data`.
+#'   them with the first elements of `g`, so every row after the first
+#'   dropped one is paired with the wrong value. Only the drop itself is
+#'   warned about; the mis-pairing is not.
+#'   `stats::lm(subset = )` is not a guide here: it evaluates the terms on
+#'   every row and subsets afterwards, so the same helper pairs correctly
+#'   there. Put such a vector in `data`, where it is dropped with its rows.
 #'   A caller-supplied row-aligned input whose row count differs from
 #'   `time`'s is refused before any row is dropped: `x` and `weights` on the
 #'   `time =`/`status =` interface, and `data` wherever a formula reads it row
@@ -1689,25 +1695,30 @@ hazard <- function(formula = NULL,
     # exp(). With a covariate far from zero that logarithm can leave the range
     # a double holds at a sound maximum, and mu comes back as Inf, 0 or a
     # subnormal number that has lost most of its digits (#566).
-    # The fit is not wrong for it, so `converged` is left alone; but mu, its
-    # standard error and every prediction need a scale this object does not
-    # carry, and predict() refuses it (.hzr_check_theta()).
-    if (identical(dist, "weibull") && length(optim_result$par) >= 1L &&
-          (.hzr_unrepresentable(optim_result$par[[1L]]) ||
-             optim_result$par[[1L]] == 0)) {
+    # The fit is not wrong for it, so `converged` is left alone. The same
+    # estimate is kept with log(mu) in place of mu (`$fit$log_scale`), which
+    # predict() and summary() read; coef() still shows mu as it is, and
+    # vcov() shows NA for it, with the reason recorded.
+    mu_unrep <- identical(dist, "weibull") && length(optim_result$par) >= 1L &&
+      (.hzr_unrepresentable(optim_result$par[[1L]]) ||
+         optim_result$par[[1L]] == 0)
+    var_unrep <- !mu_unrep && identical(dist, "weibull") &&
+      is.matrix(optim_result$vcov) &&
+      .hzr_variance_unrepresentable(optim_result$vcov[1L, 1L])
+    if (mu_unrep) {
       warning(structure(
         class = c("hzr_unrepresentable_scale", "warning", "condition"),
         list(message = paste0(
           "The Weibull scale mu is reported as ",
           format(optim_result$par[[1L]]), ", which cannot be represented: ",
           "its logarithm is outside the range a double holds at full ",
-          "precision, usually because a covariate is far from zero. mu, its ",
-          "standard error and predictions from this fit cannot be used. ",
-          "Centre or rescale the covariates and refit."
+          "precision, usually because a covariate is far from zero. coef() ",
+          "shows mu as it is and vcov() gives NA for it; summary() and ",
+          "predict() use log(mu), which the fit keeps. Centre or rescale ",
+          "the covariates to report mu itself."
         ), call = NULL)
       ))
-    } else if (identical(dist, "weibull") && is.matrix(optim_result$vcov) &&
-                 .hzr_variance_unrepresentable(optim_result$vcov[1L, 1L])) {
+    } else if (var_unrep) {
       # mu itself is fine, but its variance carries mu^2 and is not: Inf for
       # mu beyond about 1e154, subnormal or 0 below about 1e-154. The standard
       # error shown for mu was then Inf, exactly 0, or short of the truth,
@@ -1717,12 +1728,27 @@ hazard <- function(formula = NULL,
         list(message = paste0(
           "The variance of the Weibull scale mu cannot be represented (mu = ",
           format(optim_result$par[[1L]]), "), usually because a covariate ",
-          "is far from zero. The standard error reported for mu cannot be ",
-          "used, and predict() will return NA standard errors for any ",
-          "prediction that depends on mu. Centre or ",
-          "rescale the covariates and refit."
+          "is far from zero. vcov() gives NA for mu; summary() and predict() ",
+          "use the variance of log(mu), which the fit keeps. Centre or ",
+          "rescale the covariates to report mu's standard error itself."
         ), call = NULL)
       ))
+    }
+    if (identical(dist, "weibull")) {
+      fit_state$log_scale <- optim_result$log_scale
+      if (mu_unrep || var_unrep) {
+        # No NaN and no false 0 in vcov(): mu's row and column carry Inf * 0
+        # products there (#566).
+        fit_state$log_scale$needed <- TRUE
+        if (is.matrix(optim_result$vcov)) {
+          optim_result$vcov[1L, ] <- NA_real_
+          optim_result$vcov[, 1L] <- NA_real_
+        }
+        degraded_reasons$scale <- paste0(
+          if (mu_unrep) "mu" else "mu's variance",
+          " cannot be represented; log(mu) and its standard error are kept ",
+          "instead")
+      }
     }
     fit_state$se <- .hzr_safe_se_from_vcov(optim_result$vcov)
     fit_state$vcov <- optim_result$vcov
@@ -2408,6 +2434,12 @@ predict.hazard <- function(object, newdata = NULL,
   # test-loglogistic-dist.R's supported case with it). Whether that
   # capability should survive at all is a separate decision, not one to make
   # as a side effect of a length check.
+  # A Weibull fit whose mu cannot be represented is read through the log(mu)
+  # it kept (#566), so that mu is not refused.
+  weib_log <- if (identical(object$spec$dist, "weibull") && length(theta) >= 2L) {
+    .hzr_weibull_log_scale(object)
+  }
+  stored_log_mu <- if (isTRUE(weib_log$stored)) weib_log$theta[[1L]]
   if (!identical(object$spec$dist, "multiphase") && !is.null(object$data$x)) {
     x_stored <- object$data$x
     if (!is.null(time_windows)) {
@@ -2417,13 +2449,14 @@ predict.hazard <- function(object, newdata = NULL,
     }
     .hzr_check_theta(theta, object$spec$dist,
                      n_coef = if (is.null(x_stored)) 0L else ncol(x_stored),
-                     windowed = !is.null(time_windows))
+                     windowed = !is.null(time_windows),
+                     log_mu = stored_log_mu)
   } else if (!identical(object$spec$dist, "multiphase")) {
     # No stored design, so no length to check against (see above), but a
     # Weibull scale or shape the model cannot use is refused all the same:
     # an intercept-only fit stores no design, and its theta went unchecked
     # (#566).
-    .hzr_check_theta(theta, object$spec$dist)
+    .hzr_check_theta(theta, object$spec$dist, log_mu = stored_log_mu)
   }
 
   # The other families predict from an unfitted object perfectly well, and
@@ -2815,13 +2848,14 @@ predict.hazard <- function(object, newdata = NULL,
     # nothing here can now fire that did not fire earlier.
 
     cumhaz_of <- if (dist_lbl == "weibull") {
+      # th is c(log(mu), nu, beta) (#566): see .hzr_weibull_log_scale().
       function(th) {
-        if (th[1] <= 0 || th[2] <= 0) return(rep(NA_real_, length(time)))
+        if (!is.finite(th[1]) || th[2] <= 0) return(rep(NA_real_, length(time)))
         beta_cand <- if (length(th) > 2) th[3:length(th)] else numeric(0)
         eta_cand <- if (has_cov) as.numeric(x %*% beta_cand) else rep(0, length(time))
         # On the log scale: (mu * t)^nu overflows to Inf once mu * t does,
         # where the cumulative hazard itself is finite (#566).
-        unname(exp(th[2] * (log(th[1]) + log(time)) + eta_cand))
+        unname(exp(th[2] * (th[1] + log(time)) + eta_cand))
       }
     } else if (dist_lbl == "exponential") {
       function(th) {
@@ -2854,7 +2888,7 @@ predict.hazard <- function(object, newdata = NULL,
       ))
     }
 
-    cumhaz <- cumhaz_of(theta)
+    cumhaz <- cumhaz_of(if (dist_lbl == "weibull") weib_log$theta else theta)
     if (type == "cumulative_hazard") return(cumhaz)
     return(exp(-cumhaz))
   }
@@ -2953,6 +2987,9 @@ print.hazard <- function(x, ...) {
 #'   fitted objective is PROC HAZARD's interval-mean-hazard objective, not a
 #'   log-likelihood. That value is always in `objective_value`, and
 #'   `objective` says which of the two it is (`"likelihood"` or `"sas"`).
+#'   For a Weibull fit whose scale `mu`, or its variance, cannot be
+#'   represented, the coefficient table has a `log(mu)` row under `mu`, with
+#'   the standard error of `log(mu)`; it is not tested against 0.
 #' @examples
 #' # -- Single-phase Weibull summary ------------------------------------
 #' fit <- hazard(time = rexp(30, 0.5), status = rep(1L, 30),
@@ -3029,6 +3066,24 @@ summary.hazard <- function(object, ...) {
       row.names = coef_names,
       check.names = FALSE
     )
+
+    # A Weibull mu (or its variance) that cannot be represented: show the
+    # log(mu) the fit kept, with its standard error, under mu (#566). Not
+    # tested against 0, which would be a test of mu = 1.
+    if (identical(object$spec$dist, "weibull") && length(theta) >= 2L) {
+      lsc <- .hzr_weibull_log_scale(object)
+      if (isTRUE(lsc$stored)) {
+        v11 <- if (is.matrix(lsc$vcov)) lsc$vcov[1L, 1L] else NA_real_
+        log_row <- data.frame(
+          estimate = lsc$theta[[1L]],
+          std_error = if (is.finite(v11) && v11 > 0) sqrt(v11) else NA_real_,
+          z_stat = NA_real_, p_value = NA_real_,
+          row.names = "log(mu)", check.names = FALSE
+        )
+        coef_table <- rbind(coef_table[1L, , drop = FALSE], log_row,
+                            coef_table[-1L, , drop = FALSE])
+      }
+    }
   }
 
   out <- list(
@@ -3232,7 +3287,11 @@ coef.hazard <- function(object, ...) {
 #'   (the CoE solution is the unconstrained MLE). That recomputation requires
 #'   \pkg{numDeriv} and an invertible Hessian; if either is unavailable the fit
 #'   emits a warning and the conserved \code{log_mu} stays \code{NA} (the rest
-#'   of the matrix is unaffected). Returns a scalar \code{NA} only when the
+#'   of the matrix is unaffected). For a Weibull fit whose scale \code{mu}, or
+#'   its variance, cannot be represented, \code{mu}'s row and column are
+#'   \code{NA}, the reason is recorded in the fit's \code{degraded_causes},
+#'   and \code{summary()} shows the variance of \code{log(mu)} instead.
+#'   Returns a scalar \code{NA} only when the
 #'   model has not been fitted or no covariance matrix is available.
 #' @export
 vcov.hazard <- function(object, ...) {

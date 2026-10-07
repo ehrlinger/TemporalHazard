@@ -99,8 +99,12 @@ value from outside \code{data}. That check reads the formula's own
 variables, so it cannot see inside a function: a helper that indexes a
 vector from outside \code{data} by position, such as
 \code{function(a) a + g[seq_along(a)]}, sees only the retained rows and pairs
-them with the first elements of \code{g}, as it would under
-\code{stats::lm(subset = )}. Put such a vector in \code{data}.
+them with the first elements of \code{g}, so every row after the first
+dropped one is paired with the wrong value. Only the drop itself is
+warned about; the mis-pairing is not.
+\code{stats::lm(subset = )} is not a guide here: it evaluates the terms on
+every row and subsets afterwards, so the same helper pairs correctly
+there. Put such a vector in \code{data}, where it is dropped with its rows.
 A caller-supplied row-aligned input whose row count differs from
 \code{time}'s is refused before any row is dropped: \code{x} and \code{weights} on the
 \verb{time =}/\verb{status =} interface, and \code{data} wherever a formula reads it row
@@ -564,9 +568,11 @@ the baseline at \eqn{\mathbf{x} = 0}, so a covariate far from zero
 (a calendar year, an age in days) can push it beyond what a number
 can hold: it is then reported as \code{Inf}, as 0, or as a value too small
 to keep its digits, with a warning of class
-\code{"hzr_unrepresentable_scale"}, and \code{\link[=predict]{predict()}} refuses the fit.
-Centering or rescaling the covariate fixes it without changing the
-model.}
+\code{"hzr_unrepresentable_scale"}. The fit keeps \eqn{\log \mu} and its
+standard error, which \code{summary()} shows as a \code{log(mu)} row and
+\code{\link[=predict]{predict()}} reads; \code{coef()} shows \eqn{\mu} as it is, and \code{vcov()}
+gives \code{NA} for it. Centering or rescaling the covariate reports
+\eqn{\mu} itself, without changing the model.}
 \item{\code{"exponential"}: constant hazard}{The memoryless special case
 \eqn{\nu = 1}: a time-invariant baseline rate, \eqn{H(t \mid \mathbf{x}) =
     \mu t \exp(\eta)}.  Use it when the event rate does not change with

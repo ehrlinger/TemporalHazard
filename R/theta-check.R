@@ -41,9 +41,13 @@
 #'   skips the length check.
 #' @param windowed Whether the design was expanded by time windows, for the
 #'   message.
+#' @param log_mu A finite `log(mu)` the fit kept because `mu` itself cannot be
+#'   represented (#566), or `NULL`. When given, `mu` is not checked: the
+#'   caller reads `log_mu` in its place.
 #' @return `NULL`, invisibly; called for its error.
 #' @noRd
-.hzr_check_theta <- function(theta, dist, n_coef = NULL, windowed = FALSE) {
+.hzr_check_theta <- function(theta, dist, n_coef = NULL, windowed = FALSE,
+                             log_mu = NULL) {
   if (!is.null(n_coef) &&
         dist %in% c("weibull", "exponential", "loglogistic", "lognormal")) {
     n_shape <- .hzr_shape_parameter_count(dist)
@@ -60,6 +64,9 @@
   }
   if (!identical(dist, "weibull") || length(theta) < 2L) {
     return(invisible(NULL))
+  }
+  if (length(log_mu) == 1L && is.finite(log_mu)) {
+    theta[[1L]] <- 1   # read through log_mu; only nu is checked here
   }
   unrep <- c(if (.hzr_unrepresentable(theta[[1L]])) {
                paste0("scale mu = ", format(theta[[1L]]))
