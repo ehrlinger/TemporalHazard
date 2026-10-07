@@ -46,6 +46,10 @@
       ones it dropped, which it could not confirm as the fit's data, now
       warns once that those rows were dropped and should be dropped from
       `data`. Before, it reported only a mismatched row count.
+    - `hzr_stepwise()`'s note that it could not check the row order of
+      `data` said, for a formula fit given `data` of another length, that
+      the stored data frame "has 116 rows, not the fit's 116". It now
+      compares `data` with the stored data frame, as the check does.
 
 * **Multiphase fits under Conservation of Events could stop short of the
   maximum and report `converged = TRUE` (#565). Multiphase estimates from

@@ -487,12 +487,15 @@ test_that("the re-parse after a drop does not repeat a term's warnings (#484)", 
     if (length(a) == nrow(d)) warning("retained rows only")
     a
   }
-  expect_warning(
-    suppressWarnings(
-      hazard(survival::Surv(time, status) ~ only_kept(x), data = d0,
-             dist = "weibull", theta = c(tz_theta$weibull, 0), fit = TRUE),
-      classes = "hzr_time_zero_dropped"),
-    "retained rows only")
+  msgs <- character(0)
+  withCallingHandlers(
+    hazard(survival::Surv(time, status) ~ only_kept(x), data = d0,
+           dist = "weibull", theta = c(tz_theta$weibull, 0), fit = TRUE),
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+  expect_gt(sum(msgs == "retained rows only"), 0L)
 })
 
 test_that("hzr_stepwise() names the drop when given the data before it (#484)", {
@@ -536,11 +539,22 @@ test_that("hzr_stepwise() names the drop when given the data before it (#484)", 
                                 fit = TRUE))
   other <- df
   other$time[1] <- 2
-  expect_warning(
-    expect_error(hzr_stepwise(ff, scope = c("x1", "x2"), data = other,
-                              trace = FALSE),
-                 "rows but the fitted model used"),
-    "plus the 1 it dropped at time 0 (rows 1 of", fixed = TRUE)
+  msgs <- character(0)
+  expect_error(
+    withCallingHandlers(
+      hzr_stepwise(ff, scope = c("x1", "x2"), data = other, trace = FALSE),
+      warning = function(w) {
+        msgs <<- c(msgs, conditionMessage(w))
+        invokeRestart("muffleWarning")
+      }),
+    "rows but the fitted model used")
+  expect_true(any(grepl("plus the 1 it dropped at time 0 (rows 1 of", msgs,
+                        fixed = TRUE)))
+  # The row-order note compares `data` with the stored frame; it used to
+  # compare the frame with the fit, and printed "116 rows, not the fit's 116".
+  expect_true(any(grepl("`data` has 117 rows, not the 116 of the data frame",
+                        msgs, fixed = TRUE)))
+  expect_false(any(grepl("rows, not the fit's", msgs, fixed = TRUE)))
 })
 
 test_that("hzr_bootstrap() resamples the rows that remain (#484)", {
