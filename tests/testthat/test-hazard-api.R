@@ -124,8 +124,13 @@ test_that("hazard() refuses zero rows on every path (#231)", {
   expect_equal(fit5(tt5, wrapm(st5)), ref)
   expect_equal(fit5(wrapm(tt5), st5), ref)
   # The same inside `data`, where Surv() and the phase formula read it.
-  df5 <- data.frame(tt = wrap(tt5), st = wrap(st5), z = wrap(c(0, 1, 0, 1, 1)))
+  # Assigned column by column: R 4.1's data.frame() refuses a classed
+  # vector it has no as.data.frame() method for.
   df5_plain <- data.frame(tt = tt5, st = st5, z = c(0, 1, 0, 1, 1))
+  df5 <- df5_plain
+  df5$tt <- wrap(tt5)
+  df5$st <- wrap(st5)
+  df5$z <- wrap(c(0, 1, 0, 1, 1))
   fitf <- function(d) {
     suppressWarnings(hazard(survival::Surv(tt, st) ~ z, data = d,
                             dist = "weibull", theta = c(1, 1, 0),
