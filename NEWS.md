@@ -2,6 +2,31 @@
 
 ## Bug fixes
 
+* **A single-distribution fit (exponential, Weibull, lognormal or
+  loglogistic) could stop at a false maximum, far below the best
+  log-likelihood, and report `converged = TRUE` with no warning (#531).**
+  On the `avc` data an exponential fit with `~ age + mal` from an ordinary
+  start stopped at a log-likelihood of -80896.5 against a best of -394.8.
+  `hazard()` now warns, with class `"hzr_possible_false_maximum"`, when such
+  a fit reports convergence with a relative gradient above 1e-3 and the
+  continuation did not stop on its iteration limit or an unbounded direction
+  (`nlm()` codes 4 and 5, which already warn). The warning says the fit may not
+  be a maximum, names the relative gradient and suggests other starting
+  values, or centring or rescaling the covariates. `converged` is not
+  changed, and nothing is refused. `hzr_bootstrap()`, whose replicates run
+  with their warnings suppressed, counts the replicates in which any fit
+  meets the same rule (the base refit and every stepwise refit, not only
+  the final fit) and warns once; their estimates are still pooled. The threshold sits
+  above every good fit in the test suite (the worst at 6.8e-4) and below
+  the false maxima found, but it does not separate every case. A good fit
+  on badly scaled covariates (one multiplied by 1e4 or more) can exceed it,
+  with a relative gradient of 1e-3 to 5e-3 and a log-likelihood up to 0.02
+  short; there another start does not help, and centring or rescaling
+  does. And a stuck fit can fall below it: an intercept-only Weibull on
+  times near 1e-170, started at a shape of 1.5, stops there against 1.72
+  with a relative gradient of about 5e-4 and raises nothing. The absence of
+  the warning is not a guarantee. Multiphase fits are not flagged.
+
 * `hzr_translate_sas()` code failed on R before 4.4 when a phase statement
   named a variable that is not a syntactic R name, such as `_X1`: the fit
   stopped with "object '_X1' not found". The emitted status chunk adds its
@@ -33,6 +58,23 @@
     - When Conservation of Events could not recompute the conserved phase's
       variance, `predict()` keeps its standard errors but now warns that
       they leave that variance out and may be understated.
+
+* **After rows at time 0 are dropped, messages are clearer (#484).**
+    - Row numbers in later error messages refer to the rows as given, not
+      to their positions among the rows that remain: an `NA` status on row
+      10 is reported as row 10, where it used to be reported as row 9.
+    - A warning raised by a term of the formula, such as one a function in
+      it raises, was shown twice, because the formula is evaluated again on
+      the rows that remain. Only a warning that evaluation raises anew is
+      shown now.
+    - `hzr_stepwise()` given `data` with exactly the fit's rows plus the
+      ones it dropped, which it could not confirm as the fit's data, now
+      warns once that those rows were dropped and should be dropped from
+      `data`. Before, it reported only a mismatched row count.
+    - `hzr_stepwise()`'s note that it could not check the row order of
+      `data` said, for a formula fit given `data` of another length, that
+      the stored data frame "has 116 rows, not the fit's 116". It now
+      compares `data` with the stored data frame, as the check does.
 
 * **Multiphase fits under Conservation of Events could stop short of the
   maximum and report `converged = TRUE` (#565). Multiphase estimates from

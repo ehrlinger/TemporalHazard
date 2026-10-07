@@ -587,10 +587,17 @@
 #' @param time Event/censoring times.
 #' @param time_lower,time_upper Optional censoring bounds; `NULL` means `time`.
 #' @param objective Resolved objective, `"likelihood"` or `"sas"`.
+#' @param row_ids Optional row numbers to report in place of positions: the
+#'   rows as the caller gave them, when `hazard()` has dropped rows at time 0
+#'   (#484). `NULL` reports positions.
 #' @return `NULL`, invisibly; called for its side effect.
 #' @keywords internal
 .hzr_check_sas_data <- function(status, time, time_lower, time_upper,
-                                objective) {
+                                objective, row_ids = NULL) {
+  rows <- function(i) {
+    i <- utils::head(i, 10L)
+    paste(if (is.null(row_ids)) i else row_ids[i], collapse = ", ")
+  }
   # Checked BEFORE the objective gate, because an NA status is a data defect
   # under every objective. Left inside the gate it reached the user through
   # the optimizer's per-start handler as "ended where the likelihood is not
@@ -599,7 +606,7 @@
   if (anyNA(status)) {
     .hzr_stop_data("'status' must be complete; ",
          sum(is.na(status)), " row(s) are NA, at index/indices ",
-         paste(utils::head(which(is.na(status)), 10L), collapse = ", "),
+         rows(which(is.na(status))),
          if (sum(is.na(status)) > 10L) ", ..." else "", ".")
   }
 
@@ -633,7 +640,7 @@
       .hzr_stop_data("objective = \"sas\" requires both bounds on every ",
            "interval-censored row. ", length(na_bound), " of ",
            length(idx_interval), " interval row(s) have an NA bound, at ",
-           "index/indices ", paste(utils::head(na_bound, 10L), collapse = ", "),
+           "index/indices ", rows(na_bound),
            if (length(na_bound) > 10L) ", ..." else "", ".")
     }
     bad <- idx_interval[!(upper[idx_interval] > lower[idx_interval])]
@@ -642,7 +649,7 @@
            "interval-censored row; the interval-mean hazard divides by ",
            "(u - l). ", length(bad), " of ", length(idx_interval),
            " interval row(s) fail this, at index/indices ",
-           paste(utils::head(bad, 10L), collapse = ", "),
+           rows(bad),
            if (length(bad) > 10L) ", ..." else "", ".")
     }
   }

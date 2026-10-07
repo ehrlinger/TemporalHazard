@@ -201,6 +201,11 @@ hazard shape with no covariates (fixing it via \code{hzr_phase(..., fixed = "sha
 they enter the model. \code{summary$pct} then reports the selection
 frequency across replicates, and \code{summary$mean}/\code{sd}/\verb{ci_*} describe the
 coefficient distribution conditional on selection.
+
+A replicate in which any fit (the base refit, a stepwise refit or the final
+fit) may not be a maximum, by the rule \code{\link[=hazard]{hazard()}} warns on with class
+\code{"hzr_possible_false_maximum"}, is counted, and \code{hzr_bootstrap()} warns
+once with that count. Such replicates are kept in the pooled results.
 }
 \section{Selection mode is experimental}{
 

@@ -278,7 +278,22 @@ NULL
 #' iteration limit (raise `control$maxit`), and code 5, where the
 #' log-likelihood kept rising along some direction and the model may have no
 #' maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without
-#' one. The test is relative to the size of the log-likelihood, so a fit that
+#' one, except for the single-distribution fits: there a converged fit with
+#' a relative gradient above 1e-3 that did not stop on code 4 or 5 (in
+#' practice code 2 or 3, or no code, which is recorded only when the continuation's point
+#' was kept: none is when it found no better point, [stats::nlm()] raised
+#' an error, or its minimum was not finite) warns,
+#' with class `"hzr_possible_false_maximum"`, that the fit may not be a
+#' maximum, and suggests other starting values or centring or rescaling the
+#' covariates. Badly scaled covariates can put a good fit above 1e-3, where
+#' a restart does not help and rescaling does. [hzr_bootstrap()] counts
+#' the replicates in which any fit (the base refit, a stepwise refit or the
+#' final fit) meets the same rule, and warns once. Such a stop can be a false
+#' maximum far below the best one from an ordinary start, and the gradient
+#' test alone cannot always tell it from a good fit, so `converged` is left
+#' as it is. The warning is not a guarantee: a fit can stop short of its
+#' maximum with a relative gradient below 1e-3 and raise nothing.
+#' The test is relative to the size of the log-likelihood, so a fit that
 #' meets it is within SAS's tolerance of the maximum, not exactly at it.
 #'
 #' The optimizer treats a score it cannot use as zero, so it can stop on
@@ -1000,7 +1015,15 @@ hazard <- function(formula = NULL,
       }
     }
 
-    parsed <- .hzr_parse_formula(formula = formula, data = data)
+    # The messages it warns with, so a re-parse after dropping rows at time 0
+    # does not repeat them (#484). Recorded, not muffled.
+    parse_warnings <- character(0)
+    parsed <- withCallingHandlers(
+      .hzr_parse_formula(formula = formula, data = data),
+      warning = function(w) {
+        parse_warnings <<- c(parse_warnings, conditionMessage(w))
+      }
+    )
     time <- parsed$time
     status <- parsed$status
     time_lower <- parsed$time_lower
@@ -1142,8 +1165,13 @@ hazard <- function(formula = NULL,
   n_dropped_time_zero <- sum(at_zero)
   dropped_time_zero_rows <- which(at_zero)
   dropped_frame <- NULL
+  # Positions, among the rows given, of the rows kept: later messages report
+  # these, not positions among the rows that remain (#484). Subset exactly as
+  # `time` is, so the two stay aligned.
+  row_ids <- NULL
   if (n_dropped_time_zero > 0L) {
     keep <- !at_zero
+    row_ids <- seq_len(n)[keep]
     # Anything row-aligned must have exactly n rows to be subset. One of
     # another length used to pass through untouched, so an `x`, `weights`
     # or `data` k rows short was accepted when k rows were dropped, and paired
@@ -1244,7 +1272,17 @@ hazard <- function(formula = NULL,
       if (!is.null(formula) && any(keep)) {
         reparsed <- withCallingHandlers(
           .hzr_parse_formula(formula = formula, data = data),
-          hzr_intercept_removed = function(w) invokeRestart("muffleWarning")
+          hzr_intercept_removed = function(w) invokeRestart("muffleWarning"),
+          # A warning the first parse already raised is muffled, once per
+          # time it was raised; one only these rows raise still reaches the
+          # user (#484).
+          warning = function(w) {
+            hit <- match(conditionMessage(w), parse_warnings)
+            if (!is.na(hit)) {
+              parse_warnings <<- parse_warnings[-hit]
+              invokeRestart("muffleWarning")
+            }
+          }
         )
         same <- function(a, b) isTRUE(all.equal(a, b, check.attributes = FALSE))
         if (!same(reparsed$time, time) || !same(reparsed$status, status) ||
@@ -1269,7 +1307,7 @@ hazard <- function(formula = NULL,
         "fitting, as PROC HAZARD drops them (TIME <= 0 is inadmissible, ",
         "readt.c). The fit uses the other ", n, "; the count is in ",
         "fit$data$dropped_time_zero, and row numbers in later messages ",
-        "count the rows that remain."
+        "refer to the rows as given."
       ), call = NULL)
     ))
   }
@@ -1391,7 +1429,8 @@ hazard <- function(formula = NULL,
     stop("'status' must be coded -1 (left-censored), 0 (right-censored), ",
          "1 (event) or 2 (interval-censored); ", sum(bad_status), " of ", n,
          " row(s) are not, at index/indices ",
-         paste(utils::head(which(bad_status), 10L), collapse = ", "),
+         paste(utils::head(if (is.null(row_ids)) which(bad_status) else
+                            row_ids[bad_status], 10L), collapse = ", "),
          if (sum(bad_status) > 10L) ", ..." else "", ". A Surv object's ",
          "codes differ from these: pass it as the response, or as 'status', ",
          "and it is translated.", call. = FALSE)
@@ -1506,7 +1545,8 @@ hazard <- function(formula = NULL,
   # them through the optimizer's per-start tryCatch framed a data defect as a
   # convergence problem. The guards inside the objective and gradient stay --
   # the gradient is reachable without hazard(). See .hzr_check_sas_data().
-  .hzr_check_sas_data(status, time, time_lower, time_upper, objective)
+  .hzr_check_sas_data(status, time, time_lower, time_upper, objective,
+                      row_ids = row_ids)
 
   # fit_state holds the result of optimization (or just starting values if fit=FALSE).
   # Fields:
@@ -1753,7 +1793,8 @@ hazard <- function(formula = NULL,
   # code 2 or 3 stop (step too small, or no lower point found) is where SAS
   # prints a caution and retries; on the test suite about a third of stops
   # end there, mostly on deliberately awkward fixtures, and warning on each
-  # would bury the two that matter.
+  # would bury the two that matter. The exception, for single-distribution
+  # fits with a large relative gradient, is below.
   if (fit_ran) {
     fit_state$rel_gradient <- optim_result$rel_gradient
     fit_state$rel_gradient_reason <- optim_result$rel_gradient_reason
@@ -1784,6 +1825,25 @@ hazard <- function(formula = NULL,
         },
         call. = FALSE
       )
+    }
+    # A single-distribution fit can stop at a false maximum far below the
+    # best one, from an ordinary start (#518, #531). The relative gradient
+    # does not separate those stops cleanly from good ones, so this warns
+    # rather than refusing, and leaves `converged` alone. The rule is
+    # .hzr_possible_false_maximum(); hzr_bootstrap() counts this warning.
+    if (.hzr_possible_false_maximum(fit_state, dist)) {
+      warning(warningCondition(paste0(
+        "The fit may not be a maximum: the optimizer stopped with a relative ",
+        "gradient of ", signif(fit_state$rel_gradient, 3),
+        if (!is.na(fit_state$polish_code %||% NA_integer_)) {
+          paste0(" (nlm code ", fit_state$polish_code, ")")
+        },
+        ", where SAS/C HAZARD requires at most ",
+        signif(.Machine$double.eps^(1 / 3), 3), ". A stop like this can be ",
+        "far below the best log-likelihood. Refit from other starting ",
+        "values (`theta`) and keep the highest log-likelihood, or centre or ",
+        "rescale the covariates."),
+        class = "hzr_possible_false_maximum"))
     }
   }
 
@@ -3869,4 +3929,28 @@ vcov.hazard <- function(object, ...) {
     data[] <- lapply(data, .hzr_numeric_values, keep_dim = TRUE)
   }
   data
+}
+
+#' Whether a fit meets the possible-false-maximum rule (#531)
+#'
+#' A single-distribution fit that reports convergence with a relative
+#' gradient above 1e-3, where the `nlm()` continuation did not stop on code
+#' 4 or 5 (both of which warn on their own). 1e-3 sits above the worst good
+#' fit in the test suite (6.8e-4) and below the false maxima found (1.2e-3
+#' and up); badly scaled covariates can put a good fit above it. The code is
+#' NA, rather than 2 or 3, wherever the continuation's point was not kept:
+#' it found no lower point, `nlm()` raised an error, or its minimum was not
+#' finite. Those stops are included. Multiphase fits are left for 1.3.0.
+#' `hazard()` warns on it; `hzr_bootstrap()` counts that warning from every
+#' fit in a replicate.
+#'
+#' @param fit_state The fit's `$fit` list.
+#' @param dist The fit's distribution.
+#' @return `TRUE` or `FALSE`.
+#' @keywords internal
+#' @noRd
+.hzr_possible_false_maximum <- function(fit_state, dist) {
+  isTRUE(fit_state$converged) && !identical(dist, "multiphase") &&
+    !isTRUE(fit_state$polish_code %in% c(4L, 5L)) &&
+    isTRUE(fit_state$rel_gradient > 1e-3)
 }
