@@ -24,7 +24,9 @@
 
 \item{status}{Numeric event indicator vector.}
 
-\item{time_lower}{Optional lower bounds for interval censoring.}
+\item{time_lower}{Optional lower bounds: the counting-process ENTRY time
+on a status 0/1 row when 0 < time_lower < time (left truncation), and the
+interval's lower bound on a status-2 row.}
 
 \item{time_upper}{Optional upper bounds for left/interval censoring.}
 

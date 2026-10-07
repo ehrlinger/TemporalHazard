@@ -494,15 +494,21 @@ The chunk hides them because `summary()` reports the same thing.
 | `$data$x`             | Design matrix                                               |
 | `$fit$theta`          | Coefficient vector: estimates when `fit = TRUE`, the starting values when `fit = FALSE` |
 | `$fit$converged`      | `TRUE`/`FALSE` from the optimizer; `NA` when `fit = FALSE`  |
-| `$fit$objective`      | Log-likelihood at convergence; `NA` when `fit = FALSE`      |
+| `$fit$objective`      | Objective at convergence (the log-likelihood, except as noted below); `NA` when `fit = FALSE` |
 | `$legacy_args`        | Named pass-through arguments for parity                     |
 
-> **Note:** `$fit$objective` above is a *number*: the log-likelihood the
-> optimizer reached; `print()` and `summary()` label it `log-lik` and
-> `log_lik`, which are the names to prefer when writing about it. It is
-> unrelated to the `objective` *argument* of `hazard()`, which selects an
-> estimand: `"likelihood"` (the default) or `"sas"`, reproducing what
-> `PROC HAZARD` accumulates for an interval-censored row. See `?hazard`; the
+> **Note:** `$fit$objective` above is a *number*: the value the optimizer
+> reached, which is the log-likelihood with the one exception described
+> below. `print()` and `summary()` label it
+> `log-lik` and `log_lik`, which are the names to prefer when writing about
+> it. The exception is a fit with `objective = "sas"` that read an
+> interval-censored row (one of positive weight, not dropped by a phase
+> design): there the value is `PROC HAZARD`'s objective, not a
+> log-likelihood, and `print()` labels it `SAS objective`, while
+> `summary()` returns `log_lik = NA` and the value as `objective_value`. The
+> field is distinct from the `objective` *argument* of `hazard()`, which
+> selects how it is calculated: `"likelihood"` (the default) or `"sas"`,
+> reproducing what `PROC HAZARD` accumulates for an interval-censored row. See `?hazard`; the
 > SAS objective exists to reproduce legacy runs, not for new analyses.
 
 ---
@@ -583,6 +589,46 @@ before you point it at a corpus.
   `time_lower` argument carries the entry time for status 0/1 rows and
   the interval's lower bound for status 2 rows; one column cannot
   express both. Either statement alone translates.
+- **A job `PROC HAZARD` itself refuses, or one whose model this
+  translation cannot emit, warns loudly and still fits.** A syntax error
+  in a `PARMS` operand or on the `PROC` line (a value its lexer does not
+  read as a number, a keyword outside the grammar, a template's `?`), a
+  `SETG3` refusal, `FIXMNU1`, a non-zero `DELTA` on an active early
+  phase, `FIXTAU` with no `TAU` written, and `FIXGE2`/`FIXGAE2` without
+  `WEIBULL` each get a `warning()` chunk immediately above the fit,
+  naming the cause, and a row in `$untranslated`. A fit standing in for a
+  job `PROC HAZARD` does not run, or for a model it does not fit, is the
+  answer this package most wants to avoid, so it is labelled where you
+  cannot miss it rather than left to be inferred from the estimates.
+
+  The warning is **per job**. A file holding several jobs emits one fit
+  chunk each, and only the refused job's fit is preceded by a warning, so
+  the document renders to completion and every other job runs unchanged.
+  An earlier draft of this work stopped instead; Quarto then exited 1 and
+  wrote no output document at all, including for the jobs *before* the
+  refused one.
+
+  Two limits on that. An **unknown** keyword is *recorded, not refused*:
+  a `%repeat` call brings a DATA step's own keywords through the same
+  parser, so refusing them would flag jobs that run. And an operand
+  carrying a **macro reference** gets no syntax verdict at all, because
+  SAS expands it before `PROC HAZARD` reads the statement, so the
+  translation cannot know what arrived. It still warns on a job whose
+  phases were built: the unread operand may be the one that sets a shape,
+  and the emitted phase would otherwise carry SAS's default where the job
+  wrote something else.
+
+  One case still halts, and it halts more than the job. Where the value
+  `PROC HAZARD` refuses is also one `hzr_phase()` will not build, the
+  warning and the fit are both emitted as usual --- but `hzr_phase()`
+  then rejects the value when the chunk actually runs, and an error in a
+  chunk stops Quarto outright: it exits 1 and writes **no output
+  document at all**, including for the jobs before this one. The console
+  shows only `hzr_phase()`'s own message, because `knitr` collects
+  warnings into the document that was never written. So the reason the
+  job was refused does not reach you; only the symptom does. Delete that
+  job from the file if you need the other jobs' results before you can
+  correct it.
 - **Prediction grids the parser cannot resolve are refused whole**, and
   an unresolved `INHAZ=` stops the render on purpose. Both are covered
   under "What it doesn't translate" below. Note that resolving an
@@ -724,23 +770,33 @@ constant/late scale), not just the phases' log(mu) starts.
 
 Constructs the parser can't resolve are never silently dropped: they
 land on the returned `hzr_sas_job` object and render as visible
-`UNTRANSLATED` callouts in the `.qmd`, so a translated document shows
+`UNTRANSLATED` callouts in the `.qmd` (where they do not stop the
+document outright, above), so a translated document shows
 its own gaps instead of quietly under-reporting the original job. Two
 gaps are common enough in production jobs to know about going in:
 
-- **`PROC HAZPRED` prediction grids built from `SET`-derived values,
-  function calls, or unknown names are not translated.** The parser
-  resolves a grid's `DO` loop bounds when they are literal numbers or
-  DATA-step constants it can fold (e.g. `DO MONTHS = 1*DTY, 2*DTY,
-  ... ;` with `DTY` assigned earlier in the same DATA step), but a
-  bound read from `SET`, computed by a function call, or naming
-  something the parser can't resolve is refused whole rather than
-  partially read: a partial grid is a partial `newdata`, and
-  reporting predictions over a half-read grid would be worse than not
-  reporting them. Such grids emit an `UNTRANSLATED` block; build the
-  `newdata` grid by hand and pass it to `predict.hazard()` instead. On
-  the public corpus, grid resolution is 19 of 55 (35%), up from 10 of
-  55 (18%) before constant folding.
+- **A `PROC HAZPRED` grid is rebuilt from the job's own DATA steps,
+  and some of those steps are only partly read.** The translator
+  follows `DATA=` back the way SAS does: the last step that wrote the
+  dataset before the `PROC HAZPRED`, then each `SET` input of that
+  step, and so on. So a `DATA DESIGN` step's covariates, a
+  `SET PREDICT DIGITAL` that stacks two grids, and a
+  `YEARS = MONTHS/12` all reach the grid, and the emitted `predict()`
+  runs at the variable the `TIME` statement names. Arithmetic, `LOG`
+  and `EXP`, `DO` lists with constant bounds, `OUTPUT`, `DROP`, `KEEP`
+  and `PROC SORT ... BY` are translated. A statement that sets a value
+  the translator can't compute, such as an `IF ... THEN` assignment or
+  a function it does not carry, is recorded as `UNTRANSLATED`, the
+  grid chunk warns, and that variable is `NA` in the grid, so any
+  prediction that uses it is `NA` too. The rest of the grid is still
+  built. A step that decides which rows exist in a way it can't read
+  (an `INFILE`, a `MERGE`, a subsetting `IF` or `IF ... THEN DELETE`,
+  another procedure's `OUT=`, a `PROC SQL` `CREATE TABLE`, a loop bound
+  taken from data) refuses the whole grid: the `predict()` chunks stop,
+  so build the `newdata` grid by hand and pass it to
+  `predict.hazard()`. On the public corpus, 15 of 36 `PROC HAZPRED`
+  blocks now get a grid, 7 of them with a warning; before 1.2.13, 13
+  did, several of them missing covariates or rows with nothing recorded.
 - **An unresolved `INHAZ=` fails the render on purpose.** If a
   `PROC HAZPRED` job's fitted-model dataset can't be found (neither
   from another translated job's `OUTHAZ=` nor from the `librefs=`

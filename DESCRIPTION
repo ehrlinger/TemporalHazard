@@ -1,6 +1,6 @@
 Package: TemporalHazard
 Title: Temporal Parametric Hazard Modeling
-Version: 1.2.11
+Version: 1.2.12
 Authors@R: person("John", "Ehrlinger", email = "john.ehrlinger@gmail.com", role = c("aut", "cre", "cph"))
 URL: https://ehrlinger.github.io/TemporalHazard/, https://github.com/ehrlinger/TemporalHazard
 BugReports: https://github.com/ehrlinger/TemporalHazard/issues
@@ -22,7 +22,7 @@ Encoding: UTF-8
 Language: en-US
 Roxygen: list(markdown = TRUE)
 VignetteBuilder: quarto
-Depends: R (>= 4.1.0)
+Depends: R (>= 4.4.0)
 Imports:
     survival
 Suggests:

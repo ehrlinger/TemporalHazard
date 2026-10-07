@@ -185,7 +185,7 @@ test_that("an xlev failure keeps the name and leads with it", {
   o <- an_setup()
   d <- o$d
   gg <- factor(sample(c("a", "b"), 60, TRUE))
-  fit <- an_fit(survival::Surv(t, s) ~ gg, d, 2)
+  fit <- an_fit(survival::Surv(t, s) ~ gg, d, 1)
   gg <- factor(sample(c("Y", "Z"), 60, TRUE))
   msg <- an_msg(fit, data.frame(mal = c(0, 1)))
   expect_match(an_first(msg), "term 'gg' of the model does not give one value",

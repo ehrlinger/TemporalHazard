@@ -78,6 +78,7 @@ reference:
       - hzr_read_outhaz
       - predict.hzr_outhaz
       - hzr_translate_sas
+      - print.hzr_sas_job
       - hzr_repeated_events
   - title: Numerical Primitives
     contents:

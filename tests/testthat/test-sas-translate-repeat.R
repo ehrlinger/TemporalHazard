@@ -268,10 +268,13 @@ test_that("a fit whose block encloses the %repeat call cannot render a fit", {
     "data events; set events; x=1;",
     "proc hazard data=events; event ce_card; time iv_event; parms muc=0.5; );"
   ))
-  expect_null(job$calls$fit[[3L]][["data"]])
+  # With DATA= lost the no-DATA= refusal stops the fit chunk (#497). It must
+  # not claim SAS refuses the job, because SAS reads the DATA= this missed.
+  expect_identical(job$calls$fit[[3L]][[1L]], as.name("stop"))
   env <- new.env(parent = globalenv())
   env$BD_CARD <- bd_card()
-  expect_error(for (nm in names(job$calls)) eval(job$calls[[nm]], env), "CE_CARD")
+  expect_error(for (nm in names(job$calls)) eval(job$calls[[nm]], env),
+               "not the PROC HAZARD statement", fixed = TRUE)
   expect_false(exists("fit", envir = env, inherits = FALSE))
 })
 

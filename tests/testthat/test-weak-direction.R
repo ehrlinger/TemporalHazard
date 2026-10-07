@@ -123,12 +123,13 @@ test_that("a check that ran and found nothing returns NULL", {
   # so this is a conclusion rather than a gap.
   expect_null(.hzr_weak_direction(ridge_vcov(), rcond = 1e-3,
                                   param_names = nms))
-  # A zero-variance parameter is dropped by the `keep` filter, leaving one
-  # estimated parameter and so no pair to trade off. (It never reaches the
-  # correlation step, which an earlier comment here claimed it tested.)
-  expect_null(.hzr_weak_direction(diag(c(0, 1)), rcond = 1e-10,
-                                  param_names = nms))
-  # A single-parameter fit, likewise.
+  # A zero variance is a FAILED variance for a parameter that was estimated:
+  # two parameters, one usable variance, and so nothing to decompose. This
+  # asserted NULL, as "one estimated parameter and no pair to trade off",
+  # which read a failed inversion as a clean examination (#570).
+  expect_identical(.hzr_weak_direction(diag(c(0, 1)), rcond = 1e-10,
+                                       param_names = nms), NA)
+  # A single-parameter fit cannot trade off against anything.
   expect_null(.hzr_weak_direction(matrix(1e12, 1, 1), rcond = 1e-10,
                                   param_names = "a"))
 })

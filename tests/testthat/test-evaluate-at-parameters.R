@@ -465,8 +465,10 @@ test_that("the refusals describe the model in front of them (#144)", {
   x <- matrix(d$age, ncol = 1, dimnames = list(NULL, "age"))
   # A single-distribution model has no phases, and here the stored vector is
   # LONGER than the model's count: the multiphase explanation must not fire.
+  # hazard() refuses to build such an object (#375), so it is made by hand.
   w <- hazard(time = d$int_dead, status = d$dead, x = x, dist = "weibull",
-              theta = c(0.05, 0.9, 0.01, 99), fit = FALSE)
+              theta = c(0.05, 0.9, 0.01), fit = FALSE)
+  w$fit$theta <- c(0.05, 0.9, 0.01, 99)
   msg <- tryCatch(hzr_evaluate(w, theta = w$fit$theta),
                   error = conditionMessage)
   expect_match(msg, "has 4 entries, but this weibull model takes 3")
@@ -476,7 +478,8 @@ test_that("the refusals describe the model in front of them (#144)", {
   # the same length as the vector [3]". The correct theta evaluates, and its
   # names are simply not taken from the mismatched stored vector.
   wn <- hazard(time = d$int_dead, status = d$dead, x = x, dist = "weibull",
-               theta = c(a = 0.05, b = 0.9, c = 0.01, d = 99), fit = FALSE)
+               theta = c(0.05, 0.9, 0.01), fit = FALSE)
+  wn$fit$theta <- c(a = 0.05, b = 0.9, c = 0.01, d = 99)
   ev <- hzr_evaluate(wn, theta = c(0.05, 0.9, 0.01))
   expect_true(is.finite(ev$logLik))
   expect_null(names(ev$theta))
@@ -605,4 +608,161 @@ test_that("hzr_evaluate() and hazard() word a wrong theta length alike (#144, #4
   expect_match(from_evaluate,
                "'theta' has 13 entries, but this model takes 11 \\(early 5, late 6\\)")
   expect_identical(from_evaluate, from_fit)
+})
+
+test_that("hzr_evaluate() names the parameters when theta is the wrong length", {
+  # The refusal a user sees must be the one that NAMES the model's
+  # parameters. #422 added a shared check that counted the same parameters and
+  # said less; passing it `n_coef` made this message unreachable, and nothing
+  # noticed because the assertions matched only the shared prefix. This pins
+  # the naming clause itself.
+  #
+  # The names come from the STORED theta, so the fixture starts from a NAMED
+  # theta. With an unnamed start there are no names to report and the sentence
+  # ends at the count, which the second case pins so the two shapes cannot be
+  # confused for a regression later.
+  set.seed(9)
+  n <- 40
+  d <- data.frame(t = stats::rexp(n) + 0.1,
+                  s = stats::rbinom(n, 1, 0.7), x = stats::rnorm(n))
+  named <- suppressWarnings(hazard(survival::Surv(t, s) ~ x, data = d,
+                                   dist = "weibull",
+                                   theta = c(mu = 1, nu = 1, x = 0),
+                                   fit = TRUE))
+  msg <- tryCatch(hzr_evaluate(named, c(1, 1, 0, 5)), error = conditionMessage)
+  expect_match(msg, "'theta' has 4 entries, but this weibull model takes 3",
+               fixed = TRUE)
+  expect_match(msg, ": mu, nu, x.", fixed = TRUE)
+
+  unnamed <- suppressWarnings(hazard(survival::Surv(t, s) ~ x, data = d,
+                                     dist = "weibull", theta = c(1, 1, 0),
+                                     fit = TRUE))
+  msg2 <- tryCatch(hzr_evaluate(unnamed, c(1, 1, 0, 5)),
+                   error = conditionMessage)
+  expect_match(msg2, "this weibull model takes 3.", fixed = TRUE)
+  expect_false(grepl(": mu, nu, x", msg2, fixed = TRUE))
+})
+
+test_that("a likelihood that is not finite is reported as -Inf, for every family", {
+  # N2's sibling N1 (1.2.12 release review): the single-distribution
+  # likelihoods return +Inf as a sentinel for a theta they cannot evaluate,
+  # and hzr_evaluate() reported it as logLik = Inf, the best possible fit.
+  data(avc, package = "TemporalHazard")
+  a <- stats::na.omit(avc)
+  cases <- list(
+    exponential = list(start = 0.1, bad = 800),
+    weibull = list(start = c(0.3, 1.2), bad = c(2, 1e5)),
+    lognormal = list(start = c(1, 0), bad = c(0, -800)),
+    loglogistic = list(start = c(-1, 0), bad = c(800, -800))
+  )
+  for (d in names(cases)) {
+    f <- hazard(survival::Surv(int_dead, dead) ~ 1, data = a, dist = d,
+                theta = cases[[d]]$start, fit = FALSE)
+    # The premise: the raw likelihood returns the sentinel here.
+    raw <- .hzr_logl_at_raw(f, cases[[d]]$bad, .hzr_evaluate_prepare(f))
+    expect_identical(raw, Inf, info = d)
+    expect_warning(r <- hzr_evaluate(f, cases[[d]]$bad),
+                   class = "hzr_evaluate_not_finite")
+    expect_identical(as.numeric(r$logLik), -Inf, info = d)
+    # A theta it can evaluate is unchanged, and quiet.
+    expect_no_warning(ok <- hzr_evaluate(f, cases[[d]]$start))
+    expect_true(is.finite(as.numeric(ok$logLik)), info = d)
+  }
+})
+
+test_that("a multiphase likelihood that is not finite warns too", {
+  data(avc, package = "TemporalHazard")
+  a <- stats::na.omit(avc)
+  f <- hazard(survival::Surv(int_dead, dead) ~ 1, data = a,
+              dist = "multiphase", fit = FALSE,
+              phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1),
+                            const = hzr_phase("constant")))
+  th <- c(log(0.1), log(0.5), 1, 1, 800)  # const.log_mu = 800 overflows
+  expect_warning(r <- hzr_evaluate(f, th), class = "hzr_evaluate_not_finite")
+  expect_identical(as.numeric(r$logLik), -Inf)
+})
+
+test_that("the curve is NA, not a number, where the likelihood is not finite (#503)", {
+  # The logLik warning (hzr_evaluate_not_finite) said nothing about `curve`,
+  # and at late.log_tau = 800 the g3 phase switched itself off inside the
+  # curve's shape functions: `cumulative_hazard` came back finite and
+  # plausible for a theta the likelihood cannot evaluate.
+  data(avc, package = "TemporalHazard")
+  a <- stats::na.omit(avc)
+  ph <- list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1),
+             const = hzr_phase("constant"),
+             late = hzr_phase("g3", tau = 5, gamma = 1, alpha = 1, eta = 1))
+  f <- hazard(survival::Surv(int_dead, dead) ~ 1, data = a,
+              dist = "multiphase", phases = ph, fit = FALSE)
+  th0 <- c(log(0.1), log(0.5), 1, 1, log(0.02), log(0.01), log(5), 1, 1, 1)
+  names(th0) <- hzr_theta_names(ph)
+  times <- c(0.1, 1, 10)
+
+  # Known positive: a feasible theta gives a finite curve, quietly.
+  ok <- expect_no_warning(hzr_evaluate(f, th0, times = times))
+  expect_true(all(is.finite(ok$curve$hazard)))
+  expect_true(all(is.finite(ok$curve$cumulative_hazard)))
+
+  bad <- th0
+  bad["late.log_tau"] <- 800
+  # The premise: the shape functions alone return a finite cumulative
+  # hazard here, so an NA below is the guard's doing.
+  raw <- .hzr_evaluate_curve(f, bad, times, .hzr_evaluate_prepare(f))
+  expect_true(all(is.finite(raw$cumulative_hazard)))
+
+  w <- NULL
+  r <- withCallingHandlers(
+    hzr_evaluate(f, bad, times = times),
+    hzr_evaluate_not_finite = function(cnd) {
+      w <<- conditionMessage(cnd)
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_identical(as.numeric(r$logLik), -Inf)
+  expect_identical(r$curve$time, times)
+  expect_identical(r$curve$hazard, rep(NA_real_, 3L))
+  expect_identical(r$curve$cumulative_hazard, rep(NA_real_, 3L))
+  # One warning, and it says the curve was withheld, not just the logLik.
+  expect_match(w, "curve", fixed = TRUE)
+
+  # A scale the curve's own checks refuse gives the same NA curve rather
+  # than an unrelated error after the warning has already fired.
+  bad2 <- th0
+  bad2["early.log_t_half"] <- -800
+  expect_warning(r2 <- hzr_evaluate(f, bad2, times = times),
+                 class = "hzr_evaluate_not_finite")
+  expect_identical(r2$curve$cumulative_hazard, rep(NA_real_, 3L))
+})
+
+test_that("hzr_evaluate() says when its logLik is the SAS objective (#503)", {
+  # Under objective = "sas" the interval-censored rows contribute PROC
+  # HAZARD's interval-mean-hazard term, so `logLik` is that objective, not a
+  # log-likelihood, and the result said nothing about which it was.
+  n <- 24L
+  st <- rep(c(1, 0, 2), length.out = n)
+  lo <- seq(0.10, 2.40, length.out = n)
+  up <- lo + seq(0.20, 4.00, length.out = n)
+  tt <- ifelse(st == 2, up, lo + 0.4)
+  ph <- list(early = hzr_phase("cdf", t_half = 0.8, nu = 0.4, m = -0.6),
+             constant = hzr_phase("constant"))
+  th <- c(log(0.06), log(0.8), 0.4, -0.6, -2.7)
+  spec_for <- function(objective) {
+    hazard(time = tt, status = st, time_lower = ifelse(st == 2, lo, 0),
+           time_upper = tt, dist = "multiphase",
+           phases = ph, theta = th, objective = objective, fit = FALSE)
+  }
+  lik <- hzr_evaluate(spec_for("likelihood"), th)
+  sas <- hzr_evaluate(spec_for("sas"), th)
+  # Known positive: the interval rows make the two values differ, so the
+  # label is the only thing that tells them apart.
+  expect_gt(abs(sas$logLik - lik$logLik), 1e-3)
+  expect_identical(lik$objective, "likelihood")
+  expect_identical(sas$objective, "sas")
+  expect_identical(hzr_evaluate(eval_spec(), c(0.05, 0.9))$objective,
+                   "likelihood")
+  out_sas <- paste(utils::capture.output(print(sas)), collapse = "\n")
+  out_lik <- paste(utils::capture.output(print(lik)), collapse = "\n")
+  expect_match(out_sas, "not a log-likelihood", fixed = TRUE)
+  expect_false(grepl("not a log-likelihood", out_lik, fixed = TRUE))
+  expect_match(out_lik, "logLik at the supplied parameters", fixed = TRUE)
 })

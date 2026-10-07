@@ -298,13 +298,15 @@ test_that("the derived variance is the delta method, and an NA does not spread",
 
 # eta_gamma is fitted with alpha held: with alpha free as well, simulated data
 # of this size let gamma run to a ridge (gamma -> Inf, eta -> 0) where the
-# fit says nothing about the constraint.
+# fit says nothing about the constraint. It is held BELOW 1: with gamma * eta
+# = 2, PROC HAZARD needs gamma * eta / alpha > 2 and refuses a fixed alpha
+# above 1 (SETG31040, #418), which hazard() now does too.
 e2e_cases <- list(
   alpha_gamma_eta = list(truth = c(log(0.3), log(10), 6, 2.4, 0.8),
                          start = list(tau = 8, gamma = 5, eta = 1),
                          free = c(1L, 2L, 3L, 5L)),
-  eta_gamma = list(truth = c(log(0.5), log(8), 2, 2, 1),
-                   start = list(tau = 6, gamma = 3, alpha = 2,
+  eta_gamma = list(truth = c(log(0.5), log(8), 2, 0.5, 1),
+                   start = list(tau = 6, gamma = 3, alpha = 0.5,
                                 fixed = "alpha"),
                    free = 1:3)
 )
@@ -363,6 +365,32 @@ for (constraint in names(e2e_cases)) {
     expect_equal(sqrt(vcov(fit)[derived, derived]),
                  sqrt(as.numeric(grad_derived %*% v_numeric %*% grad_derived)),
                  tolerance = 1e-3)
+
+    # predict() keeps the derived slot in its sandwich (#586): it is fixed in
+    # fixed_mask but carries a variance, and dropping it lost the
+    # constraint's chain rule. Truth: the numeric Jacobian of H over the
+    # searched parameters, through the constraint, with their covariance.
+    tt <- c(1, 5, 10, 20)
+    h_of <- function(p) {
+      full <- theta
+      full[free] <- p
+      full <- .hzr_apply_constraints(full, phases, counts)
+      .hzr_multiphase_cumhaz(tt, full, phases, counts, list(late = NULL))
+    }
+    jh <- numDeriv::jacobian(h_of, theta[free])
+    se_truth <- sqrt(rowSums((jh %*% unname(vcov(fit))[free, free]) * jh))
+    se_got <- predict(fit, newdata = data.frame(time = tt),
+                      type = "cumulative_hazard", se.fit = TRUE)$se.fit
+    expect_equal(se_got / se_truth, rep(1, length(tt)), tolerance = 1e-6)
+    # A NaN variance on the derived slot is not "fixed, known": it withholds.
+    nan_fit <- fit
+    nan_fit$fit$vcov[derived, derived] <- NaN
+    expect_warning(
+      se_nan <- predict(nan_fit, newdata = data.frame(time = tt),
+                        type = "cumulative_hazard", se.fit = TRUE)$se.fit,
+      "variance that cannot be represented", fixed = TRUE
+    )
+    expect_true(all(is.na(se_nan)))
   })
 }
 
@@ -464,7 +492,21 @@ test_that("a translated FIXGAE2 job runs as a constrained fit", {
     "  PARMS MUL=0.1 TAU=8 ALPHA=2 GAMMA=5 ETA=1 FIXGAE2 WEIBULL; );"
   ), f)
   out <- withr::local_tempdir()
-  job <- hzr_translate_sas(f, out_dir = out)
+  # PROC HAZARD moves the late shape onto the constraint before fitting
+  # (setg3.c:449-467), so a job written ALPHA=2 is fitted at ALPHA=2.5. The
+  # translation emits 2.5 -- SAS's own model -- and DISCLOSES the rewrite
+  # rather than emitting it silently. Asserted here rather than muffled:
+  # this is where that warning surfaces, and a test whose name says only
+  # that the job "runs as a constrained fit" while the code also warns
+  # documents less than the code does (#433 gate).
+  # The assignment is INSIDE expect_warning() on purpose: it returns the
+  # warning condition, not the value of the expression, so `job <-
+  # expect_warning(...)` binds the warning and every later assertion then
+  # asks the wrong object.
+  job <- NULL
+  expect_warning(job <- hzr_translate_sas(f, out_dir = out),
+                 "ALPHA=2 -> 2.5", fixed = TRUE)
+  expect_true("ALPHA=2 -> 2.5" %in% job$untranslated$construct)
   expect_false("FIXGAE2" %in% job$untranslated$construct)
   qmd <- readLines(file.path(out, sub("[.]sas$", ".qmd", basename(f))))
   expect_true(any(grepl("constraint = \"alpha_gamma_eta\"", qmd, fixed = TRUE)))

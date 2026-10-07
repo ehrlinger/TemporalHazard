@@ -7,6 +7,10 @@
 # a replicate at the sentinel is a failed replicate, and a free parameter
 # that does not move across replicates is named in a warning. A parameter
 # held by `fixed =` is identical by design and must not be named.
+#
+# Since #486 a single-distribution fit that ends where the likelihood is not
+# defined reports no objective (NA) and converged = FALSE, so such a
+# replicate now fails as a non-finite objective rather than at the sentinel.
 
 zv_data_373 <- function() {
   data(avc, package = "TemporalHazard", envir = environment())
@@ -45,8 +49,7 @@ run_373 <- function(expr) {
   list(res = res, w = w)
 }
 
-sentinel_reason_373 <-
-  "objective at the optimizer's -1e10 sentinel (no log-likelihood)"
+nonfinite_reason_373 <- "non-finite objective (did not converge)"
 
 test_that("a replicate at the -1e10 sentinel is a failed replicate (#373)", {
   d <- zv_data_373()
@@ -54,12 +57,13 @@ test_that("a replicate at the -1e10 sentinel is a failed replicate (#373)", {
     survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
     theta = c(1e10, 1e10), fit = TRUE
   ))
-  # The mechanism: an objective at the sentinel, not a log-likelihood.
-  expect_identical(bad$fit$objective, -1e10)
+  # The mechanism: no log-likelihood, and so no objective (#486).
+  expect_identical(bad$fit$objective, NA_real_)
+  expect_identical(bad$fit$converged, FALSE)
   out <- run_373(hzr_bootstrap(bad, n_boot = 5L, seed = 1L))
   expect_identical(out$res$n_success, 0L)
   expect_identical(out$res$failure_reasons,
-                   stats::setNames(5L, sentinel_reason_373))
+                   stats::setNames(5L, nonfinite_reason_373))
   expect_match(out$w, "no replicate succeeded", fixed = TRUE, all = FALSE)
 })
 
@@ -75,19 +79,32 @@ test_that("replicates that drift before reaching the sentinel fail too (#373)", 
   out <- run_373(hzr_bootstrap(drift, n_boot = 5L, seed = 1L))
   expect_identical(out$res$n_success, 1L)
   expect_identical(out$res$failure_reasons,
-                   stats::setNames(4L, sentinel_reason_373))
+                   stats::setNames(4L, nonfinite_reason_373))
 })
 
 test_that("identical replicates are named, to within rounding (#373)", {
-  # From theta = 50 the objective is finite (about -3.6e196) and not the
-  # sentinel, and every replicate stays put up to the last bits: sd is about
-  # 1e-14 around a mean of 50. An exact-zero test would pass it.
+  # Replicates that differ only in their last bits: sd is a few ulps, not 0.
+  # An exact-zero test would pass them. The route #373 measured, a weibull
+  # start at theta = 50, is no longer one: since #512 each such replicate
+  # stops below the optimizer's penalty and fails, so the replicates are
+  # built here from a working fit, each nudged by k * 1e-15 of itself.
   d <- zv_data_373()
-  stuck <- suppressWarnings(hazard(
-    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
-    theta = c(50, 50), fit = TRUE
-  ))
+  ok <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+               dist = "weibull", theta = c(0.1, 1), fit = TRUE)
+  stuck <- ok
+  env <- new.env(parent = ok$call_env %||% globalenv())
+  k <- 0L
+  assign("jitter_refit", function(...) {
+    k <<- k + 1L
+    out <- ok
+    out$fit$theta <- ok$fit$theta * (1 + k * 1e-15)
+    out
+  }, envir = env)
+  stuck$call[[1L]] <- as.name("jitter_refit")
+  stuck$call_env <- env
   out <- run_373(hzr_bootstrap(stuck, n_boot = 5L, seed = 1L))
+  # The known positive: the refit ran five times.
+  expect_identical(k, 5L)
   expect_identical(out$res$n_success, 5L)
   expect_true(all(out$res$summary$sd > 0))
   zw <- zero_var_warnings(out$w)

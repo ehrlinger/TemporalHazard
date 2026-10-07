@@ -156,10 +156,12 @@ test_that("Weibull analytic jacobian matches numDeriv (cumhaz)", {
   set.seed(3)
   t_new <- c(0.3, 0.8, 1.5, 2.2)
   x_new <- matrix(c(-0.5, 0, 0.4, 1.2), ncol = 1)
-  theta <- c(mu = 0.6, nu = 1.2, beta = 0.25)
+  # The Jacobian is taken with respect to log(mu), the scale predict() reads
+  # a Weibull fit on (#566); the numeric side differentiates on that scale.
+  theta <- c(log_mu = log(0.6), nu = 1.2, beta = 0.25)
 
   cumhaz_fn <- function(th) {
-    (th[1] * t_new) ^ th[2] * exp(as.numeric(x_new %*% th[3:length(th)]))
+    (exp(th[1]) * t_new) ^ th[2] * exp(as.numeric(x_new %*% th[3:length(th)]))
   }
   J_ana <- TemporalHazard:::.hzr_predict_jacobian_weibull(
     "cumulative_hazard", theta, t_new, x_new, length(theta)
@@ -344,12 +346,19 @@ test_that(".hzr_free_vcov restricts to finite-diagonal free parameters", {
   expect_equal(res$free_idx, 1:2)
   expect_equal(res$vcov_use, V)
 
-  # One fixed parameter (NA row/col) -> restricted to the free submatrix.
+  # One fixed parameter (NA row/col) -> restricted to the free submatrix. It
+  # must be marked fixed: an NA that is not is a masked variance (#586).
   Vf <- matrix(NA_real_, 3, 3)
   Vf[c(1, 3), c(1, 3)] <- c(0.04, 0.00, 0.00, 0.09)
-  res2 <- TemporalHazard:::.hzr_free_vcov(Vf, p = 3L)
+  res2 <- TemporalHazard:::.hzr_free_vcov(Vf, p = 3L,
+                                          fixed = c(FALSE, TRUE, FALSE))
   expect_equal(res2$free_idx, c(1L, 3L))
   expect_equal(dim(res2$vcov_use), c(2L, 2L))
+  expect_warning(
+    masked <- TemporalHazard:::.hzr_free_vcov(Vf, p = 3L),
+    "no variance for an estimated parameter"
+  )
+  expect_null(masked)
 
   # Unusable vcov -> NULL with a warning.
   expect_warning(

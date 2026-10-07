@@ -1,6 +1,1023 @@
-# TemporalHazard 1.2.11
+# TemporalHazard (unreleased)
+
+* Now requires R 4.4.0 or newer, up from 4.1.0, to match the rest of the
+  HVTI family. `hvtiR::install()` installs the members together, and several
+  already required 4.4.0, so on an older R the install failed whatever this
+  package declared.
+
+# TemporalHazard 1.2.13
+
+## Bug fixes
+
+* **A single-distribution fit (exponential, Weibull, lognormal or
+  loglogistic) could stop at a false maximum, far below the best
+  log-likelihood, and report `converged = TRUE` with no warning (#531).**
+  On the `avc` data an exponential fit with `~ age + mal` from an ordinary
+  start stopped at a log-likelihood of -80896.5 against a best of -394.8.
+  `hazard()` now warns, with class `"hzr_possible_false_maximum"`, when such
+  a fit reports convergence with a relative gradient above 1e-3 and the
+  continuation did not stop on its iteration limit or an unbounded direction
+  (`nlm()` codes 4 and 5, which already warn). The warning says the fit may not
+  be a maximum, names the relative gradient and suggests other starting
+  values, or centring or rescaling the covariates. `converged` is not
+  changed, and nothing is refused. `hzr_bootstrap()`, whose replicates run
+  with their warnings suppressed, counts the replicates in which any fit
+  meets the same rule (the base refit and every stepwise refit, not only
+  the final fit) and warns once; their estimates are still pooled. The threshold sits
+  above every good fit in the test suite (the worst at 6.8e-4) and below
+  the false maxima found, but it does not separate every case. A good fit
+  on badly scaled covariates (one multiplied by 1e4 or more) can exceed it,
+  with a relative gradient of 1e-3 to 5e-3 and a log-likelihood up to 0.02
+  short; there another start does not help, and centring or rescaling
+  does. And a stuck fit can fall below it: an intercept-only Weibull on
+  times near 1e-170, started at a shape of 1.5, stops there against 1.72
+  with a relative gradient of about 5e-4 and raises nothing. The absence of
+  the warning is not a guarantee. Multiphase fits are not flagged.
+
+* **`predict(newdata = )` no longer blames a term for a failure that was not
+  its doing (#446).** When rebuilding the design failed, the refusal named
+  whichever model term did not give one value per row of `newdata` and raised
+  that *instead of* the failure. The naming was never verified to explain
+  anything, so it could blame an innocent term and prescribe a remedy that
+  could not be followed: a term returning a list failed on its type, and the
+  message sent you to move a `zz` into `data` that was not a column of `data`
+  at all. A condition raised inside one of your own terms was destroyed
+  outright, class and all.
+
+  What happens now depends on who raised the failure. **A condition carrying
+  any class of your own passes through unchanged**: the same object, with its
+  class, call and every field, so a `tryCatch()` on it fires and its fields
+  are intact. *It gains no note*: nothing is appended to your condition,
+  because that cannot be done reliably (`conditionMessage()` is a generic,
+  and a class with its own method never reads the field that would be
+  written). A plain error from the frame build keeps the term naming,
+  **first**, with the original text quoted after it, so a message blaming a
+  column you supplied correctly is no longer the first thing you read. And a
+  term whose value is not a legal model-frame column at all (a list, say) is
+  no longer diagnosed as a row-count problem; you get the type error by
+  itself.
+
+  One case is unchanged: a failure raised by a `model.frame()` call *inside*
+  one of your terms, when that failure is a plain base error, is
+  indistinguishable from our own frame assembly, so a row-mismatched term is
+  still named alongside it. Your own text is quoted rather than discarded.
+
+* **`predict(se.fit = TRUE)` could return wrong standard errors, including
+  exactly 0, with no warning, when the fit's covariance was incomplete or not
+  positive definite (#586).**
+    - When inverting the Hessian finds a variance that is not positive, the
+      fit stores it as `NA`, the same mark a fixed parameter carries.
+      `predict()` dropped such a parameter as if it were known. On a Weibull
+      fit with `mu`'s variance masked, survival standard errors of 0.0175,
+      0.0345 and 0.0392 came back as 0.0221, 0.0221 and 0.0524. An `NA`
+      variance now counts as fixed only where the fit's `fixed_mask` says
+      so. Otherwise, a prediction that uses the parameter returns `NA`
+      standard errors and limits, with a warning naming it.
+    - A covariance with a positive diagonal can still be indefinite, which
+      happens when the Hessian was not at a proper maximum. A negative
+      quadratic form was then clamped to an `se.fit` of 0 with a zero-width
+      interval, and a positive one was reported although it is not a
+      variance. The covariance of the parameters a prediction uses is now
+      checked for positive definiteness, and an infinite covariance among
+      them is refused.
+    - Parameters the prediction does not use, by its form, are left out of
+      that check and of the sandwich. An infinite covariance between two of
+      them no longer turns `se.fit` into `NaN` (#587).
+    - When Conservation of Events could not recompute the conserved phase's
+      variance, `predict()` keeps its standard errors but now warns that
+      they leave that variance out and may be understated.
+
+* **Multiphase fits under Conservation of Events could stop short of the
+  maximum and report `converged = TRUE` (#565). Multiphase estimates from
+  earlier versions, fitted with `conserve = TRUE` (the default), may be
+  wrong.** Under Conservation of Events one phase's scale is re-solved from
+  the other parameters at every step. The optimizer was given the score at
+  that solved scale without the term for how the scale moves with the other
+  parameters, so it followed a direction that was not the gradient of the
+  log-likelihood it was maximizing. On the `avc` data, a two-phase model
+  with six covariates stopped at a log-likelihood of -184.462 where SAS
+  reaches -182.659. The optimizer now receives the full gradient, and that
+  fit reaches -182.659 from the default start. Refit any multiphase model
+  fitted with Conservation of Events; `conserve = FALSE` fits are not
+  affected. On that fit the relative-gradient test recorded in
+  `fit$fit$rel_gradient` had failed (0.311 against a limit of about 6e-6),
+  with no warning.
+  A fit can now run towards the point where the conserved phase leaves
+  the model, where before it stopped well short, and it can still stop
+  beside that point with the gradient test not met. When the conserved
+  phase's share of the cumulative hazard falls below
+  `control$phase_share_tol`, the identifiability warning reports the phase
+  as it did, and the fit also carries a `"coe_phase_vanished"` record in
+  `fit$fit$boundary`, with that share. The record raises no second
+  warning.
+
+* **In a two-way `hzr_stepwise()` screen, a variable frozen by `max_move`
+  is now frozen in the state it ends the iteration in (#580).** A variable
+  that reached `max_move` by entering was frozen at once, but the
+  iteration's protected variables had been fixed before its forward step,
+  so the backward step that followed could still drop it: the trace read
+  `FROZEN` then `DROP`, and `$scope$frozen` named a variable the final
+  model did not contain, with no warning. It happened whenever the freeze
+  fell on an entry, which for a variable that enters and is dropped every
+  iteration is every even `max_move`, the default 4 included. The freeze
+  now takes effect at the end of the iteration, so such a variable is
+  frozen out and `$scope$frozen` agrees with the final model. The final
+  model is unchanged. The "Known limitation (the frozen set)" section of
+  `?hzr_stepwise` is replaced by one describing the rule. PROC HAZARD's
+  MOVE rule differs again (outside `NOSTEPWISE` it counts only exits, so
+  it freezes a variable only as it leaves the model); that is recorded,
+  not adopted.
+
+* **`hzr_stepwise(criterion = "score")` now refits and Wald-tests two more
+  kinds of candidate it could not score (#570).** The score criterion refits
+  a candidate whose score test breaks down and tests it by Wald, but only for
+  two reasons. Two others were declined untested: `nuisance_singular`, where
+  the current model's information matrix cannot be formed or inverted, and
+  `information_nonpositive`, where the candidate's own observed information
+  at zero is not positive. Neither says the candidate is unusable, and a
+  refit tests it. The first is a fault of the score test at the current fit
+  and applies to every candidate at that step, so the screen stopped having
+  tested nothing; with the second, a weaker variable could enter in the
+  untested one's place. It is reached by ordinary fits. On `avc` with a
+  Weibull base and the scope `~ age + mal + com_iv`, the score screen
+  entered `com_iv` and then stopped, where `criterion = "wald"` enters
+  `com_iv`, `mal` and `age`: with `com_iv` in the model, the numeric
+  information the score test needs could not be formed, though the fit
+  itself was sound. The score screen now reaches the Wald selection, with
+  four refits to Wald's six. In `hzr_bootstrap()` select mode on the same
+  base (five replicates, scope `~ age + mal`), four replicates stopped
+  untested and `age` and `mal` were selected in one and three; none stops
+  now, and both are selected in all five. `$criteria$n_wald_fallbacks`
+  counts these refits as before. A step whose information cannot be formed
+  now refits every candidate it would have scored, which is what
+  `criterion = "wald"` does at every step. A candidate that is constant,
+  non-numeric or not a single column is still declined without a refit. The
+  warning for a candidate tested by neither criterion now covers every
+  reason that is refitted, in `hzr_stepwise()` and in `hzr_bootstrap()`.
+
+* **A fit whose covariance mostly failed is no longer reported as examined
+  for a weakly identified direction (#570).** `fit$fit$weak` is `NULL` when
+  the check ran and found no ridge, and `NA` when it could not run. When an
+  ill-conditioned fit had a finite variance for fewer than two of its
+  parameters, there was nothing to examine, yet `weak` was `NULL` and
+  `weak_direction_check` was missing from `fit$degraded`. It is now `NA`,
+  with the cause recorded.
+
+* **The multiphase score was wrong for an early or late phase with a very
+  small `t_half` (#574). Fits whose search passed through such a point
+  may have been steered wrongly.** The derivative with respect to
+  `log_t_half` is taken by finite differences, and the step had a fixed
+  lower limit. Below `t_half = 1e-4` the step no longer shrank with
+  `t_half`, and below about `6e-10` it was larger than `t_half` itself. At
+  `log_t_half = -23.28` with `nu = 0.2931` and `m = 120`, the derivative
+  came back at 0.27 of its value. The error was under 1e-5 for `t_half`
+  down to about `1e-7` (`log_t_half = -16`), 0.05% at `log_t_half = -18`
+  and 3% at `-20`. The derivative is now differenced in `log_t_half`
+  itself, so the step keeps its proportion to `t_half`. Estimates with a
+  fitted `t_half` of `1e-4` or more are unaffected beyond the optimizer's
+  own tolerance. A `t_half` too small to step at all (below about
+  `3e-321`) now gives `NaN` for this derivative, where it gave a number.
+  A `"hazard"` phase far past saturation was still wrong after this fix,
+  because its value was; that is #578, below.
+
+* **A `"hazard"` phase far past saturation had the wrong cumulative hazard
+  and hazard (#578). Fits with such a phase from earlier versions may be
+  wrong.** The phase's cumulative hazard, `-log(1 - G(t))`, was formed from
+  `1 - G`. As `G` neared 1 that lost its digits, and once `G` rounded to 1
+  it was clamped: the cumulative hazard came back as 708.396 (the log of
+  the smallest double) and the hazard, `g / (1 - G)`, near `1e290`, where
+  both are of order 1 to 100. At `nu = 1`, `m = 1`, `t_half = exp(-40)` and
+  `t = 1` the cumulative hazard is 40 and the hazard 1. The derivative
+  with respect to `log_t_half` was noisy from about `t_half = exp(-30)` and
+  exactly 0 from `exp(-34)` at that shape. `hzr_decompos()` now returns a
+  fourth element, `log_surv`, equal to `log(1 - G(t))` but computed from
+  each case's own log-scale terms, and the `"hazard"` phase's cumulative
+  hazard and hazard are formed from it. Where `1 - G` can be formed, the
+  values agree with the old ones to rounding. `G`, `g` and `h` keep their
+  names and meaning. The hazard `h` of any phase type is also formed
+  without a cancellation that lost it for a `nu` very close to 0 (at
+  `nu = -1e-18`, `t = 2`, `t_half = 1`, `m = 1` it was 0 or 1 where it is
+  about 5e17); fitted values of `nu` near `1e-16` occur. For `nu = 0` and
+  `m` below about -52, `G` was 0 at every time, including `t_half` where it
+  is 1/2, because `1 - 2^m` rounded to 1; it is now computed without that
+  rounding.
+
+  The clamp could also create an optimum. The hazard near `1e290` added
+  about 668 to the log-likelihood per event, and a fit could converge on
+  that: one fit in this package's tests reported a log-likelihood of
+  +60479 with 120 events, with its hazard phase below the first observed
+  time, and was the one fit here that the `unbounded_phase` record (#444)
+  caught. It now ends inside its data at an ordinary log-likelihood. A
+  multiphase fit with a `"hazard"` phase that reported a positive or
+  implausibly large log-likelihood in an earlier version should be refitted.
+  The `unbounded_phase` record now reports the phase's remaining mass,
+  `1 - G(t_min)`, from `log_surv`, so a small mass is no longer printed as
+  0; where the mass itself underflows, its log is printed. Its third
+  sentence no longer states that the objective is unbounded above.
+
+* **A Wald stepwise entry no longer tests a refit that ended below the
+  current model (#538).** The AIC fix below (#490) left two paths open.
+  Under `criterion = "wald"`, and in the Wald test that `criterion =
+  "score"` falls back on, such a refit still got a Wald p-value, from a fit
+  that did not converge. At a strict `slentry` it was rejected as if tested,
+  with every counter at 0. On `avc`, `opmos` in the constant phase refit
+  11.2 log-likelihood units below its base, got p = 0.069, and at
+  `slentry = 0.05` was rejected with no warning. The default `slentry = 0.30`
+  entered it, and the existing check on an entered model warned. Such a
+  candidate is now refused under the reason `loglik_below_base`, as under
+  AIC, and `hzr_stepwise()` warns that it declined it without testing it.
+  It is not listed in `$criteria$wald_untested_entries`, which is for
+  entries with no variance.
+* **`hazard()` now refuses a `control$maxit` below 1 (#541).** It was
+  accepted without a word, and what happened depended on the model. A
+  Weibull fit or a single-phase multiphase fit returned its starting values
+  with `converged = TRUE`: on the `avc` data a Weibull fit with `maxit = 0`
+  reported a log-likelihood of -1425.16 as converged, where the fit reaches
+  -223.55. A multiphase fit with a `cdf` and a `constant` phase ignored the
+  limit and optimised anyway. `control$maxit` must now be a single finite
+  number of at least 1 (a fraction is truncated, as PROC HAZARD truncates
+  `MAXITER`), and anything else stops `hazard()`, whether or not
+  it fits, with a pointer to `hzr_evaluate()` for an evaluation at given
+  values. `hzr_stepwise()` checks it once, before any refit.
+* **`print()`, `summary()` and the `hzr_stepwise()` trace no longer call an
+  `objective = "sas"` fit's objective a log-likelihood (#544, #556).** Where
+  the fit reads an interval-censored row (one of positive weight, not
+  dropped by a phase design), the objective an `objective = "sas"` fit
+  reaches is PROC HAZARD's interval-mean-hazard objective, not a
+  log-likelihood. `print()` showed it as `log-lik:`, `summary()` returned it
+  as `log_lik`, and the stepwise trace's final line as `logLik = ...`, so a
+  reader comparing it with another model's log-likelihood, or taking an LR
+  or AIC from it, got a finite and plausible wrong number. On one fit the
+  printed `log-lik:` was -160.02, where the log-likelihood at the same
+  estimates is -118.94. Such a fit now prints `SAS objective:`, and
+  `summary()`'s `log_lik` is `NA`, with the value in the new
+  `objective_value` and its kind in `objective`. The stepwise trace reads
+  `SAS objective = ..., AIC from it = ...`, and a screen with `criterion =
+  "aic"` warns (class `hzr_stepwise_sas_objective`) that each entry is
+  decided on `-2 * (SAS objective) + 2k`, which is not an AIC, and each
+  removal on a Wald statistic from the SAS objective's curvature. Without
+  interval-censored rows
+  the two objectives agree, and nothing changes. The new `summary()` fields
+  come last, so no existing element moves. `logLik()` and `AIC()` have
+  no method for a `hazard` fit and still stop.
+
+* **A Weibull fit whose scale cannot be represented now says so, and is
+  read through `log(mu)` (#566).** The Weibull scale `mu` is the baseline at
+  `x = 0`, so with a covariate far from zero, such as a calendar year, it
+  can leave the range a number can hold at a sound fit. It was then reported
+  as `Inf`, as 0, or as a value so small that most of its digits were lost.
+  With `Inf`, `predict()` returned survival 0 and cumulative hazard `Inf`
+  with no warning, where the same model with the covariate centered gave
+  0.217, and `hzr_gof()` reported an expected count of `Inf`.
+    - `hazard()` now warns, with class `"hzr_unrepresentable_scale"`, and
+      says to centre or rescale the covariates to report `mu` itself. The
+      fit still reports `converged = TRUE`: it is sound, and only its scale
+      cannot be reported.
+    - The fit keeps `log(mu)`, which always holds a number, with its
+      standard error. `predict()`, and through it `hzr_gof()` and
+      `hzr_deciles()`, read it, and agree with the centered fit of the same
+      model. `summary()` shows it as a `log(mu)` row under `mu`. `coef()`
+      shows `mu` as it is, and `vcov()` gives `NA` for its row and column,
+      with the reason in the fit's `degraded_causes`.
+    - `hzr_evaluate()` and `predict()` still refuse a `theta` given with such
+      a `mu`, which carries no `log(mu)` to read. This includes an
+      intercept-only fit, whose parameters `predict()` did not check before.
+    - `hzr_bootstrap()` warns with the number of replicates whose `mu`
+      cannot be represented; the summary of `mu` is not usable there.
+    - A finite `mu` whose product with a large time overflowed gave a
+      cumulative hazard of `Inf` from `predict()`. `predict()` now computes
+      it on the log scale.
+    - Where `mu` is finite but its variance overflows or underflows,
+      `predict(se.fit = TRUE)` returned a wrong standard error: 187 times too
+      large in one case measured, 75% too large in another. It now reads the
+      variance of `log(mu)`, an ordinary number, and agrees with the
+      centered fit. `hazard()` warns about such a fit too, with the same
+      class, and `vcov()` gives `NA` for `mu`, because its variance there is
+      `Inf`, 0 or too small.
+    - The same screen applies to any parameter's variance, and a negative
+      variance is now named as one: `predict(se.fit = TRUE)` had reported a
+      standard error of 0 for it. Under `decompose = TRUE` each phase is
+      screened on its own parameters, so a bad variance in one phase
+      withholds that phase's and the total's standard errors, not the
+      others'. Before, a phase with an infinite variance got a standard
+      error of 0, and the total the other phases' alone, with no warning.
+    - The Weibull likelihood is computed on the log scale. Formed directly,
+      `mu^nu`, `(mu * t)^nu` and `t^(nu - 1)` underflow or overflow where the
+      log-likelihood is an ordinary number. On a left-censored row whose
+      cumulative hazard was below the smallest normal double,
+      `hzr_evaluate()` returned -743.341 with no warning, against -743.265.
+      An event at a time of 1e-180 gave `-Inf`, against -137.056. A
+      zero-weight event row whose `mu^nu` fell below what a double holds
+      turned the whole log-likelihood into `-Inf`. Where `mu * t` or `mu^nu`
+      fell below the smallest normal double, `hzr_evaluate()` returned a
+      log-likelihood that was not the model's (23084.15 where the fit's own
+      was 22972.56); it now computes it.
+
+* **Multiphase stepwise refits now start from the model they extend
+  (#551). Multiphase selections, and `hzr_bootstrap()` select-mode
+  frequencies, from earlier versions may be wrong.** Each candidate refit
+  in `hzr_stepwise()` started from the phase specifications' default
+  values, not from the current model's estimates. The candidate model
+  contains the current one, so from the current estimates, with the new
+  coefficient at 0, a refit cannot end below the current log-likelihood.
+  From the default start it often did, while reporting `converged = TRUE`.
+  On `avc` with the SAS reference base model (early and constant phases,
+  Conservation of Events), five of nine first-step candidates ended below
+  the base, `age` in the early phase by 25.1 log-likelihood units. Every
+  multiphase entry, whether scored by Wald, AIC or the score criterion's
+  Wald fallback, was therefore tested against a model not at its optimum.
+  An accepted step then carried that model forward. Each multiphase refit
+  is now fitted twice and the higher log-likelihood kept: once from the
+  current estimates, matched by parameter name with a new coefficient at 0,
+  which cannot end below the current model, and once from the default start
+  as before, because the likelihood has several optima and that start
+  sometimes reaches a higher one. The default start now holds each fixed
+  shape at the current model's value. It took the phase specification's
+  value, so a model fitted with a user `theta` that set a fixed shape was
+  refit with that shape moved, and the candidate was credited with the
+  gain. `$fit$refit_start` records which start
+  won and `$fit$refit_objectives` both results. Fixed shapes keep their
+  fixed values, the first of several `control$n_starts` is the start
+  itself, and Conservation of Events runs as before. Single-distribution
+  refits already started from the current estimates. Each candidate now
+  costs two fits. A multiphase model whose global formula lists more
+  covariates than its phase formulas use can be refit (it could not once
+  refits were given a start), and a `theta` passed to `hzr_stepwise()`
+  through `...` is refused with a message that says why. `hazard()` now
+  rejects `dist = NA` with its own message; it passed the check and
+  failed later with a base-R error.
+  This applies to every path that refits a multiphase model: `hzr_stepwise()`
+  under each criterion, `hzr_bootstrap()` select mode, and the code
+  `hzr_translate_sas()` emits for a SAS stepwise job.
+* **`hzr_gof()` with a custom `time_grid` now says how many patients its
+  totals leave out (#492).** With a custom grid, a patient is counted in
+  the observed and expected tallies only if their exit time is a grid
+  point. A grid such as `seq(0, max, length.out = 50)` holds almost none,
+  so on the `avc` data the totals covered 1 of 68 events and printed a
+  Conservation ratio of 0.227, with no warning. `hzr_gof()` now warns with
+  the number of patients left out, as it already did on the default grid.
+  The `"summary"` attribute gains `n_tallied`, the number counted, and
+  `print()` adds a note when it is below `n`. A patient with case weight 0
+  adds nothing to either tally, so one left off the grid is not reported.
+  Code that checks the summary's names, or runs with `options(warn = 2)`
+  over a custom grid, sees the change.
+
+* **A Conservation of Events fit whose likelihood is higher with the
+  conserved phase switched off is now recorded and warned about (#261).**
+  Under Conservation of Events the conserved phase's `log_mu` is solved so
+  that it absorbs the events the other phases leave. Where the other phases
+  already account for every event there is nothing to solve, and the
+  objective fell back, with no warning, to that `log_mu`'s starting value.
+  The objective was therefore discontinuous there, and a fit could stop
+  short of a higher likelihood: the reproduction in #261 reported -206.743
+  where -206.669 was available with the constant phase's scale at zero.
+  PROC HAZARD stops the run at that point (`SETCOE1200`, `consrv.c`). After
+  such a fit, `hazard()` now scores the fit's own log-likelihood with the
+  conserved phase's scale sent to zero, both with the other parameters held
+  and with the other phases' scales rescaled to conserve the events again.
+  It records a finding only if one beats the reported value by more than
+  0.01. A finding goes in `fit$fit$boundary` with mechanism
+  `"coe_no_events_left"`, carrying the higher point, and raises a warning
+  of class `hzr_coe_no_events_left`, which inherits `hzr_boundary`. The
+  estimates are unchanged. `fit$fit$boundary` can hold several records, in
+  no guaranteed order, so select them by `mechanism`.
+
+* **A g3 phase under `constraint = "eta_gamma"` whose likelihood is higher
+  at a much larger `gamma` is now recorded and warned about (#418).** As
+  `gamma` grows, this phase tends to a corner law whose log-likelihood is
+  finite, so when the data prefer a sharp bend at `tau` the supremum can lie
+  at `gamma = Inf`. A fit could still stop at an ordinary-looking `gamma`
+  with a standard error, report `converged = TRUE`, and warn about nothing.
+  On data drawn from the corner law, a fit stopped at `gamma` = 7.5 with the
+  likelihood 2.0 units higher toward infinity. After a converged fit with
+  `gamma` below 1000, `hazard()` now searches the corner law with the other
+  phases held at their estimates. It records a finding only when the fit's
+  own log-likelihood, evaluated at `gamma` of 1e4, 1e6 or 1e8, beats the
+  reported one by more than 0.01, so a weak search can miss a case but
+  cannot report one that is not there. That proves the reported `gamma` is
+  not the maximum-likelihood estimate; it does not prove the supremum is at
+  infinity rather than at another large `gamma`. A finding goes in
+  `fit$fit$boundary` with mechanism `"g3_corner_supremum"`, carrying the
+  higher point, and raises a warning of class `hzr_g3_corner_supremum`,
+  which inherits `hzr_boundary`. The estimates are unchanged. PROC HAZARD
+  has no such check and would report the same `gamma`. On simulated data
+  this caught 12 of the 14 warning-free fits that stopped short. A fixed
+  `tau` or `alpha` keeps its value in the search and in the check. A fixed
+  `gamma` is not examined, and nor are fits with left-censored or
+  interval-censored rows, or a supremum at `gamma` = 0.
+
+* **`hzr_deciles()` now counts entry times and case weights, as
+  `hzr_gof()` does (#491).** Each subject's expected events were its
+  cumulative hazard at exit, and events were counted unweighted. A
+  left-truncated subject is at risk only from its entry time, so its
+  expected count is the cumulative hazard at exit minus that at entry, and a
+  weighted fit conserves weighted events. So a correctly specified fit
+  looked badly calibrated. On `avc` with entry times for 40% of subjects, a fit
+  that conserves events expected 107.7 events against 68 observed, where
+  `hzr_gof()` expected 68. A weighted fit reported 68 events where the
+  weighted count was 85.4. Both tallies now carry the entry-time correction
+  and the weights, the `events` column is weighted for a weighted fit, and
+  the group totals again sum to the observed events. For a weighted fit the
+  chi-square divides by the Poisson variance of the weighted count, and the
+  rates are per unit of weight, so neither changes when every weight is
+  multiplied by the same constant. A fit with neither entry times nor
+  weights is unchanged.
+
+* **An AIC stepwise entry no longer rejects, as if tested, a candidate whose
+  refit ended below the current model (#490).** Entering a term gives a
+  model that contains the current one, so its log-likelihood cannot be lower
+  at the optimum, and a refit that ends below it did not converge, whatever
+  its `converged` flag says. Its change in AIC was scored all the same,
+  came out positive, and the candidate was rejected with no warning and
+  every counter at 0. On `avc`, with an early phase and a constant phase and
+  `n_starts = 1`, `opmos` in the constant phase refit to 11.2
+  log-likelihood units below its base and was rejected at an AIC change of
+  +24.5. Such a candidate is now refused, counted in
+  `$criteria$n_uncomputable_scores` under the reason `loglik_below_base`,
+  and `hzr_stepwise()` warns that it declined it without testing it. More
+  starting points or iterations may let the refit converge.
+  `hzr_bootstrap()` in select mode muffles each replicate's warnings, so it
+  now warns itself when replicates completed after declining an entry this
+  way, or for being fitted on other rows (#488). Unless a later step of the
+  replicate tested and entered it, such a candidate counts as not selected,
+  so its pooled selection frequency may be understated.
+* **`hzr_evaluate()` no longer returns a curve at a `theta` its likelihood
+  cannot evaluate, and says when its `logLik` is the SAS objective
+  (#503).** Where the log-likelihood came back as `-Inf` with a warning,
+  the `curve` asked for with `times` was still computed, and its shape
+  functions have no such guard. At a g3 `log_tau` of 800 the late phase
+  switched itself off there, so `cumulative_hazard` was finite and
+  plausible (0.019, 0.087 and 0.295 at times 0.1, 1 and 10). The curve's
+  `hazard` and `cumulative_hazard` are now `NA` wherever `logLik` is
+  `-Inf`, and the warning, class `hzr_evaluate_not_finite`, says so. A
+  model built with `objective = "sas"` scored its interval-censored rows
+  with PROC HAZARD's interval-mean-hazard term, and the result called that
+  value the log-likelihood. The result now carries `objective`, and
+  `print()` labels such a value as the SAS objective, not a
+  log-likelihood.
+
+* **`hzr_stepwise()` now says when a step changes the rows the model is
+  fitted on (#519).** A multiphase fit drops every row where a variable in
+  the model is missing. So entering a variable with missing values shrank
+  the sample for every later step, and dropping it grew the sample back,
+  with no warning. In one screen of 310 rows, a complete variable entered
+  and then one missing on 60 rows did, and the final model rested on 250
+  rows. Such a step now warns from `hzr_stepwise()`, with class
+  `hzr_stepwise_sample_changed`, naming the step, the variable and the row
+  counts before and after. Rows of weight 0 don't count as a change, since
+  they add nothing to the likelihood. `$steps`, and so `as.data.frame()` of
+  the result, gains an `n_rows` column. Which variables enter is unchanged.
+  `hzr_bootstrap()` suppresses warnings in its select-mode replicates, so a
+  replicate whose sample changes is not reported.
+
+* **A stepwise refit of a single-distribution model now reports each
+  coefficient under its own name (#489).** The refit started from the
+  current estimates with a zero appended for the new term, but
+  `model.matrix()` puts an interaction after every main effect, and
+  `hazard()` keeps the names of a named `theta`. With `~ age * mal` and a
+  named `theta`, `com_iv` entering was reported as `beta_agexmal = 0.974`,
+  and the interaction's own coefficient had no name. A drop removed the
+  slot at the term's position among the terms, so dropping a term that
+  follows a factor removed one of the factor's coefficients and moved the
+  dropped term's name onto another column. The starting values are now
+  matched to the new design by column. A factor entering or leaving, and a
+  model with `time_windows`, which used to stop with a `theta` length
+  error, now refit. `hzr_stepwise()` now counts a model's shape
+  parameters the way `hazard()` does, ignoring `control$shape_param_count`.
+  For a fit given a count that disagreed with its distribution, the score
+  screen used to stop with a `theta` layout error, and under
+  `criterion = "wald"` or `"aic"` the trace's "Final model" line reported
+  the wrong number of covariates.
+
+* **A translated `PROC HAZPRED` job now predicts at the grid SAS used
+  (#494).** `hzr_translate_sas()` read only the first `DO` loop of the
+  first `DATA <name>;` step, and took the loop variable as the time.
+  Three wrong answers followed, none recorded. Covariates a
+  `SET DESIGN` brought in were dropped, and `predict()` evaluated them
+  at 0: `hp.death.AVC.hm1` lost its whole design. `TIME YEARS;` with
+  `YEARS = MONTHS/12` predicted at the `MONTHS` values, and
+  `hp.death.AVC.hm2` predicted at its `OPMOS` loop, where SAS predicts
+  at month 6. A grid defined twice used the first definition, where SAS
+  uses the last, so `hm1` lost its `DIGITAL` rows. The grid is now
+  rebuilt from the job's own DATA steps, and the `time` column is the
+  variable `TIME` names. Fed to the `HAZPRED` binary, the grids emitted
+  for `hm1` and `hm2` reproduce the survival SAS printed for them to the
+  listing's five decimals. A DATA-step statement the translator can't
+  compute leaves its variable `NA` in the grid, with a warning and an
+  `$untranslated` row. A grid whose rows it can't determine is refused.
+
+* **`hzr_translate_sas()` refuses a `PROC HAZARD` job with no `DATA=`, and
+  a `PROC HAZPRED` block with no `DATA=`, `INHAZ=` or `OUT=` (#497,
+  #498).** The `%HAZARD` macro finds its dataset only through `DATA=` and
+  stops without it ("HAZARD not attempted", `hazard.sas:11-15, :145-152`);
+  `%HAZPRED` requires all three options and stops the same way
+  (`hazpred.sas:13-33, :153-163`). So SAS runs neither job. The translator
+  refused a job with no `DATA=` only when a phase had covariates or it
+  carried `SELECTION` (#311). Otherwise it emitted a fit that read the time
+  and event variables from whatever the session held. A `DATA=` with no
+  dataset name, which PROC HAZARD rejects as a syntax error, took the same
+  path. A `HAZPRED` block with an option missing emitted `predict()`
+  anyway: over the fitting rows with no `DATA=`, and from the job's own fit
+  with no `INHAZ=`. The same happened when one of the three had no dataset
+  name, such as `INHAZ=` or `OUT=WORK.`, which PROC HAZPRED rejects as a
+  syntax error. Each is now recorded in `$untranslated`, and the fit or
+  prediction chunk is a `stop()` that names the missing or invalid option.
+  None of the 39 public-corpus jobs that translate changes.
+
+* **A single-distribution fit started where the likelihood is not defined no
+  longer reports `converged = TRUE` (#486).** The optimizer replaces a
+  non-finite log-likelihood with a large penalty, so from such a start every
+  trial point scores the same and it stops at once. For the exponential,
+  Weibull, lognormal and loglogistic fits that read as a converged fit with
+  log-likelihood `-1e10` and the starting values as estimates: for example
+  `theta = 800` for the exponential fit of the shipped `avc` data. Such a fit
+  now reports `converged = FALSE`, no objective (`NA`) and no standard
+  errors, names the cause in the "Not done in this run" record, and warns
+  with class `"hzr_infeasible_start"`. The multiphase path already recorded
+  such a start as infeasible and is unchanged. `hzr_bootstrap()` now counts a
+  replicate that ends there as a non-finite objective rather than at the
+  sentinel.
+
+* **A single-distribution fit stuck at a start where the log-likelihood is
+  finite but below `-1e10` no longer reports `converged = TRUE` (#512).**
+  There every trial point outside the finite region scores better than the
+  start under the optimizer's penalty, and the gradient is too large for its
+  line search, so it stopped without moving. `hazard(Surv(int_dead, dead) ~
+  1, data = avc, dist = "weibull", theta = c(50, 50), fit = TRUE)` read as
+  converged with log-likelihood `-3.55e+196` and the starting values as
+  estimates, and "Not done in this run: none". The exponential (`theta =
+  400`) and lognormal (`theta = c(1, -300)`) fits did the same. Such a fit is
+  now handled as #486's: `converged = FALSE`, no objective, the cause in the
+  "Not done in this run" record, and a warning of class
+  `"hzr_start_past_penalty"`, which inherits `"hzr_infeasible_start"`. The
+  test is where the optimizer ends, and a fit is flagged only when it also
+  fails SAS/C's relative-gradient test there, or when the score there cannot
+  be used (it errors, is not finite, or has the wrong length). So a start that far out which
+  the optimizer leaves still fits (the exponential from `theta = 50` reaches
+  -434.29). A heavily weighted fit that has converged to its true maximum
+  below `-1e10` is not called stuck, because it passes the test. But with
+  very large total weights (around 1e10), the optimizer can still run into
+  its penalty from an ordinary start, and such a fit is refused with a
+  warning (#513). `hzr_bootstrap()` counted such replicates as successes; they now
+  fail as a non-finite objective.
+
+* **A single-distribution fit that stopped on a zeroed score no longer
+  reports `converged = TRUE` (#518).** The optimizer stops when the
+  log-likelihood stops changing, not when the gradient vanishes, and it
+  treats a score that is not finite as zero. From a far start it could stop
+  on those zeros: the loglogistic fit of `avc` from `theta = c(-1e5, 1)`
+  read as converged at log-likelihood -4727490.72, and the only warnings
+  concerned the Hessian. A fit whose score is not finite, or cannot be
+  computed, at the estimates now reports `converged = FALSE`, with a
+  warning of class `"hzr_unverified_convergence"`. The estimates,
+  log-likelihood and standard errors are still returned, as for any fit
+  that did not converge. The multiphase path is unchanged.
+  `hzr_bootstrap()` never read `converged`, and it muffles each
+  replicate's warnings, so from that start all 10 replicates counted as
+  successes, pooling a first parameter with mean -43435 where the maximum
+  is about -2.07. A replicate that does not converge now fails, with the
+  reason "refit did not converge (converged = FALSE)", and bootstrapping a
+  fit that did not converge warns. A fit that
+  stops short of the maximum with a finite score, such as the lognormal
+  from `c(1e5, 1)`, can still report `converged = TRUE`; that case remains
+  open.
+
+* **A translated `PROC HAZPRED` job now draws its bands at the level SAS
+  uses: one standard error, unless `CLIMITS=` names another (#493).**
+  The emitted `predict()` calls never set `level`, so they used
+  `predict.hazard()`'s 0.95 and every band was 1.96 times too wide, with no
+  error or warning. `CLIMITS=` was read and discarded. The default
+  `CLIMITS` in PROC HAZPRED is 0 (`hazpred/stmtprc.c:14`), and any value outside
+  `(0, 1)` gives a multiplier of one (`hazpred/hzpp.c:8-9`), so the calls
+  now carry `level = 2 * stats::pnorm(1) - 1` by default and the
+  `CLIMITS=` value when it lies in `(0, 1)`. At the one-SE default the
+  multiplier is exactly 1 in both. For a `CLIMITS=` inside `(0, 1)` the
+  level matches, and the multiplier agrees to about 4e-4: R uses the exact
+  `qnorm()`, and SAS a rational approximation (`hzd_calc_norinv.c:13-17`),
+  giving 1.6452114 against 1.6448536 at 0.9. `NOCL` now wins over a later
+  `CLIMITS=`, as it does in `hzpp.c`, where `CLIMITS=` had switched the
+  bands back on. A `CLIMITS=` value SAS cannot read is recorded in
+  `$untranslated`.
+
+* **`hzr_stepwise(criterion = "score")` now refuses a `data` whose rows are
+  not the base fit's rows in the fit's order (#487).** The score test reads
+  each candidate from `data` by position and scores it against the fit's
+  stored rows, and it checked only the row count. The same rows sorted or
+  shuffled scored every candidate against the wrong observations and
+  entered a different variable, with no warning: on `avc`, a Weibull base
+  entered `com_iv` (p = 0.0001) from the original frame and `mal`
+  (p = 0.17) from the frame sorted by time. Every column `data` shares with
+  the data frame given to `hazard()` must now match it; a column only
+  `data` has, such as a candidate derived after the fit, is not compared.
+  The vector interface (`hazard(time =, status =)`) refits by pairing its
+  stored response with `data` read by position, so there the Wald and AIC
+  criteria misread a reordered frame too, entering `com_iv` for `opmos`;
+  on that interface the comparison now runs under every criterion. So it
+  does for a fit with `weights`, on either interface: the refits reuse the
+  stored weights, in the fit's row order. Only an unweighted formula fit,
+  which rebuilds every per-row input from `data`, is left to the score
+  test's own comparison. A `data` holding only columns added after the fit
+  shares none with that frame, so it cannot be compared, and is treated as
+  below; so is one whose shared columns have duplicate rows, since rows
+  reordered among duplicates leave those columns unchanged. Two fits store no
+  frame that can be compared: a vector-interface fit made without
+  `data =`, and one whose `data` served only to look names up and so has
+  another row count. For those, `hzr_stepwise()` looks for a column of
+  `data` holding the fit's event times. In the fit's order, the screen
+  runs; in another order, it is refused, under every criterion. When the
+  fit's times have ties, a column holding them in order cannot show that
+  rows within a tie are in order, so it is not taken as proof on its own;
+  the fit's other per-row inputs are then checked as well (#515, below).
+  With no such column, or tied times those inputs cannot resolve, the order
+  cannot be checked, and the screen warns once, with class
+  `hzr_score_rows_unverified`.
+
+* **`hzr_stepwise()` now checks row order within tied event times against
+  the fit's status, weights and covariates (#515).** Where it could only
+  check `data`'s order against a column holding the fit's event times,
+  rows reordered within a tie left that column unchanged, so tied times
+  gave the same warning whether or not the rows had moved. With discrete
+  times on `avc` (14 distinct in 305 rows), a shuffle within ties moved 289
+  rows and took every criterion's first entry to `opmos` (from `com_iv`
+  under score and AIC, from `mal` under Wald), under the same warning as
+  the aligned frame. Each other per-row input the fit stores (status,
+  interval bounds, weights, covariate design columns) is now looked for in
+  `data` under the column it came from: the one the call named
+  (`status = dead`, `status = d$dead`, or the event in `Surv(time, event)`),
+  or a covariate's own name. A column that merely holds the same values
+  does not count, so a look-alike cannot vouch for the order. The input's
+  own column holding the same values paired with the same times but in
+  another order means rows moved within a tie, and the screen is refused,
+  naming the column. The order is accepted, without a
+  warning, when the inputs found tell every row apart, or when all of them
+  are found: rows that could still be swapped are then identical in
+  everything the fit reads, and the screen's answer is unchanged. Otherwise
+  the warning remains, and now names the inputs to add to `data`. Every one
+  of these comparisons is now exact, as are the event-time column and the
+  columns compared with a stored frame. Under `all.equal()`'s tolerance,
+  rows whose times differed only by rounding, such as `0.1 + 0.2` and `0.3`,
+  could be swapped unseen and screened as if in order. A `data` with
+  duplicated column names is now refused: every check reads columns by
+  name, and of duplicates only the first is read.
+
+* **`hzr_stepwise(criterion = "aic")` no longer enters a variable on the
+  strength of its missing values (#488).** A multiphase refit drops every row
+  where the candidate is missing, so the candidate's log-likelihood summed
+  fewer rows than the current model's, and the two AICs were compared as if
+  they covered the same data. A pure-noise variable missing on 60 of 310 rows
+  entered with a change in AIC near -58 while its own Wald p-value was 0.23,
+  with no warning. A candidate whose refit used different rows is now not
+  scored: it is counted in `$criteria$uncomputable_reasons` as
+  `rows_differ`, a run that ends with no other candidate to test stops with
+  the untested-screen warning, and a run that completes warns that the entry
+  was declined. The Wald and score criteria never compared two fits and are
+  unchanged.
+
+* **`predict()` with a `newdata` of only a `time` column now warns when the
+  model has covariates (#522).** Such a `newdata` evaluates every covariate
+  at 0. For `hazard(Surv(int_dead, dead) ~ age + mal, data = avc, dist =
+  "weibull")` that returned survival 0.7713 and 0.6908 at 12 and 60 months,
+  the prediction for a patient of age 0, with no warning; a `newdata` that
+  gave some covariates but not all was already refused. The values are
+  unchanged, but `predict()` now warns, once per call and with class
+  `"hzr_predict_covariates_zero"`, naming the data variables to supply
+  (`age`, not the model-matrix column `scale(age)`). This
+  covers the single-distribution fits, on both interfaces, and the
+  multiphase fits, whose covariates enter globally or through a phase
+  formula. A model without covariates does not warn, and `?predict.hazard`
+  documents the behaviour under `newdata`.
+
+* **A translated `MAXITER=0` job now evaluates the starting values, as
+  `PROC HAZARD` does, rather than fitting (#496).** `PROC HAZARD` skips
+  its optimizer at `MAXITER=0` and prints the log-likelihood at the
+  starting values, after Conservation of Events has scaled every `MU` by
+  one factor unless `NOCONSERVE` is given. `hzr_translate_sas()` emitted
+  `control = list(maxit = 0)`, and `hazard()` optimised anyway: one job
+  reported -198.370 with `converged = TRUE` where `PROC HAZARD` printed
+  -295.609. The chunk is now `hzr_evaluate()` at those starting values,
+  with the same scaling, and it reproduces the log-likelihood and `MUE`
+  that `PROC HAZARD` prints with and without `WEIGHT`, `LCENSOR` and
+  `NOCONSERVE`, and with `ICENSOR` (#543). With fewer events than free
+  parameters it stops, as `PROC HAZARD` does. It is not a fit, so the job
+  warns and gains an `$untranslated` row. `PROC HAZARD` still steps through a `SELECTION` screen, evaluating
+  each step at unfitted values; the translation does not, and says so. A value below 1 is
+  read the same way, as `PROC HAZARD` truncates it to 0. A negative
+  `MAXITER`, which `PROC HAZARD` ignores, is no longer emitted:
+  `hazard()` had returned the starting values with `converged = TRUE`.
+
+* **A translated `ICENSOR` statement that `PROC HAZARD` cannot parse now
+  warns (#495).** `ICENSOR` takes exactly `count = timevar`, and `PROC
+  HAZARD` stops with a syntax error on anything else: a comma anywhere, a
+  missing `=`, or an extra name. `hzr_translate_sas()` removed a trailing
+  comma and fitted the job without a word, and it fitted a job with a
+  missing `=` without its interval-censored rows, with only an
+  `$untranslated` row to say so. Such a job now warns that `PROC HAZARD`
+  does not run it and gains an `$untranslated` row. The fit uses the
+  names `PROC HAZARD`'s parser reads, the first `count = timevar` once its
+  lexer has dropped the errors, so `C3=TL,AGE` fits `C3` and `TL`, not a
+  variable `TLAGE`. A later `(` clears `PROC HAZARD`'s syntax error, and
+  the warning then says so instead.
+
+* **A translated `ICENSOR` job now fits `PROC HAZARD`'s interval objective
+  (#543).** `PROC HAZARD` accumulates an interval-censored row as the
+  interval-mean hazard over (lower bound, time], which `hazard()` calls
+  `objective = "sas"`, and `hzr_translate_sas()` emitted the default
+  interval probability instead. Measured on the binary over a grid of 18
+  optimised fits, that moved the constant phase's `MU` by up to 21% and the
+  reported objective by up to 291 units. The emitted call now passes
+  `objective = "sas"`, which reproduces `PROC HAZARD`'s estimates to the
+  precision it prints. A note above the fit says that the value it reports
+  is `PROC HAZARD`'s objective, not a log-likelihood. Degenerate intervals
+  are resolved as `PROC HAZARD` resolves them before its fit: a lower bound
+  equal to the time makes the row an exact event, and a lower bound that is
+  missing, negative or after the time drops the row. The status chunk warns
+  with the number of rows each rule touched, and the data frame itself
+  keeps every row.
+* **A macro in a translated phase statement no longer hides an empty item
+  (#479).** `PROC HAZARD` needs a variable on each side of every `,` in
+  `EARLY`, `CONSTANT` and `LATE`, and stops with a syntax error otherwise.
+  `hzr_translate_sas()` skipped that check for a whole statement whenever
+  any item was a macro, so `EARLY , &X;` and `EARLY SEX,, &X;` fitted with
+  no warning and no `$untranslated` row. A macro can stand for an item,
+  but no plain variable fills an empty one, so these now warn and gain a
+  row, as their macro-free forms already did. An empty argument inside a
+  macro call, as in `%F(A,,B)`, belongs to the macro and is not flagged.
+  A quoting function such as `%STR()` passes its argument through as text,
+  so `%STR(A,,B)` is judged as `A,,B`.
+* **`?hazard` no longer says a position-indexing helper behaves as it would
+  under `stats::lm(subset = )` (#484).** When `hazard()` drops a time-0
+  row, it builds the design on the retained rows. A term such as
+  `hf(age)`, with `hf <- function(a) a + g[seq_along(a)]` and `g` outside
+  `data`, then pairs the retained rows with the first elements of `g`.
+  Every row after the first dropped one gets the wrong value, and only the
+  drop is warned about. `lm(subset = )` evaluates its terms on every row
+  before subsetting, so the same helper pairs correctly there; the page
+  wrongly implied the two agree. The advice is unchanged: put such a vector
+  in `data`. Evaluating terms as `lm()` does is #590.
+* **`hzr_translate_sas()` translated an early phase that starts at `M=0` as
+  a different model from the one `PROC HAZARD` fits (#471).** For
+  `PARMS ... M=0 NU=1`, with `M` not fixed, `SETG1` fixes `M` at 0 before the
+  fit, and it does the same for a negative `NU`. The translation left `M`
+  free, so the emitted `hazard()` call estimated a parameter `PROC HAZARD`
+  holds, and it could reach a different optimum with no warning. The
+  translation now fixes `M` as `SETG1` does, and records the rewrite in
+  `$untranslated`. Two related starting values are mirrored as well: with
+  `NU` fixed and `M` free, `SETG1` starts `M` at 1, and with `M` fixed and
+  `NU=0` it starts `NU` at 1. `M=0 NU=1`, `M=0 NU=0 FIXM` and
+  `M=0 NU=1 FIXM` now emit the same model, as they are the same job to
+  `PROC HAZARD`. On data drawn from that model, and from a start where the
+  `HAZARD` binary converges, the emitted fit reproduces its estimates.
+
+# TemporalHazard 1.2.12
 
 ## Breaking changes
+
+* **A g3 phase with `alpha` fixed at 1 is now fitted as PROC HAZARD fits it,
+  so its reported `tau`, `gamma`, `eta` and `mu` can change (#415).** At
+  `alpha = 1` the g3 form is `(t/tau)^(gamma*eta)`, so `tau` is confounded
+  with `mu`, and `gamma` with `eta`. With them free the fit walked a ridge
+  and reported `converged = TRUE` at an arbitrary point on it, warning only
+  about standard errors. PROC HAZARD re-expresses the phase before fitting
+  (`SETG3_ignore_tau()`, `setg3.c:313-315` and `380-425`). `tau` is held at
+  1, and the product is carried by one parameter: `gamma`, unless `gamma` is
+  the one you fixed. Under `constraint = "eta_gamma"` (`FIXGE2`) both are
+  held, at `gamma = 2` and `eta = 1`. `hazard()` now does the same, with `mu`
+  rescaled to match. It **warns and records it** in `fit$fit$boundary`
+  (mechanism `"g3_alpha_one"`, warning class `"hzr_g3_alpha_one"`, which
+  inherits `"hzr_boundary"`).
+
+  The likelihood is unchanged, and a test checks the held fit against
+  `survival::survreg()`'s Weibull. But the coefficients are reported in the
+  held parameterisation. A phase such as
+  `hzr_phase("g3", tau = 5, gamma = 3, alpha = 1, eta = 1, fixed = "shapes")`
+  now reports `tau = 1` and a `mu` smaller by a factor of 5^3. The hold is
+  announced only when it changes a value or what is fixed, and a *free*
+  `alpha` that starts at 1 is not held, by SAS or here. What PROC HAZARD does
+  next is not mirrored: it rewrites a `gamma * eta` start at or below 2
+  (`setg3.c:870-921`), and R has never done that for any g3 phase.
+
+* **Under `constraint = "eta_gamma"` (`FIXGE2`), a fixed `alpha` above 1 is
+  now an error, and a free one started at 1 or above starts at 2/3, as in
+  PROC HAZARD (#418).** With `gamma * eta = 2` the g3 form needs
+  `gamma * eta / alpha > 2`, that is `alpha < 1`. PROC HAZARD stops on a
+  fixed `alpha` above 1 (`SETG31040`, `setg3.c:843-847`), and `hazard()`
+  now does too; it used to fit. A free `alpha` started at or above 1 is
+  rewritten to 2/3 (`setg3.c:848-850`), and `hazard()` now does the same,
+  with a warning and a `fit$fit$boundary` record (mechanism
+  `"g3_fixge2_alpha_start"`). A fixed `alpha` of exactly 1 takes the hold
+  above. Whether a constrained `gamma` is heading for infinity is still not
+  detected (see Known limitations).
+
+* **A `hzr_translate_sas()` job PROC HAZARD refuses now warns loudly, and
+  says so in `$untranslated`** (#359). When `SETG3` sets an error, the
+  procedure exits in `shape()` before `results()`, so the job produces
+  nothing. The translation recorded that as an untranslated row and emitted a
+  `hazard()` chunk with nothing to mark it, and a reader who rendered past the
+  callout got a converged fit standing in for a job with no result. The
+  emitted document now carries a `warning()` immediately above the fit,
+  naming the `SETG3` code, its cause and the `PARMS` operands that produced
+  it, and the row is recorded as before. The fit is still emitted: a rendered
+  document completes, and the reader is told what it stands in for.
+
+  **Some of these still fail further down, and the warning says which.**
+  Several `SETG3` refusals fire precisely because a shape value is out of
+  range, and the same value is out of range for `hzr_phase()`, which will not
+  build the phase. Rather than name a list of codes here, which drifted once
+  already, the warning itself is derived by trying to construct the phase: it
+  says `hzr_phase()` accepts the shape only when it does, and otherwise says
+  the document stops at that check. A test executes every `SETG3` class's
+  emitted chunks and requires the message and the outcome to agree, so the
+  two cannot diverge again. In every case the warning is emitted in its own
+  chunk **above** the fit, naming the `SETG3` code and the operand, so the
+  cause is stated before `hzr_phase()` refuses; the render then stops there
+  with `hzr_phase()`'s own message.
+
+  Be aware of where that warning does and does not appear. When a chunk
+  errors, Quarto writes no output document, and `knitr` collects warnings
+  **into** the document rather than printing them, so the warning does not
+  reach the render console either. What a reader has in that case is the
+  emitted `.qmd` itself, where the `warning()` naming `SETG3910` sits
+  immediately above the failing fit, and the `$untranslated` row on the
+  translated job.
+
+  The refusal is raised only where it is PROC HAZARD's. With `FIXGE2` or
+  `FIXGAE2` and no `WEIBULL`, SAS reaches `SETG3` down a path the `setg3.c`
+  trace does not model, so the trace's verdict is not used there. Only
+  `SETG3`'s entry refusals are raised as refusals on that path (see the next
+  entry).
+
+* **More `hzr_translate_sas()` jobs that PROC HAZARD refuses, or fits
+  differently, now warn loudly** (#358, #403, #421). Each was already recorded
+  as an untranslated row, but nothing in the rendered document said so, and a
+  reader met a converged fit with no sign that PROC HAZARD would not have
+  produced it. Each now emits the fit, a `warning()` above it naming the
+  cause, and the row:
+  - a `PARMS` operand PROC HAZARD rejects with a syntax error: a value its
+    lexer does not read as a number (`NU=1E-3`, `NU=2.`), a value keyword
+    with no `= NUMBER`, a spaced operand that is invalid even joined, or a
+    keyword outside its grammar (`FIXG1`);
+  - a `MAXITER=` or `CONDITION=` value that its lexer does not read as a
+    number, **or no value at all**: `MAXITER '=' NUMBER` and
+    `CONDITION '=' NUMBER` (`hazard_y.y:63-64`) have no form without a
+    number, so `MAXITER=`, `MAXITER =` and a bare `MAXITER` are each a
+    syntax error and the job does not run;
+  - a template's `?` placeholder in `PARMS`, which PROC HAZARD's lexer also
+    rejects. It was filled from SAS's default and fitted; it now asks to be
+    filled in;
+  - a model this translation cannot emit:
+    - `FIXMNU1` on an active early phase, which PROC HAZARD fits with
+      `|M*NU| = 1`; this translation does not mirror that constraint;
+    - `DELTA` other than 0 on an active early phase;
+    - `FIXTAU` with no `TAU` written, which PROC HAZARD fixes at 0.75 of the
+      longest follow-up;
+    - `FIXGE2` or `FIXGAE2` without `WEIBULL`. That path is not modelled
+      here, so the warning says the translation cannot tell whether PROC
+      HAZARD refuses the job or which model it fits;
+  - `SETG3`'s entry refusals, on every path;
+  - `SETG1`'s refusals for an early phase (#424): `THALF` fixed at a value
+    that is not positive (`SETG1910`); `M` and `NU` both fixed on a case no
+    model takes (`SETG1940`, `SETG1950`, `SETG1960`, and `SETG1920` and
+    `SETG1930` under `FIXMNU1`); and `DELTA` fixed outside `[-1, 1]`
+    (`SETG1900`, `SETG1901`). They were fitted with no row, or warned for the
+    wrong reason, that the model was not mirrored. Most of these values are
+    out of range for `hazard()` as well, so the fit still fails after the
+    warning;
+  - an early phase PROC HAZARD may not fit (#424). With `NU=0` and `M` free,
+    `SETG1` selects its limiting case, and these jobs fitted with no row.
+    What the binary does next was measured on two datasets, and the warning
+    says only what was seen. For `M=0 NU=0 FIXNU` it produced no result on
+    both. For `M=1 NU=0` and `M=-1 NU=0`, with or without `FIXNU`, it stopped
+    on a domain error (`DLG1980`) on one dataset and fitted on the other, so
+    the warning says PROC HAZARD **may** print no estimates on your data. In
+    neither case does it say PROC HAZARD fits another model;
+  - a phase variable that is not a name to PROC HAZARD's lexer (#440):
+    `AGE*SEX`, `LOG(AGE)`, `B SEX`, `1AGE`. A phase variable must be a NAME,
+    `[_A-Z][_A-Z0-9]*` (`hazard_l.l:39`, `phasevar : NAME` at
+    `hazard_y.y:213`), so PROC HAZARD rejects such a job at parse. The phase
+    parser passed the text through as a column name, with no row and no
+    warning, so `EARLY AGE=0.1, AGE*SEX=0.2;` emitted a fit on a column
+    called `AGE*SEX` and, under `SELECTION`, a screen offering it as a
+    candidate. The operand is now left out of the model, and out of `theta`
+    with it, so the emitted formula has one starting value per term. This
+    holds with and without `SELECTION`, and for every spacing of the
+    operand. A name PROC HAZARD accepts, including `_X1` and a word that is
+    a keyword elsewhere (`E`, `EARLY`), does not warn, and neither does a
+    macro reference, which SAS expands before its lexer runs.
+
+    Parentheses follow the lexer rather than a rule of thumb, and the
+    verdicts are checked against the HAZARD binary (C-Version 4.4.4). `)` is
+    whitespace to it (`hazard_l.l:32`), and `(` returns no token but
+    switches it to its PROC-line state (`hazard_l.l:56`). So a last item
+    `LOG()` or `LOG() = 0.2` is the variable `LOG`, which PROC HAZARD fits
+    and the translation now keeps. `LOG(X)`, `AGE(1)`, `LOG() /I`, and every
+    item after a `(` in the same statement are rejected. A `(` also clears
+    PROC HAZARD's syntax-error flag, so a job whose phase statements carry
+    one may run despite an earlier error: the binary runs
+    `EARLY AGE*SEX, LOG();` and fits `AGE` alone. The translation does not
+    reproduce which variables survive, and says so in the warning.
+  - a value on a `PROC HAZARD` option that takes none (#431): `NOCOV=1`,
+    `CONSERVE=YES`, `PRINTIT=1`, `NOPRINT=0`, in any spacing. Eleven options
+    are bare tokens (`hazard_y.y:65-75`), so the `=` is a syntax error and
+    the job does not run. The value was ignored and the job fitted with no
+    row;
+  - a `TIME`, `EVENT`, `RCENSOR`, `LCENSOR` or `WEIGHT` statement with other
+    than one operand (#431). Each takes exactly one name
+    (`hazard_y.y:106-127`). `EVENT DEAD EXTRA` fitted on `DEAD` and dropped
+    `EXTRA` with nothing said; it now warns and fits on the first operand.
+    With no operand at all, `WEIGHT`, `RCENSOR` and `LCENSOR` are left out
+    of the fit, and `TIME` or `EVENT` stops the job, since there is no
+    variable to fit, unless another statement supplies one (a second
+    `TIME`, or `ICENSOR` for `EVENT`). An operand that is a macro reference is not counted,
+    since it can expand to any number of names. The HAZARD binary is the
+    oracle for both shapes, and it runs either job when a later phase
+    statement carries a `(`, as above; the warning says so there.
+
+  Every class above for `SETG1` was checked against the HAZARD binary
+  (C-Version 4.4.4), with the data staged as PROC HAZARD reads it, on the
+  package's `avc` data and on an independent seeded dataset. Where
+  `SETG1` moves a starting value and runs, the translation now starts there
+  too, with a row and no warning (#421): a free `THALF` that is not positive
+  starts at 1, where it was emitted as written and the document stopped at
+  its logarithm; `M=0 NU=0` with both free starts at `M = NU = 1`; and
+  `NU=0` with only `M` fixed starts `NU` at 1.
+
+  A `PARMS` or `PROC` value that carries a macro reference (`&X`, `%CALL`) is
+  not refused, because SAS expands it before PROC HAZARD reads the statement.
+  An operand this translation could not read, for that reason or any other,
+  warns on a job whose phases it did build: the unread operand may be the one
+  that sets a shape, and the emitted phase would then carry SAS's default
+  where the job wrote something else.
+
+  **A refused job no longer stops the render.** The warning is per job: a
+  file holding several jobs emits one fit chunk each, and only the refused
+  job's fit is preceded by a `warning()` chunk, so every other job is written
+  out and runs unchanged. A document carrying a refusal renders to completion
+  and shows the warning in its output, where an earlier draft of this work
+  made it a `stop()` and Quarto then exited 1 and produced no output document
+  at all, including for the jobs before the refused one.
+
+  The exception is the refusals above whose shape `hzr_phase()` will not
+  build. They are warned about and emitted like everything else, but
+  `hzr_phase()` then refuses the out-of-range value, so a file containing such
+  a job still yields no rendered output until it is corrected or removed. A reader who wants the other jobs'
+  results in the meantime can delete that job from the file.
+
+  **Which jobs stop and which warn, in one place.** A job stops only where it
+  did before this release: a phase statement `PROC HAZARD` refuses at parse
+  (#340) other than a phase variable that is not a name (#440, above), a
+  `PARMS` statement that builds no phase this translator can use, a job
+  with no `DATA=` whose phases name covariates (#311), a `SELECTION`
+  job that selects no phase, and a `TIME` or `EVENT` statement with no
+  operand (#431) that leaves nothing to fit. Everything else newly
+  recognised in this release warns and still fits.
+
+  The risk this accepts, deliberately: a rendered document that shows a
+  warning and then carries on to a fit **can** be read as a clean result by
+  someone who does not read the warning. That is why the warning is raised
+  in its own chunk immediately above the fit rather than folded into it, and
+  why every such job also carries a row in `$untranslated` -- the warning is
+  read once at render, the row is what a reader can search for afterwards.
+
+* **An operand written with spaces around `=` is read, not split apart**
+  (#421). SAS's lexer skips whitespace (`hazard_l.l:32`), so `THALF = 0.3` and
+  `MAXITER = 50` are the same jobs as the same operands written without the
+  spaces. This translator
+  split them on whitespace: the `PARMS` pieces were recorded and the phase was
+  built from `PROC HAZARD`'s default instead of the written value, and the
+  `PROC` line reported its pieces as unknown options. Operands are joined
+  before parsing, on both. A joined operand `PROC HAZARD` still rejects
+  (`THALF = ABC`, or `FIXNU = 1`, which takes no value) is a syntax error,
+  just as it is when written without the spaces.
+
+  Joining now works the way `PROC HAZARD`'s own lexer does. Whitespace only
+  separates tokens there (`hazard_l.l:32`) and `=` is a token in its own
+  right (`:55`), so every spelling of one statement is the **same** token
+  stream to SAS. The operands are normalised to that token stream first and
+  then paired as `KEY = VALUE` by the grammar, so all spellings of a
+  statement give one answer by construction rather than by matching
+  particular spellings. Two earlier attempts did match spellings, and each
+  left another spelling reading a following option as a value: `PROC HAZARD
+  DATA = MAXITER = 50` fitted with `data` set to `MAXITER=50` and the
+  iteration limit silently dropped.
+
+  A stray `=` left over after that pairing is now recorded and warned about
+  as the syntax error it is. `DATA = MAXITER = 50` is read as SAS reads it
+  --- `DATA` switches the lexer to its dataset-name state, where `MAXITER`
+  is a name (`hazard_l.l:59, :80`), so the dataset is `MAXITER` and the
+  trailing `= 50` is a stray `=` that sends `PROC HAZARD` to
+  `hazardopt : error` (`hazard_y.y:76`).
+
+* **`DATA=` and `OUTHAZ=` with no value are refused** (#433). `DATA '='
+  dsfield` and `OUTHAZ '=' dsfield` (`hazard_y.y:61-62`), where a `dsfield` is
+  a name or a libref-qualified name (`:80-81`), have no form without one, so
+  the job does not run. `OUTHAZ=` was previously dropped with no row at all
+  and the job fitted; `DATA=` surfaced as an internal R error naming neither
+  the option nor what was lost. Both now warn and record the construct,
+  alongside the existing check on `MAXITER=` and `CONDITION=`.
+
+  `DATA = X` with spaces, on a `PROC HAZARD` line not wrapped in a
+  `%HAZARD(...)` call, failed before the joining could happen; that is fixed
+  under #458 below.
 
 * **`hazard()` refuses a function-valued element of `data` (#420).** `data`
   masks the calling frame while `hazard()` evaluates `time`, `status`,
@@ -49,8 +1066,9 @@
   Conservation of Events) are identical by design and are not named. A run
   in which only some replicates stay at their start while their objective is
   finite is not caught; that rests on the optimizer's convergence test
-  (#351). What a sentinel objective should mean for a single fit is tracked
-  separately (#351, #374).
+  (#351). From 1.2.13 a single-distribution fit that ends at the sentinel
+  reports no objective and `converged = FALSE`, so such a replicate fails as
+  a non-finite objective instead (#486).
 
 * **`hzr_translate_sas()` no longer fits a job `PROC HAZARD` rejects: if
   you hold estimates from such a translation, they have no SAS run behind
@@ -700,7 +1718,66 @@
   already did. Code that caught the error with `tryCatch(..., error = )`
   will no longer see it; read `$criteria$refit_failures` instead.
 
+* **`hzr_stepwise()`'s `$steps$variable` records the model's term label on
+  every row (#449).** An entry row used to carry the name as the `scope`
+  wrote it and a drop row the `terms()` label, so a non-syntactic column
+  `_X1` entered as `_X1` and left as `` `_X1` ``, and a literal column
+  `age:mal` entered under the interaction's spelling `age:mal`. Every
+  row now uses the label, whatever form the `scope` took. For a syntactic
+  name the label is the name, so nothing changes; code that matched an
+  entry row of a non-syntactic column by its bare name should match the
+  backquoted label instead.
+
 ## New features
+
+* **`hzr_stepwise()` records what a pin resolved to, beside what was asked
+  for (#451).** `$scope$force_in` and `$scope$force_out` list the caller's
+  own strings. `$scope$unresolved` has recorded the names that matched
+  nothing since #442, but nothing recorded what the names that *did* match
+  resolved to, so a saved result could not say whether `"_X1"` pinned the
+  column `_X1` or a model term spelled that way.
+  The results now also carry `$scope$force_in_resolved` and
+  `$scope$force_out_resolved`, the identities those names resolved to: a
+  bare `"_X1"` is recorded as given in the first and as `` "`_X1`" `` in the
+  second, and a name that resolved to nothing is absent from the second
+  entirely. Nothing is renamed or removed, and the as-given fields are
+  unchanged. The resolved fields hold the resolved names **only**; the
+  frozen set is not merged into them, since `$scope$frozen` already records
+  it and merging would list variables the caller never named.
+  Resolving is not applying: `force_in` names variables that must *remain*
+  in, so a name that resolves to a variable the model does not contain is
+  recorded as resolved and still pins nothing.
+
+* **`hzr_translate_sas()` now says when `PROC HAZARD` rewrote a shape operand
+  before fitting, instead of emitting the rewritten value silently.** Under
+  `FIXGE2` or `FIXGAE2` with `WEIBULL`, `SETG3` moves the late shape onto the
+  constraint before the fit (`setg3.c:449-467, :827`), so a job written
+  `ALPHA=2 GAMMA=5 ETA=1 FIXGAE2 WEIBULL` is fitted by `PROC HAZARD` at
+  `ALPHA=2.5`, not at the 2 on the statement. The translation already emitted
+  `alpha = 2.5`, the model `PROC HAZARD` fits, but said nothing, so a reader
+  comparing the emitted call against the job saw a value they had not written
+  and no reason for it. Such a rewrite is now recorded, naming the operand and
+  both values (`ALPHA=2 -> 2.5`).
+
+  **No fit changes.** The emitted call is the same on both sides; what is new
+  is the row and the "untranslated construct(s)" warning that goes with it.
+  A job that translated cleanly and reported no rows may now report one.
+
+* **A fit now records why its gradient test was not run, not merely that it
+  was not** (#351). SAS/C HAZARD accepts an optimum only when the relative
+  gradient is small enough, and every fit reports that test in
+  `fit$fit$rel_gradient`. `NA` there has always meant "not evaluated", never
+  a pass -- but it did not say why, and "not evaluated at the estimates" on
+  its own reads like a failure the fit is declining to name. It usually is
+  not one. Under Conservation of Events the test is computed by
+  differencing the log-likelihood, so a point the difference needs can fall
+  outside the region where the likelihood is finite while the estimates
+  themselves are sound. Reading that as a failure would condemn a good fit.
+  The reason is now recorded in `fit$fit$rel_gradient_reason` --
+  `NA_character_` when the test did run -- and `print()` and `summary()`
+  append it, so the routes to a missing result are told apart from each
+  other and from a test that ran and failed.
+  A test that ran still reports "met" or "not met" exactly as before.
 
 * **`hzr_translate_sas()` now translates a `SELECTION` statement into an
   `hzr_stepwise()` call** (#160). Such a job used to emit a `stop()`: the
@@ -765,9 +1842,14 @@
   line. A phase built with `hzr_phase(constraint = )` has its derived shape
   re-derived here, as the fit re-derives it, so a contradictory value passed
   in `theta` is replaced rather than used as given. At a fitted model's own
-  estimates it returns that fit's objective, except where the fit reports an
-  objective it is not at: under Conservation of Events the conserved scale is
-  re-solved after the objective is recorded (#362), and the two then differ.
+  estimates it returns that fit's objective, under Conservation of Events
+  too, since the fit's objective is recomputed at the estimates it returns
+  (#362), except where the fit warns that it could not. A `theta` the
+  likelihood cannot evaluate gives `-Inf`, with a
+  warning of class `"hzr_evaluate_not_finite"`, for every distribution: the
+  single-distribution likelihoods return `+Inf` internally for such a
+  `theta`, and it used to reach you as `logLik = Inf`, the best possible fit
+  (for example, an exponential model on `avc` at `theta = 800`).
 
 * **`hzr_phase()` can derive one late-phase shape from the others (#325).**
   The new `constraint` argument covers SAS/C's two late-phase constraints:
@@ -827,32 +1909,401 @@
 
 ## Bug fixes
 
-* **`predict(newdata = )` no longer blames a term for a failure that was not
-  its doing (#446).** When rebuilding the design failed, the refusal named
-  whichever model term did not give one value per row of `newdata` and raised
-  that *instead of* the failure. The naming was never verified to explain
-  anything, so it could blame an innocent term and prescribe a remedy that
-  could not be followed: a term returning a list failed on its type, and the
-  message sent you to move a `zz` into `data` that was not a column of `data`
-  at all. A condition raised inside one of your own terms was destroyed
-  outright, class and all.
+* **A row at time 0 is now dropped before fitting, as PROC HAZARD drops it
+  (#374).** An EVENT at time 0 made the lognormal and loglogistic fits
+  return the optimizer's `-1e10` clamp, and the exponential fit
+  `log(.Machine$double.xmax)`, each with `converged = TRUE` and no warning:
+  a value that is not a likelihood. PROC HAZARD never fits such a row. It
+  deletes any observation with `TIME <= 0` at input, whatever its status
+  (`hazard/src/hazard/readt.c:12-14`), and notes the count. `hazard()` now
+  does the same, with a warning (class `"hzr_time_zero_dropped"`), and
+  records the count and the rows' positions in `fit$data`. The time tested
+  is the row's upper bound, PROC HAZARD's `TIME`: `time` for an exact or
+  right-censored row, `time_upper` for a left- or interval-censored one. A
+  lower bound or entry time of 0 is admissible, as PROC HAZARD admits it, so
+  an interval opening at 0 is still fitted, as left censoring (#341). Right-censored rows at 0
+  contributed nothing to the likelihood, so those fits keep their estimates
+  but now report the smaller row count. The fit is built on the retained
+  rows only, response and design alike, as if the dropped rows had not been
+  given: `scale(age)` uses the retained rows, and so does every function that
+  later rebuilds the model from the fit (the score test, `hzr_evaluate()`,
+  and the refits in `hzr_stepwise()` and `hzr_bootstrap()`), so they agree
+  with it. Two inputs cannot be rebuilt that way and are refused, with a
+  message naming the cause: a response whose values change once the rows
+  are dropped, such as `Surv(time - min(time), status)`; and a formula,
+  global or a phase's, that reads a per-row value from outside `data`.
+  `hzr_stepwise()` given the data frame used for the fit drops the same
+  rows, but only when both the retained and the dropped rows match it. If
+  every row is at time 0, `hazard()` stops with nothing left to fit. An
+  `x` or `weights`, or a `data` that a formula reads row by row, whose
+  length differs from `time`'s is refused before any row is dropped; one that
+  was short by exactly the number of rows at time 0 used to be accepted and
+  fitted against the wrong rows. A `data` used only to look names up need
+  not match.
 
-  What happens now depends on who raised the failure. **A condition carrying
-  any class of your own passes through unchanged** — the same object, with its
-  class, call and every field, so a `tryCatch()` on it fires and its fields are
-  intact. *It gains no note*: nothing is appended to your condition, because
-  appending to it cannot be done reliably — `conditionMessage()` is a generic,
-  and a class with its own method never reads the field that would be written. A
-  plain error from the frame build keeps the term naming, **first**, with the
-  original text quoted after it, so a message blaming a column you supplied
-  correctly is no longer the first thing you read. And a term whose value is
-  not a legal model-frame column at all — a list, say — is no longer diagnosed
-  as a row-count problem; you get the type error by itself.
+* **`hzr_translate_sas()` now reports the starting shape `PROC HAZARD`
+  actually uses for a `FIXGE2` or `FIXGAE2` job without `WEIBULL` (#472).**
+  The old row applied the rule for jobs with neither flag, and so said
+  `gamma = 1.5` under `FIXGE2`, which was false. At the default `gamma = 1`,
+  `eta = 2`, `PROC HAZARD` leaves `gamma` at 1 (`setg3.c:883`) and moves
+  `alpha` to 2/3 (`:849`). Under `FIXGAE2` the old row named `gamma = 1.5`
+  but not `alpha`, which moves to 1.5 as well (`:919`, `:827`).
 
-  One case is unchanged: a failure raised by a `model.frame()` call *inside*
-  one of your terms, when that failure is a plain base error, is
-  indistinguishable from our own frame assembly, so a row-mismatched term is
-  still named alongside it. Your own text is quoted rather than discarded.
+  That row is replaced by one that states both values and the rule that
+  produced them, in terms of the job's own `GAMMA`, `ALPHA` and `ETA`.
+  - Under `FIXGE2`, `gamma` becomes `2/ETA` unless `GAMMA*ETA` is already 2.
+    Then, with that `gamma`, `alpha` becomes `gamma*ETA/3` unless
+    `gamma*ETA/ALPHA` is above 2.
+  - Under `FIXGAE2`, `gamma` becomes `3/ETA` when `GAMMA*ETA` is 2 or less.
+    Then, with that `gamma`, `alpha` becomes `gamma*ETA/2`.
+
+  Each branch was checked against the `PROC HAZARD` binary. The new row
+  appears only where all three shapes are positive and none is fixed,
+  because that is where the rule was measured. Elsewhere no start is
+  claimed. The "`FIXGE2` is not translated" row is unchanged and still
+  marks the job as untranslated.
+
+* **A column of `data` named `""` no longer stops the fit (#470).** Any
+  formula-interface fit on such data stopped with "attempt to use zero-length
+  variable name", even when the formula never used the column. That included
+  every candidate refit in `hzr_stepwise()`, so the screen stopped after no
+  steps, and a multiphase fit. No formula can name such a column, so it plays
+  no part in the model. It is now left out, and the fit is the fit without it.
+  A formula that uses `.`, including a phase formula, warns that the column
+  is left out of `.` and says to rename it, as `hzr_stepwise()` already did
+  for its default scope. The `time =`/`status =` interface was never
+  affected.
+
+* **`hzr_translate_sas()` no longer says `PROC HAZARD` refuses a job that a
+  later `(` lets it run (#461).** `PROC HAZARD`'s lexer clears its
+  syntax-error flag at every `(` (`hazard_l.l:56`), so a syntax error
+  written before a later `(`, such as the one in `LOG()`, does not stop the
+  job. The translation warned "PROC HAZARD does not run this job" for these
+  jobs all the same. Measured against the HAZARD binary on the package's
+  `avc` data, `PARMS MUE=0.2 THALF=1 NU=ABC; EARLY LOG();` fits, while the
+  same job with `EARLY AGE;` is refused.
+
+  Such a job now warns that the syntax error does not stop it, and that the
+  fit stands in for a model `PROC HAZARD` does not fit, in the same words as
+  the other jobs whose model this translation cannot emit. A job cleared
+  this way can still be refused later, at fit time: `SETG3` refuses
+  `TAU=0 FIXTAU` whatever the parse did, and says so in its own warning. `PROC HAZARD` fits what the error
+  recovery in its parser leaves, and this translation does not reproduce
+  that recovery. The two can disagree either way: after `EARLY AGE*SEX;`,
+  `PROC HAZARD` keeps `AGE` where the translation drops the operand, and
+  after `NU=ABC` it drops a `THALF=0.5` written later in the same `PARMS`
+  statement where the translation keeps it. The `$untranslated` row is
+  recorded as before.
+
+  The verdict follows where the `(` falls, statement by statement, and a
+  test checks it against the binary for every refusal class:
+  - a `(` in a later statement clears syntax errors in the `PROC HAZARD`
+    line, in `PARMS`, in a `TIME` or `EVENT` operand count, and in a phase
+    statement. The phase-statement stop (#340) still stops, but its message
+    no longer says `PROC HAZARD` does not run the job;
+  - a `(` before the error clears nothing, and neither does one followed
+    in its own statement by anything other than `)` or `= number`
+    (`LOG() /I`, `(LOG)`). A statement after the `(` can set the flag
+    again (`RESTRICT A*B`, `SELECTION SLE=ABC`, `WEIGHT 2W`, or one
+    `PROC HAZARD` does not know), and this translation checks only `PARMS`
+    and the phase statements fully for such errors (a `SELECTION`
+    statement's operands are checked too, but not shown to be complete), so
+    any other statement after the `(`, `SELECTION` included, keeps the
+    refusal. These still warn that the job does not run,
+    which is too strong for a clean one: the binary fits the job when the
+    statement is `SELECTION SLE=0.2`;
+  - an error in the same statement as the `(` is left to `PROC HAZARD`'s
+    error recovery, which fits `EARLY AGE*SEX, LOG();` and stops
+    `EARLY 1AGE, SEX, LOG();` before fitting. The warning says it cannot
+    tell which;
+  - a refusal `PROC HAZARD` raises as a semantic error is unaffected:
+    `ORDER=` with `/E`, and the `SETG1`, `SETG3` and no-phase refusals.
+
+  Four syntax errors were not recognised at all, and are now. A phase
+  statement with an empty item, a leading or trailing comma, or no
+  variable (`EARLY AGE,,SEX;`, `EARLY AGE,;`, `LATE ,AGE;`, `LATE ;`)
+  fitted with nothing said, and a bare `PARMS;` was dropped. The binary
+  refuses each one with a syntax error (`hazard_y.y:206-207`, `:133-134`).
+  Each now warns and records its row, and the document still fits the
+  variables that are written, as it does for a phase variable that is not a
+  name (#440): `EARLY AGE,,SEX;` fits `AGE` and `SEX`, and `LATE ;` fits
+  the late phase with no covariates. Both follow the rules above when a
+  later `(` clears them.
+
+* **A `SELECTION` value that `PROC HAZARD`'s lexer does not read as a number
+  now warns, as a `PARMS` or `MAXITER=` value already did.** The screen read
+  `SLE=`, `SLS=`, `MOVE=` and `MAXSTEPS=` with `as.numeric()`, which also
+  reads `1E-3`, `2E-1`, `+0.1` and `5.`. `PROC HAZARD` lexes none of them as
+  a number (`hazard_l.l:33-38`), and on the package's `avc` data the HAZARD
+  binary refuses `SLE=1E-3`, `SLS=2E-1`, `SLE=+0.1` and `MAXSTEPS=5.` with a
+  syntax error, while `SLE=.2`, `SLE=0.2E-1` and `MAXSTEPS=5.0` fit. The
+  translation emitted `hzr_stepwise(slentry = 0.001)` and the rest with no
+  warning and no row. A value `as.numeric()` cannot read (`SLE=ABC`) had a
+  row and fell back to the default, also without a warning. Such a job now
+  warns that `PROC HAZARD` does not run it and records the row. The screen
+  still runs, at the value as `as.numeric()` reads it, or at `PROC HAZARD`'s
+  default when it cannot read it. A later `(` clears the error as it does
+  the others (#461); the binary then fits the job with no screen at all, so
+  the warning says the fit stands in for a model `PROC HAZARD` does not fit.
+  The other syntax errors the binary was measured to refuse in a
+  `SELECTION` statement warn the same way, each with its own reason: an
+  unknown option (`BOGUS`, `BOGUS=1`, or a statement keyword such as
+  `SELECT` or `TIME`, which has no meaning inside `SELECTION`), a value on
+  an option that takes none (`NOPRINTS=1`), and a numeric option with no
+  `= value` (`SLE 0.2`). Each was recorded without a warning, and `SELECT`
+  was read as a direction keyword with no row at all. A value on a
+  direction keyword keeps its direction (`BACKWARD=1` still screens
+  backward).
+
+* **`hzr_translate_sas()` now reads every `SELECTION` statement in a job, not
+  only the last (#505).** `PROC HAZARD` accumulates them, and a repeated
+  option takes its last value. Measured on the HAZARD binary on `avc`,
+  `SELECTION SLE=0.05; SELECTION SLS=0.1;` screens at an entry level of
+  0.05, and `BACKWARD` in either statement makes the screen backward. The
+  translation kept only the second statement, so that job screened at the
+  default 0.3, with no row and no warning. One exception remains: a
+  negative `MAXSTEPS` in an earlier statement still refuses the job here,
+  although the binary runs it when a later statement sets `MAXSTEPS`
+  again.
+
+* **The weak-direction warning now names a single g3 shape that the data do
+  not determine (#415).** It named only pairs of parameters that trade off,
+  because it reads the correlation matrix, and a correlation matrix
+  normalises a lone parameter's variance away. So a `gamma` that ran to 1e7
+  with no partner produced no named warning. When the pairwise reading finds
+  nothing, behind the same Hessian-condition gate, a second reading now names
+  a `gamma`, `alpha` or `eta` that carries the flattest direction on its own,
+  reading those shapes on the log scale. Measured on 34 fits, it fired on 12
+  of the 14 degenerate fits it could read (`gamma` on 11, `alpha` on 1) and
+  on none of 10 identified fits. A coefficient or a log-scale parameter is
+  never named this way: a covariate recorded in units of 1e-4 opens the gate
+  through scaling alone, and its well-identified coefficient then dominates
+  the same direction. The warning and `fit$fit$weak` carry `single = TRUE`.
+  Every pair the pairwise reading named before is unchanged.
+
+* **A phase that has collapsed to a step is now reported (#448).** When a
+  `cdf` phase's shape `nu` is driven towards zero, its `(t_half/t)^(1/nu)` term
+  acquires an exponent of order `1e15` and the phase approaches a step at
+  `t_half`. The decomposition has always refused `nu = 0` outright, because
+  that limit is degenerate; but a fit can come to rest a floating-point step
+  away from it, take the ordinary branch, and return `converged = TRUE` with
+  nothing said. On a fit of the shipped `avc` data, `nu` settles at `-1.4e-16`
+  and a one-step change in it moves the log-likelihood by 6 to 30 units, in no
+  consistent direction, with five tied event times at `t_half` accounting for
+  the whole of it.
+
+  Such a fit now warns, and records the finding in `fit$fit$boundary` with
+  class `"hzr_phase_discontinuity"`, which inherits `"hzr_boundary"`. **The fit
+  is still returned and `converged` keeps its meaning:** it reports what the
+  optimizer did, which is a different question from whether the answer is
+  sound. The record names the phase, the two observed times the rise falls
+  between, the fitted `nu` and `t_half`, and how many observations lie in that
+  interval, so you can judge how far out the fit is rather than take a verdict
+  on trust.
+
+  The test thresholds no parameter. It asks whether **your data can resolve the
+  rise**: the phase must go from numerically 0 to numerically 1 while at most
+  one observed time falls strictly inside the transition. A genuine curve puts
+  many times inside it; a step admits at most the one sitting on it.
+
+  A previous release recorded this under Known limitations and said the fix
+  waited on whether the reference `PROC HAZARD` reaches the same state, since
+  that decides whether a change here is a parity break. **It does reach it, and
+  it declines to vouch for the result**: on the same specification it reports a
+  possible singularity and says that "insufficient accuracy is possible in the
+  gradient calculations", exiting with an error status while still printing the
+  estimates. So this is a shared degeneracy that the reference already flags,
+  and reporting it is parity-preserving rather than a break.
+
+  A step placed on the first observed time is reported too. There, no observed
+  time lies below the rise, and the detector used to require one; a phase
+  has G(0) = 0, so the origin now serves as that point when the first
+  observed time is inside the rise. A phase already complete before the
+  first observation is not a step and is left to the identifiability check. (A translated
+  job on `avc` came to rest that way, with `t_half` on the first event time,
+  at a log-likelihood of -23.5 against the reference binary's -207.66, and
+  nothing was recorded.)
+
+* **A stray `=` in `PARMS` no longer takes the next operand with it
+  (#458).** `PARMS MUE=0.2 = THALF=0.15 NU=1` read the stray `=` as a piece
+  of a spaced operand and threw `THALF=0.15` away with it, so the emitted fit
+  started `t_half` at `PROC HAZARD`'s default of 1 rather than the 0.15
+  written. The stray `=` is now recorded as the syntax error it is, as the
+  `PROC HAZARD` and `PROC HAZPRED` lines already did, and the operands after
+  it are read as written. `PARMS` has no error rule of its own
+  (`hazard_y.y:130-160`), so `PROC HAZARD` falls to `otherstmt : error`
+  (`:102`) and rejects the job; the job still warns, as before. `==` is two
+  `=` tokens to SAS (`hazard_l.l:55`) and records two rows.
+
+* **A `SETG3` entry refusal under `WEIBULL` is recorded once (#458).** With
+  `WEIBULL` and one of `FIXGE2` or `FIXGAE2`, a job that fixed `TAU`, `GAMMA`
+  or `ETA` at a non-positive value, or `ALPHA` below zero, listed the same
+  `SETG3900`-`SETG3930` refusal twice in `$untranslated`. For a fixed
+  non-positive `TAU` it also listed a `GAMMA` or `ALPHA` rewrite `PROC
+  HAZARD` never performs, and the emitted phase carried the rewritten value:
+  `setg3.c:269-284` returns on these checks before the constraint rules at
+  `:444-481` run. The job now has one row, and its phase keeps the values
+  written, with one exception: `hzr_phase()` needs `tau > 0`, so a fixed
+  `TAU` that is zero or negative is emitted as `tau = 1`
+  (`TAU=0 FIXTAU GAMMA=1 ETA=1 FIXGE2 WEIBULL` emits `tau = 1`). The job
+  still warns with the same code; the warning now names
+  the late shape and its fixed parameters (`GAMMA=1 ALPHA=1 ETA=1
+  fixed:tau`), as the same job without `WEIBULL` already did, rather than
+  `TAU` alone.
+
+* **`PROC HAZARD DATA = X` translates when the job is not wrapped in
+  `%HAZARD(...)` (#458).** A `PROC HAZARD` with no enclosing parenthesis is
+  bounded at the next `DATA` step, `PROC` or `RUN`, and the scanner found
+  those by the word alone, so the `DATA=` option written with a space
+  before the `=` ended the job right after `PROC HAZARD`. The translation
+  then failed with "The EVENT or ICENSOR variable must be specified" for a
+  job that has an `EVENT` statement. A boundary is now a statement that
+  begins with one of those words, after a `;`, so every spacing of the
+  `PROC` line gives the same translation.
+
+* **`hzr_stepwise()` no longer reports a pin on a column no formula can name
+  as resolved (#463).** `force_in` and `force_out` accept a column of `data`
+  or a term label. A column called `"."` or `""` is neither usable: `terms()`
+  cannot put it in a formula, so it can never become a model term. Such a pin
+  was nevertheless reported as having resolved — it did not appear in
+  `$scope$unresolved` — while doing nothing at all, and with a formula
+  `scope` nothing warned either. It now warns and is listed as unresolved,
+  like any other name that cannot be used, and `$scope$unresolved` keeps
+  the names in the order you wrote them, a repeated name included. With a
+  character or default `scope` you already saw a warning that the column
+  could not be a *candidate*; that one is unchanged, and the new one is about
+  *pinning*, so both now appear.
+
+  The selected model does not change. The pin never had any effect, and a
+  test asserts the same job with and without it reaches the same terms at the
+  same log-likelihood.
+
+  The warning for a `scope` naming such a column is unchanged and still says
+  the accurate thing — that the column exists but cannot be a candidate.
+
+* **A `"hazard"` phase fitted outside your data is now reported (#444).** The
+  `"hazard"` phase type is −log(1 − G(t)), which grows without bound as G
+  approaches 1, and nothing held its `t_half` inside the observed times. A fit
+  could walk `t_half` below the first observation, evaluate the whole data
+  range where G is essentially 1, and return a log-likelihood of **+290082**
+  with `converged = TRUE` and no warning — a supremum reported as an
+  interior optimum. On the shipped `cabgkul` data the fitted `t_half` was
+  0.000352 against a first observed time of 0.0329.
+
+  Such a fit now **warns** and records what was found in `fit$fit$boundary`.
+  Nothing is bounded and no estimate moves: this reports, it does not
+  constrain.
+
+  The warning states a plain fact — `t_half` is below the observed support
+  — with no tuned threshold, and the magnitude is in the record so you can
+  judge it. Alongside the ratio, each entry carries **1 − G(t_min)**, the
+  phase's remaining mass at the first observed time, which is the mechanism
+  itself: a fit merely hugging the edge of its data measures 0.053, while the
+  `cabgkul` fit above measures 3.8e-12.
+
+  `fit$fit$boundary` is `NULL` when the check ran and found nothing, a list of
+  records when it found something, and `NA` when it did not run — with the
+  reason in `fit$degraded_causes`, so "nothing found" stays distinguishable
+  from "never looked". Catch the warning with `hzr_unbounded_phase`, or the
+  whole boundary family with `hzr_boundary`.
+* **The G3 phase's `log_tau` derivative is now taken in `log_tau` (#352).**
+  `.hzr_g3_phase_derivatives()` described itself as taking "central
+  differences for log_tau" and stepped `tau` linearly instead, with an
+  absolute floor of `1e-10`. Once `tau` fell below that floor the step was
+  larger than `tau * h`, so the step stopped shrinking with `tau` and became
+  a large *relative* step; below `tau = 1e-10` it also exceeded `tau` itself
+  and the difference turned one-sided. The derivative the optimizer and the
+  Hessian both use was **99.4% wrong at `tau = 1e-12`**, 1.4% wrong at
+  `1e-9` and 0.012% wrong at `1e-8` — the second and third of those from the
+  relative-step effect alone, with the branch still central — measured
+  against an analytic derivative of the closed form. The step is now
+  proportional to `tau` at every scale, and the one-sided fallback is removed
+  because it can no longer be reached.
+
+  Where `tau` is so small that multiplying it by `exp(1e-5)` returns the same
+  number — below about `5e-319`, at the bottom of double precision — or where
+  `tau` is infinite, the two evaluation points coincide. That is now reported as `NaN` rather than the
+  plausible `0` a coincident difference quotient produces.
+
+  **Some late-phase (`g3`) fits will move.** Where `tau` is small the
+  optimizer now follows a more accurate gradient and can land somewhere
+  measurably different: across six trial two-phase fits, two moved by more
+  than `1e-8` relative, one of them by **21% on a parameter and 42% on a
+  standard error**, with the objective **0.0126 log-likelihood units better**
+  — a better optimum, not merely a different one. Fits whose shapes stay
+  above about `1e-5` move by around `1e-10` relative, which is the precision
+  the step change itself carries; between `1e-8` and `1e-5` the old
+  derivative was wrong by between `1e-4` and `1e-10`, so fits there can move
+  by more than that. **No fit in this package's own test suite
+  moves**: its results are identical before and after, to every assertion.
+
+  The `gamma` and `eta` steps keep their existing floors deliberately. `G3`
+  is very nearly linear in each of them near zero, so the floor stays small
+  relative to the scale on which the function varies even when it is 100% of
+  the parameter, and both measure accurate to `1.1e-6` or better at the
+  shapes where the `tau` derivative failed.
+
+* **A single-distribution `theta` must have one entry per parameter, and a
+  Weibull scale and shape must be positive, fitted or not (#375, #383).**
+  `hazard()` compared a supplied `theta` only with the design's column
+  count, as a lower bound, so a wrong length was caught only sometimes, and
+  when it was not, the result could be wrong. With `fit = TRUE`, some wrong
+  lengths failed with an unrelated error (`non-conformable arguments`), and
+  some fitted silently: a `theta` holding only the shape parameters fitted
+  the model with its covariates dropped, and on a one-covariate model a
+  `theta` one entry too long returned its starting values unfitted. With
+  `fit = FALSE` the object was built, and `predict()` then either failed
+  with an unrelated message or, for a model with no covariates given an
+  extra entry, applied it to a `newdata` column the model never had and
+  returned a wrong prediction with no warning. A Weibull scale or shape at
+  or below zero failed with `non-finite value supplied by optim`. Both are
+  now refused, naming the lengths or the parameter, for example
+  `'theta' has 2 entries, but this weibull model takes 3: 2 shape
+  parameters, then one coefficient per column of the design (1 column).`
+  The count is the likelihood's, so `control$shape_param_count`, which the
+  likelihood ignores, does not change it. Unlike a multiphase model (#408),
+  an unfitted single-distribution model is refused too: its parameter count
+  is known without fitting, and an object of the wrong length could not be
+  predicted from correctly. A multiphase specification may carry fewer
+  entries until a fit resolves its phases' designs.
+
+  The same check now runs in `predict()`, ahead of the type dispatch rather
+  than inside one branch of it. A stored `theta` longer than the design
+  allows, in a hand-edited or legacy object, was refused by
+  `type = "hazard"` and `"linear_predictor"`, where the design is multiplied
+  as a matrix, but `"survival"` and `"cumulative_hazard"` recycled the
+  surplus coefficients into an outer product and returned two values per row
+  with no error. They now refuse, naming both counts, as `hzr_evaluate()`
+  already did.
+
+  Separately, `predict(newdata = )` now **warns** when it matches `newdata`'s
+  columns to a model's coefficients **by position**. That happens only for an
+  object that stored no design matrix, where position is the only mapping
+  left, and it means reordering or renaming `newdata`'s columns silently
+  changes the predictions. The warning names how many coefficients are being
+  matched, shows the columns it used, and says to refit so the design is
+  stored and the mapping is by name. The behaviour is unchanged: `hazard()`
+  already refuses to build such an object, so one can only arrive from an
+  older version or by hand, and it still predicts.
+
+* **A data defect reaching the score criterion is no longer reported as a
+  numerical failure (#407).** The score path absorbs a Hessian it cannot
+  build or invert and says so, which is right, but it absorbed *every*
+  error, so a defect in the data raised inside the likelihood came back as
+  "the current model's information matrix could not be inverted" and sent
+  the reader looking at conditioning. Since the likelihood's data guards
+  carry the class `hzr_data_error` (#426), the six sites that wrap the
+  likelihood, its gradient and its Hessian now let that class through and
+  go on absorbing everything else. Two of those six can actually receive
+  one, the multiphase Hessian and the multiphase gradient; the other four
+  wrap code that never calls the guards, so their narrowing is defensive
+  rather than a behaviour change, and both live sites are pinned by a
+  test. A genuinely numerical failure is
+  unchanged: it is still swallowed and still reported as one. The two
+  `tryCatch` calls that wrap linear algebra rather than the likelihood,
+  `solve()` on the information block and `model.frame()` on a phase
+  formula, are untouched, since a failure there really is what they exist
+  to absorb.
 
 * **A Conservation of Events fit now reports the log-likelihood of the
   estimates it returns (#362).** Under CoE the conserved phase's scale is
@@ -874,13 +2325,14 @@
   **This corrects the report, not the fit.** The largest gaps arose where the
   estimates are themselves unsound: standing on a discontinuity in the
   likelihood, where a change of one floating-point step in a parameter moves
-  the log-likelihood by several units (see Known limitations, #448). A fit in
+  the log-likelihood by several units (#448, now reported; see Bug fixes). A
+  fit in
   that state reports `converged = TRUE`, and that flag does not mean the fit
   is sound there. Read the relative-gradient test beside it, which such fits
   fail.
 
-  What a sentinel objective should mean for a single fit is tracked
-  separately (#351, #374).
+  A single-distribution fit whose objective was the sentinel reports
+  `converged = FALSE` and no objective from 1.2.13 (#486).
 * **A ridge is no longer named from a covariance that is not a covariance
   (#416).** `summary()`'s weak-direction report reads the flat direction from
   the correlation of the estimates. When the Hessian was taken where it is not
@@ -951,18 +2403,45 @@
   screen stops, rather than "no further action".
 
   This is about MATCHING: which variables are pinned, excluded or in the
-  scope. How a candidate ENTERS is unchanged and is a known limitation. The
-  refit writes the candidate's name, as spelled, into the formula text. A
-  formula `scope` carries `terms()` labels, which are already quoted, so
-  its candidates enter as themselves. A name that reads as a different
-  term enters as that term, with no warning: the literal column `age:mal`
-  enters as the interaction, and a column `age ` beside `age` enters as
-  `age`, reachable through the default `scope = NULL`; under
-  `"score"` the entry p-value is still the literal column's (#449). A
-  non-syntactic name written bare, such as `"_X1"`, does not parse, so
-  under `"wald"` and `"aic"` its refit fails and the failure names it
-  (#441); under `"score"` it can fail by either of two routes, and a
-  `"score"` screen can finish having omitted it (#441, #438).
+  scope. How a matched candidate then enters the model is the #449 entry
+  below.
+
+* **A stepwise candidate is now scored and entered as the column it names
+  (#449, #438, #441).** The refit wrote the candidate's name, as spelled,
+  into the formula text, so a column whose name reads as a different term
+  entered as that term, with no warning. A column `age ` or `age # x`
+  beside `age` refit as `age`, through the default `scope = NULL`, a
+  character `scope`, a multiphase default scope and the screens
+  `hzr_bootstrap()` runs; a literal column `age:mal` refit as the
+  interaction, while under `"score"` its entry p-value was the column's;
+  and a multiphase default scope was built the same way, so a strong
+  column `x2 ` read as the noise column `x2` and was never scored. The
+  refit, the multiphase default scope and the multiphase score, which
+  builds the candidate's phase formula from text as well, now write the
+  label `terms()` gives the resolved column, which reads back as that
+  column, and the score reads the values of that column and compares it
+  with the model's terms by that label. So the column scored is the
+  column entered, and `"wald"`, `"aic"` and `"score"` reach the same
+  model: with the interaction `age:mal` in the model, a literal column
+  `age:mal` is a variable of its own under all three, where `"score"`
+  had declined it as the interaction. The same change fixes two loud
+  failures: a bare non-syntactic name such as `"_X1"` in a character
+  `scope` now enters under `"wald"` and `"aic"`, where its refit failed
+  to parse (#441), and under `"score"` a non-syntactic candidate written
+  as its label, as a formula `scope` writes it, is read from its column
+  rather than reported as not found in `data` and skipped (#438). An
+  interaction is no longer scored from a literal column that shares its
+  spelling; the score declines it, as it does any term that is not a
+  column, and its warning now says that instead of "not found in `data`",
+  with the new reason `not_single_column` in `$criteria$uncomputable_reasons`
+  where it read `non_numeric`.
+  A column no formula can name, such as one called `.`, is not offered as
+  a candidate, and the screen says so once.
+
+  `$steps$variable`, `$scope$frozen` and `$criteria$wald_untested_entries`
+  name such a variable by its label, as the breaking change above on
+  `$steps$variable` sets out; `$criteria$refit_failures` still names a
+  failed candidate as the scope wrote it.
 
 * **`hzr_translate_sas()` no longer fails on a SAS covariate whose name begins
   with an underscore** (#411). `PROC HAZARD`'s lexer reads a name as
@@ -985,31 +2464,25 @@
   and a renamed column is **refused** by name rather than quietly dropped, so
   a fit cannot come back short a covariate without saying so.
 
-  **A `SELECTION` job carrying such a name is refused rather than screened.**
-  `hzr_stepwise()` spells a non-syntactic name two ways at once: backquoted
-  in the `terms()` labels its candidates are keyed on, bare in `force_in`.
-  The two never match, so a `/I` pin is ignored and a `BACKWARD` screen can
-  drop a variable `PROC HAZARD` holds in, with no warning naming it; and the
-  score criterion, the only one this translator emits, indexes the data by
-  the backquoted label and skips the candidate as "not found". Both are wrong
-  models delivered as populated results, so such a job now stops and names
-  the cause. For a name like `_X1` this costs nothing: the job stopped before
-  this release too, one step earlier, in the phase formula.
+  **A `SELECTION` job carrying such a name is screened, and a `/I` pin on it
+  holds (#459).** An earlier change in this release refused such a job,
+  citing two causes, and neither is live. Each was measured by translating
+  the job, lifting the refusal and running the emitted screen. The `/I` pin
+  cause was real where the refusal was written: on that branch a
+  `BACKWARD` screen dropped a pinned `_X1` with no warning naming it. The
+  #437 name lookup fixed it and reached `main` 18 minutes before the
+  refusal did, so every commit of `main` that carried the refusal already
+  carried the fix. The score-criterion cause, which stopped a `FORWARD`
+  screen with `_X1` unscored, was fixed by #449. A `/I` pin on `_X1` or on a
+  reserved word such as `TRUE` now holds, and the score criterion enters
+  such a column.
 
-  Text `PROC HAZARD` does not accept as a name is **not** refused here. The
-  phase parser passes what it cannot read through as though it were a
-  variable, so `EARLY AGE, AGE*SEX;` translates. `AGE*SEX` is not a name
+  Text `PROC HAZARD` does not accept as a name is a different case.
+  `AGE*SEX` is not a name
   (`hazard_l.l:39`, `hazard_y.y:213`), so `PROC HAZARD` rejects that job at
-  parse and the translated result never meant anything either way; but
-  refusing it here would stop a job that translates today, so it is left
-  alone and tracked by #440.
-
-  One thing does change for such a job, and it is an improvement rather
-  than a refusal. Built from pasted text, `AGE*SEX` became an R interaction:
-  `~AGE + AGE * SEX` expands to three model terms against two starting
-  values, and the reader met an arithmetic complaint about `theta`. Built
-  from symbols it is one opaque name, so the reader is told the column is
-  missing from the data instead. Both forms fail; only the second says why.
+  parse; the phase parser now leaves such an operand out of the model, with
+  a warning and an untranslated row, rather than stopping a job that
+  translated before (#440, under Breaking changes).
 
 * **`hzr_translate_sas()` builds a phase whose `PARMS` writes only its scale**
   (#345). An active `MUE` or `MUL` with no shape operand used to be recorded
@@ -1983,22 +3456,19 @@
 
 ## Known limitations
 
-* **A multiphase fit can come to rest on a discontinuity in the likelihood,
-  and still report `converged = TRUE` (#448).** When a `cdf` phase's shape
-  `nu` is driven towards zero, the phase's `(t_half/t)^(1/nu)` term acquires
-  an exponent of order `1e15`, so the phase approaches a step at `t_half`. If
-  `t_half` then comes to rest within a floating-point step of one or more
-  observed event times, the log-likelihood is discontinuous there: on a fit of
-  the shipped `avc` data a one-step change in `log(t_half)` moves the
-  log-likelihood by 6 to 30 units, in no consistent direction, with five tied
-  event times accounting for the whole of it. Such a fit reports
-  `converged = TRUE` while failing the relative-gradient test by six orders of
-  magnitude, so **read `rel_gradient` and the phase's `nu` before trusting a
-  multiphase fit**, and treat a `nu` at the boundary as a warning that the
-  estimates are not identified. This release does not change the behaviour:
-  whether the reference `PROC HAZARD` reaches the same state on the same job
-  has not been established, and that answer decides whether the fix is a
-  parity break or a shared degeneracy.
+* **A g3 phase under `constraint = "eta_gamma"` can still report a finite,
+  warning-free `gamma` while the likelihood rises toward `gamma = Inf`
+  (#418).** As `gamma` grows the g3 form tends to a corner law, the
+  likelihood has a finite limit there, and when the data prefer a sharp bend
+  there is a supremum and no maximum. A fit that stops short of it can report
+  `converged = TRUE` with an ordinary-looking `gamma` and standard error, and
+  nothing warns, because the Hessian at that point is well conditioned. This
+  release refuses and rewrites the `FIXGE2` setups PROC HAZARD does (see Bug
+  fixes). It does **not** detect this case, which needs a profile comparison
+  against the corner law. Until it does, **for a constrained g3 phase, compare
+  the log-likelihood at a much larger `gamma` before trusting `gamma`-hat**.
+  The fitted hazard is barely affected away from `tau`; it is the inference
+  about `gamma` that is at risk.
 
 * **In a two-way `hzr_stepwise()` screen, `$scope$frozen` can name a
   variable the final model excludes (#378).** With `direction = "both"`,
@@ -2823,7 +4293,6 @@
   character column named in an explicit `scope`, which the score criterion
   still cannot expand. Its refusal used to say switching criterion would not
   help, and now points at it instead.
-
 
 
 # TemporalHazard 1.2.2

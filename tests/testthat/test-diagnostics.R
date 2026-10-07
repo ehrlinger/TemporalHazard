@@ -194,7 +194,7 @@ test_that("hzr_gof returns correct structure", {
   s <- attr(gof, "summary")
   expect_true(is.list(s))
   expect_named(s, c("total_observed", "total_expected", "final_residual",
-                     "dist", "n"))
+                     "dist", "n", "n_tallied"))
 })
 
 test_that("hzr_gof cumulative observed equals total events", {
@@ -241,7 +241,9 @@ test_that("hzr_gof conservation ratio is near 1 for a converged Weibull fit", {
 test_that("hzr_gof works with custom time grid", {
   fit <- .fit_avc_weibull()
   t_grid <- seq(1, 200, by = 10)
-  gof <- hzr_gof(fit, time_grid = t_grid)
+  # No exit falls on this grid, so the tallies cover no one, and it says so.
+  expect_warning(gof <- hzr_gof(fit, time_grid = t_grid),
+                 "did not exit at a time_grid point")
 
   expect_equal(nrow(gof), length(t_grid))
   expect_equal(gof$time, t_grid)
@@ -1101,16 +1103,20 @@ test_that("print.hzr_bootstrap reports the mode", {
     theta = c(mu = 0.01, nu = 0.5),
     fit   = TRUE
   )
-  # This screen selects nothing in all five replicates, and four of the five
-  # cannot even score a candidate -- surfaced by the uncomputable-score
-  # warning added alongside this comment. The test only ever asserted the
-  # print label, so it passed throughout. Kept as-is because the print
-  # contract is what it covers; the empty screen is tracked separately.
+  # Four of these five replicates could not score a candidate: their numeric
+  # information could not be formed, every candidate read `nuisance_singular`,
+  # and the screen stopped untested. This test recorded that with
+  # `n_uncomputable_replicates > 0`. Such candidates are now refitted and
+  # tested by Wald (#570), so no replicate stops untested and each selects.
   bs_sel <- suppressWarnings(
     hzr_bootstrap(base, n_boot = 5, seed = 42, scope = ~ age + mal)
   )
   expect_output(print(bs_sel), "stepwise selection")
-  expect_gt(bs_sel$n_uncomputable_replicates, 0L)
+  expect_identical(bs_sel$n_success, 5L)
+  expect_identical(bs_sel$n_uncomputable_replicates, 0L)
+  selected <- bs_sel$summary[bs_sel$summary$parameter %in% c("age", "mal"), ]
+  expect_identical(nrow(selected), 2L)
+  expect_true(all(selected$n == bs_sel$n_success))
 })
 
 
