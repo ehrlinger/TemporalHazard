@@ -133,6 +133,7 @@ test_that("data$col does not warn, and neither does another frame's $ form", {
 # exports. Walking the whole search path would warn on every such call.
 
 test_that("a column named after a base function does not warn", {
+  withr::local_seed(135)
   d <- data.frame(c = stats::rexp(40, 0.3), t = rep(c(1, 0), 20))
   f <- function(dd) {
     hazard(data = dd, time = c, status = t, dist = "weibull",
