@@ -34,6 +34,19 @@
       variance, `predict()` keeps its standard errors but now warns that
       they leave that variance out and may be understated.
 
+* **After rows at time 0 are dropped, messages are clearer (#484).**
+    - Row numbers in later error messages refer to the rows as given, not
+      to their positions among the rows that remain: an `NA` status on row
+      10 is reported as row 10, where it used to be reported as row 9.
+    - A warning raised by a term of the formula, such as one a function in
+      it raises, was shown twice, because the formula is evaluated again on
+      the rows that remain. Only a warning that evaluation raises anew is
+      shown now.
+    - `hzr_stepwise()` given `data` with exactly the fit's rows plus the
+      ones it dropped, which it could not confirm as the fit's data, now
+      warns once that those rows were dropped and should be dropped from
+      `data`. Before, it reported only a mismatched row count.
+
 * **Multiphase fits under Conservation of Events could stop short of the
   maximum and report `converged = TRUE` (#565). Multiphase estimates from
   earlier versions, fitted with `conserve = TRUE` (the default), may be

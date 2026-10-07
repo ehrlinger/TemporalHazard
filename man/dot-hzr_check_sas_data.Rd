@@ -4,7 +4,14 @@
 \alias{.hzr_check_sas_data}
 \title{Check the SAS objective's data preconditions at entry}
 \usage{
-.hzr_check_sas_data(status, time, time_lower, time_upper, objective)
+.hzr_check_sas_data(
+  status,
+  time,
+  time_lower,
+  time_upper,
+  objective,
+  row_ids = NULL
+)
 }
 \arguments{
 \item{status}{Numeric event indicator.}
@@ -14,6 +21,10 @@
 \item{time_lower, time_upper}{Optional censoring bounds; \code{NULL} means \code{time}.}
 
 \item{objective}{Resolved objective, \code{"likelihood"} or \code{"sas"}.}
+
+\item{row_ids}{Optional row numbers to report in place of positions: the
+rows as the caller gave them, when \code{hazard()} has dropped rows at time 0
+(#484). \code{NULL} reports positions.}
 }
 \value{
 \code{NULL}, invisibly; called for its side effect.
