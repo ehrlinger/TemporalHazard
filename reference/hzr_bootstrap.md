@@ -264,6 +264,13 @@ model. `summary$pct` then reports the selection frequency across
 replicates, and `summary$mean`/`sd`/`ci_*` describe the coefficient
 distribution conditional on selection.
 
+A replicate in which any fit (the base refit, a stepwise refit or the
+final fit) may not be a maximum, by the rule
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+warns on with class `"hzr_possible_false_maximum"`, is counted, and
+`hzr_bootstrap()` warns once with that count. Such replicates are kept
+in the pooled results.
+
 ## Selection mode is experimental
 
 Everything reached through `scope` (the selection arguments, and the

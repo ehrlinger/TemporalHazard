@@ -583,9 +583,26 @@ of Events or without it. A warning is raised only for code 4, the
 iteration limit (raise `control$maxit`), and code 5, where the
 log-likelihood kept rising along some direction and the model may have
 no maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded
-without one. The test is relative to the size of the log-likelihood, so
-a fit that meets it is within SAS's tolerance of the maximum, not
-exactly at it.
+without one, except for the single-distribution fits: there a converged
+fit with a relative gradient above 1e-3 that did not stop on code 4 or 5
+(in practice code 2 or 3, or no code, which is recorded only when the
+continuation's point was kept: none is when it found no better point,
+[`stats::nlm()`](https://rdrr.io/r/stats/nlm.html) raised an error, or
+its minimum was not finite) warns, with class
+`"hzr_possible_false_maximum"`, that the fit may not be a maximum, and
+suggests other starting values or centring or rescaling the covariates.
+Badly scaled covariates can put a good fit above 1e-3, where a restart
+does not help and rescaling does.
+[`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+counts the replicates in which any fit (the base refit, a stepwise refit
+or the final fit) meets the same rule, and warns once. Such a stop can
+be a false maximum far below the best one from an ordinary start, and
+the gradient test alone cannot always tell it from a good fit, so
+`converged` is left as it is. The warning is not a guarantee: a fit can
+stop short of its maximum with a relative gradient below 1e-3 and raise
+nothing. The test is relative to the size of the log-likelihood, so a
+fit that meets it is within SAS's tolerance of the maximum, not exactly
+at it.
 
 The optimizer treats a score it cannot use as zero, so it can stop on
 those zeros far from the maximum. For the single-distribution fits
@@ -746,10 +763,10 @@ summary(fit2)
 #> Coefficients:
 #>          estimate   std_error     z_stat      p_value
 #> mu    0.121938323 0.062299561  1.9572902 5.031335e-02
-#> nu    1.143693956 0.084297244 13.5673944 6.250475e-42
+#> nu    1.143693955 0.084297244 13.5673944 6.250475e-42
 #> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01
 #> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02
-#> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01
+#> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01
 
 # \donttest{
 # -- Parametric survival with Kaplan-Meier overlay -----------------
