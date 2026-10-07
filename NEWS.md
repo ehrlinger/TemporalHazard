@@ -5,6 +5,10 @@
   already required 4.4.0, so on an older R the install failed whatever this
   package declared.
 
+* `DESCRIPTION` now declares the Quarto command line tool in
+  `SystemRequirements`. The vignettes have always needed it to build; the
+  field makes that visible to installers and to `R CMD check`.
+
 # TemporalHazard 1.2.13
 
 ## Bug fixes
