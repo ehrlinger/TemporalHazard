@@ -1,3 +1,9 @@
+# This file predicts from models built with fit = FALSE on purpose, so the
+# warning that those numbers come from starting values is switched off for
+# this file only (#398). A file that does not expect the warning sees it as
+# an ordinary leaked warning.
+withr::local_options(TemporalHazard.warn_unfitted_prediction = FALSE)
+
 library(testthat)
 
 test_that("Log-logistic likelihood computation (univariate)", {
@@ -357,12 +363,15 @@ test_that("Log-logistic error handling: invalid theta length", {
   time <- c(1, 2, 3)
   status <- c(1, 1, 0)
 
-  # Too few parameters for covariates
+  # Too few parameters: the shape is missing. This built an object that
+  # could never be predicted from; it is refused, fitted or not (#375).
   theta_bad <- c(log(1.0))  # Missing log(beta)
 
   expect_error(
-    hazard(time = time, status = status, x = NULL, theta = theta_bad, dist = "loglogistic", fit = FALSE),
-    NA  # Should allow creation without fitting
+    hazard(time = time, status = status, x = NULL, theta = theta_bad,
+           dist = "loglogistic", fit = FALSE),
+    "'theta' has 1 entry, but this loglogistic model takes 2",
+    fixed = TRUE
   )
 })
 

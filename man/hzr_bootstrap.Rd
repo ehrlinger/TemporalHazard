@@ -84,7 +84,10 @@ See \code{\link[=hzr_stepwise]{hzr_stepwise()}}.}
 
 \item{...}{Additional arguments forwarded to \code{\link[=hzr_stepwise]{hzr_stepwise()}} (e.g.
 \code{control = list(maxit = 500)}, which every \code{dist} reads) when \code{scope}
-is supplied; ignored otherwise.}
+is supplied. Only \code{control} and an \code{objective} equal to the fit's are
+forwarded. \code{trace} is accepted and ignored, since each replicate's screen
+runs quietly; use \code{verbose} for progress. Any other name is an error, and
+so is any \code{...} argument without \code{scope}.}
 
 \item{x}{An \code{hzr_bootstrap} object.}
 
@@ -98,18 +101,35 @@ and \code{estimate}, one row per parameter per successful replicate.}
 \item{summary}{Data frame with columns \code{parameter}, \code{n}, \code{pct},
 \code{mean}, \code{sd}, \code{min}, \code{max}, \code{ci_lower}, \code{ci_upper}, one row per
 parameter. In \code{mode = "select"}, \code{pct} is the selection frequency
-and the other statistics are conditional on selection.}
+and the other statistics are conditional on selection. A free
+parameter whose \code{sd} is 0, to within rounding, across two or more
+replicates draws a warning naming it: the replicates did not
+re-estimate it. Parameters the fit holds fixed are exempt: those held
+by \code{hzr_phase(fixed = )}, shapes a constraint derives, and a conserved
+\code{log_mu}.}
 \item{n_success}{Number of successfully converged replicates.}
 \item{n_failed}{Number of replicates that failed: the refit stopped with
 an error, returned something other than a fit, returned a non-finite
-objective, or returned a finite objective but no parameter
-estimates.}
+objective or one at the optimizer's -1e10 sentinel (which stands in for
+a likelihood that could not be evaluated), did not converge, or
+returned a finite objective but no parameter estimates. A
+single-distribution refit that
+ends where the likelihood is not defined reports no objective, so it
+fails as a non-finite objective, not at the sentinel (#486).}
 \item{failure_reasons}{Named integer vector counting why replicates
 failed, most common first: the refit's error message (or
 \code{"error with an empty message"}),
 \code{"refit returned a <class>, not a fit object"} (\code{"an <class>"} when the
 class begins with a vowel; or \code{"... with no \code{fit}, not a fit object"}), \code{"refit returned no parameter estimates"}, or
-\code{"non-finite objective (did not converge)"}. It sums to \code{n_failed}, and
+\code{"non-finite objective (did not converge)"} (the reason for a
+single-distribution refit that ends where the likelihood is not
+defined, #486), or
+\code{"objective at the optimizer's -1e10 sentinel (no log-likelihood)"}
+(a refit whose reported objective is still the sentinel), or
+\code{"refit did not converge (converged = FALSE)"} (a refit that reports
+\code{converged = FALSE}, including one stopped on a score that is not
+finite, #518).
+It sums to \code{n_failed}, and
 is an empty named integer vector, never \code{NULL}, when none failed. When
 every replicate fails, \code{hzr_bootstrap()} also warns, naming the most
 common reason.}
@@ -131,7 +151,13 @@ candidates whose effect is too large for the score test's approximation
 at zero, typically strong variables. Those are refit and Wald-tested
 automatically, so a candidate reaching this count is one whose refit
 also failed and which therefore went untested, understating its
-selection frequency. Empty in refit mode.}
+selection frequency. \code{rows_differ} (under \code{criterion = "aic"}) and
+\code{loglik_below_base} (under any criterion) mark entries a replicate
+declined without comparing them. Such an entry counts as not selected unless a later
+step of the same replicate tested and entered it, so these can
+understate a selection frequency; a warning gives how many replicates
+completed after declining one. The tally counts attempts, not
+distinct candidates. Empty in refit mode.}
 \item{n_nonmonotone_replicates}{Select mode only: number of otherwise
 successful replicates in which a forward step \emph{lowered} the
 log-likelihood. Entered models are nested, so this cannot occur at the
@@ -153,6 +179,11 @@ Always \code{0} in refit mode.}
 (embedded stepwise selection).}
 \item{scope}{Only present when \code{mode == "select"}: the candidate
 scope used.}
+\item{unresolved}{Only present when \code{mode == "select"}: the
+\verb{$scope$unresolved} record of the up-front \code{\link[=hzr_stepwise]{hzr_stepwise()}} screen on
+the original data, the names in \code{force_in}, \code{force_out} and a
+character \code{scope} that matched nothing and were ignored. \code{print()}
+shows a line when any is non-empty.}
 }
 }
 \description{
@@ -170,6 +201,11 @@ hazard shape with no covariates (fixing it via \code{hzr_phase(..., fixed = "sha
 they enter the model. \code{summary$pct} then reports the selection
 frequency across replicates, and \code{summary$mean}/\code{sd}/\verb{ci_*} describe the
 coefficient distribution conditional on selection.
+
+A replicate in which any fit (the base refit, a stepwise refit or the final
+fit) may not be a maximum, by the rule \code{\link[=hazard]{hazard()}} warns on with class
+\code{"hzr_possible_false_maximum"}, is counted, and \code{hzr_bootstrap()} warns
+once with that count. Such replicates are kept in the pooled results.
 }
 \section{Selection mode is experimental}{
 

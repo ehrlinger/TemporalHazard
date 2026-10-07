@@ -40,7 +40,11 @@ test_that("an unfitted object records that it was not fitted, and why", {
   dat <- weib_data()
   fit0 <- hazard(time = dat$t, status = dat$d, dist = "weibull", fit = FALSE)
   expect_identical(fit0$degraded,
-                   c("fitting", "standard_errors", "weak_direction_check"))
+    # boundary_check joins the list for the same reason the others are on
+    # it: an unfitted object has no fitted phase parameters to examine, so
+    # the check genuinely did not run and says so (#444).
+                     c("fitting", "standard_errors", "weak_direction_check",
+                       "boundary_check"))
   expect_identical(fit0$degraded_causes[["fitting"]],
                    "not requested (fit = FALSE)")
   expect_false("cause not recorded" %in% fit0$degraded_causes)
@@ -111,14 +115,19 @@ test_that("an imported SAS fit records that R did not fit or examine it", {
   expect_identical(
     obj$degraded_causes,
     c(fitting = "imported from SAS output; not fitted in R",
-      weak_direction_check = "imported from SAS output; no R Hessian"))
+    # boundary_check joins for the same reason as the others: an imported fit
+    # was never run through R's post-fit checks, so "never examined" stays
+    # distinguishable from "examined, nothing found" (#444).
+      weak_direction_check = "imported from SAS output; no R Hessian",
+      boundary_check = "imported from SAS output; no fitted phases to examine"))
 })
 
 test_that("an import read without its covariance also lists standard errors", {
   obj <- .hzr_outhaz_to_spec(hzr_read_outhaz(outhaz_fixture()), need_vcov = FALSE)
   expect_false(is.matrix(obj$fit$vcov))            # guard
   expect_identical(obj$degraded,
-                   c("fitting", "standard_errors", "weak_direction_check"))
+                   c("fitting", "standard_errors", "weak_direction_check",
+                   "boundary_check"))
   expect_identical(obj$degraded_causes[["standard_errors"]],
                    "covariance not imported")
 })

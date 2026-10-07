@@ -285,6 +285,11 @@ test_that("starts records every start and marks the one that won", {
   # Exactly one winner. Cross-check its objective against the separately
   # plumbed fit$fit$objective -- comparing it to max(starts$objective) instead
   # would be a tautology, since `best` is assigned by that same comparison.
+  # The two are equal only where no Conservation of Events adjustment moved
+  # the conserved scale after the optimizer finished. Where one did, the
+  # reported objective is the likelihood of the returned estimates while this
+  # column keeps the optimizer's own value, and they differ by the size of the
+  # adjustment (#362); test-coe-objective-consistency.R pins that case.
   expect_identical(sum(starts$best), 1L)
   expect_equal(starts$objective[starts$best], fit$fit$objective)
 })

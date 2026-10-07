@@ -123,12 +123,13 @@ test_that("a check that ran and found nothing returns NULL", {
   # so this is a conclusion rather than a gap.
   expect_null(.hzr_weak_direction(ridge_vcov(), rcond = 1e-3,
                                   param_names = nms))
-  # A zero-variance parameter is dropped by the `keep` filter, leaving one
-  # estimated parameter and so no pair to trade off. (It never reaches the
-  # correlation step, which an earlier comment here claimed it tested.)
-  expect_null(.hzr_weak_direction(diag(c(0, 1)), rcond = 1e-10,
-                                  param_names = nms))
-  # A single-parameter fit, likewise.
+  # A zero variance is a FAILED variance for a parameter that was estimated:
+  # two parameters, one usable variance, and so nothing to decompose. This
+  # asserted NULL, as "one estimated parameter and no pair to trade off",
+  # which read a failed inversion as a clean examination (#570).
+  expect_identical(.hzr_weak_direction(diag(c(0, 1)), rcond = 1e-10,
+                                       param_names = nms), NA)
+  # A single-parameter fit cannot trade off against anything.
   expect_null(.hzr_weak_direction(matrix(1e12, 1, 1), rcond = 1e-10,
                                   param_names = "a"))
 })
@@ -364,4 +365,64 @@ test_that("summary() says so when the ridge check could not run", {
   out <- capture.output(print(summary(fit0)))
   expect_true("    weak_direction_check: model not fitted" %in% out)
   expect_identical(.hzr_check_not_done_output(out, fit0), character(0))
+})
+
+test_that("a covariance that is not positive definite names no ridge (#416)", {
+  # A covariance whose "correlation" exceeds 1, or with a negative
+  # eigenvalue, is not a covariance: the Hessian was taken where it is not
+  # negative definite, typically short of the optimum. Reading it as a
+  # correlation matrix named a ridge from "correlation 1.09" on a model
+  # that is identified (#416). It is "could not look" (NA), not a ridge.
+  over_one <- matrix(c(1, 1.09, 1.09, 1), 2,
+                     dimnames = list(c("a", "b"), c("a", "b")))
+  res <- .hzr_weak_direction_impl(over_one, rcond = 1e-12,
+                                  param_names = c("a", "b"))
+  expect_identical(res$weak, NA)
+  expect_match(res$reason, "not positive definite")
+
+  # Every correlation within [-1, 1], but not a valid correlation matrix:
+  # three variables cannot be pairwise 0.995, 0.995 and -0.995.
+  r <- 0.995
+  bad <- matrix(c(1, r, r, r, 1, -r, r, -r, 1), 3)
+  res3 <- .hzr_weak_direction_impl(bad, rcond = 1e-12,
+                                   param_names = c("a", "b", "c"))
+  expect_identical(res3$weak, NA)
+  expect_match(res3$reason, "not positive definite")
+
+  # Control: a genuine, positive-definite ridge is still named.
+  ridge <- matrix(c(1, 0.995, 0.995, 1), 2)
+  found <- .hzr_weak_direction_impl(ridge, rcond = 1e-12,
+                                    param_names = c("a", "b"))$weak
+  expect_setequal(found$params, c("a", "b"))
+})
+
+test_that("a materially indefinite covariance is declined, not named as a ridge", {
+  # Codex review of #428 (discussion_r4082101530). The fixed
+  # -sqrt(.Machine$double.eps) cutoff, about -1.49e-08, admitted matrices that
+  # are indefinite well beyond an eigensolver's rounding error. This one has a
+  # minimum eigenvalue of about -1e-08 and an off-diagonal "correlation" of
+  # 1.00000001, which no correlation matrix can have, and it was reported as a
+  # ridge with reason NA, meaning "looked, and here it is".
+  bad <- matrix(c(1, 1 + 1e-8, 1 + 1e-8, 1), 2)
+  # Premise: the matrix really is indefinite, so the test is about the guard
+  # and not about an accidentally positive-definite fixture.
+  expect_lt(min(eigen(bad, symmetric = TRUE, only.values = TRUE)$values), 0)
+  res <- .hzr_weak_direction_impl(bad, rcond = 1e-12, param_names = c("a", "b"))
+  expect_true(is.na(res$weak))
+  expect_identical(res$reason, "covariance is not positive definite")
+})
+
+test_that("a genuinely positive semi-definite ridge near the boundary is still named", {
+  # The control the review asked for. Tightening the tolerance must not make
+  # the function stop doing its job: a real correlation matrix is positive
+  # semi-definite, so a true ridge sits at or above zero and must survive.
+  for (r in c(1 - 1e-12, 1)) {
+    psd <- matrix(c(1, r, r, 1), 2)
+    expect_gte(min(eigen(psd, symmetric = TRUE, only.values = TRUE)$values),
+               0, label = paste("min eigenvalue at r =", r))
+    res <- .hzr_weak_direction_impl(psd, rcond = 1e-12,
+                                    param_names = c("a", "b"))
+    expect_true(is.na(res$reason), label = paste("reason at r =", r))
+    expect_setequal(res$weak$params, c("a", "b"))
+  }
 })

@@ -12,7 +12,16 @@
 \item{...}{Unused; for S3 compatibility.}
 }
 \value{
-An object of class \code{summary.hazard}.
+An object of class \code{summary.hazard}. Its \code{log_lik} is the
+log-likelihood at the estimates, and \code{NA} for a fit with
+\code{objective = "sas"} that read an interval-censored row (one of positive
+weight, not dropped by a phase design): there the
+fitted objective is PROC HAZARD's interval-mean-hazard objective, not a
+log-likelihood. That value is always in \code{objective_value}, and
+\code{objective} says which of the two it is (\code{"likelihood"} or \code{"sas"}).
+For a Weibull fit whose scale \code{mu}, or its variance, cannot be
+represented, the coefficient table has a \code{log(mu)} row under \code{mu}, with
+the standard error of \code{log(mu)}; it is not tested against 0.
 }
 \description{
 Returns a compact summary of a \code{hazard} object, including model metadata,

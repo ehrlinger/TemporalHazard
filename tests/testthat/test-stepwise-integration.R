@@ -130,27 +130,28 @@ test_that("multi-level factor candidate errors with a main-effects note", {
 })
 
 test_that("one bad candidate does not prevent others from entering", {
-  # Set up a scope where one candidate is broken (via a nonsense name
-  # triggering the `var not in data` branch, which surfaces as an
-  # error inside tryCatch) while a real one succeeds. The forward step
-  # should warn about the broken candidate and still accept the good
-  # one.
+  # Set up a scope where one candidate is broken (an all-NA column, whose
+  # refit errors inside tryCatch) while a real one succeeds. The forward
+  # step should warn about the broken candidate and still accept the good
+  # one. A name NOT in `data` no longer reaches a refit: it is warned about
+  # and ignored when the scope is resolved (#442).
   obj <- .fit_driver_base(seed = 444L)
   df2 <- obj$data
-  # Introduce a candidate that refers to a column *not* in `data` —
-  # hazard() will error inside the candidate refit's tryCatch.
+  df2$allna <- NA_real_
+  # A column that exists, so the scope resolves it, but that no refit can
+  # use: hazard() errors inside the candidate refit's tryCatch.
   expect_warning(
     step <- .hzr_stepwise_forward_step(
       obj$fit,
-      scope = c("x1", "nonexistent"),
+      scope = c("x1", "allna"),
       data = df2,
       criterion = "wald", slentry = 0.30
     ),
-    "candidate refit failed for nonexistent"
+    "candidate refit failed for allna"
   )
   expect_true(step$accepted)
   expect_identical(step$variable, "x1")
-  expect_identical(step$refit_failures, "nonexistent")
+  expect_identical(step$refit_failures, "allna")
 })
 
 
@@ -460,11 +461,14 @@ test_that(".hzr_refit_blocker is the single answer both callers read", {
   expect_null(.hzr_refit_blocker(vecmp))
 })
 
-# Fixture: an intercept-only formula fit whose only candidate names a column
-# that is not in `data`, so hazard() errors inside the candidate tryCatch.
+# Fixture: an intercept-only formula fit, and data carrying an all-NA column
+# `allna`. The scope resolves it, since it is a column, and hazard() then
+# errors inside the candidate tryCatch. (A name not in `data` no longer
+# reaches a refit: it is warned about and ignored at entry, #442.)
 .refit_failure_fixture <- function() {
   data(avc)
   avc <- na.omit(avc)
+  avc$allna <- NA_real_
   fit <- hazard(Surv(int_dead, dead) ~ 1, data = avc, dist = "weibull",
                 fit = TRUE, theta = c(mu = 0.01, nu = 0.5))
   list(fit = fit, data = avc)
@@ -475,7 +479,7 @@ test_that("a screen emptied by refit failures records that on the object", {
 
   warns <- character()
   sw <- withCallingHandlers(
-    hzr_stepwise(fx$fit, scope = c("nonexistent"), data = fx$data,
+    hzr_stepwise(fx$fit, scope = c("allna"), data = fx$data,
                  direction = "forward", criterion = "wald",
                  trace = FALSE, control = list(n_starts = 1L)),
     warning = function(w) {
@@ -490,7 +494,7 @@ test_that("a screen emptied by refit failures records that on the object", {
   expect_equal(nrow(sw$steps), 0L)
   expect_true(sw$criteria$stopped_refit_failed)
   expect_equal(sw$criteria$n_refit_failures, 1L)
-  expect_identical(sw$criteria$refit_failures, "nonexistent")
+  expect_identical(sw$criteria$refit_failures, "allna")
 })
 
 test_that("an honest empty screen records no refit failure", {
@@ -513,7 +517,7 @@ test_that("the trace does not claim 'no further action' when nothing was fit", {
   fx <- .refit_failure_fixture()
 
   sw <- suppressWarnings(
-    hzr_stepwise(fx$fit, scope = c("nonexistent"), data = fx$data,
+    hzr_stepwise(fx$fit, scope = c("allna"), data = fx$data,
                  direction = "forward", criterion = "wald",
                  trace = FALSE, control = list(n_starts = 1L))
   )
@@ -521,7 +525,7 @@ test_that("the trace does not claim 'no further action' when nothing was fit", {
 
   expect_false(any(grepl("no further action", trace, fixed = TRUE)))
   expect_true(any(grepl("refit FAILED", trace, fixed = TRUE)))
-  expect_true(any(grepl("nonexistent", trace, fixed = TRUE)))
+  expect_true(any(grepl("allna", trace, fixed = TRUE)))
 
   # print() shows exactly the trace, so the reader sees the same thing.
   expect_output(print(sw), "refit FAILED")
@@ -548,7 +552,7 @@ test_that("partial refit failure keeps the steps it did accept", {
   fx <- .refit_failure_fixture()
 
   sw <- suppressWarnings(
-    hzr_stepwise(fx$fit, scope = c("age", "nonexistent"), data = fx$data,
+    hzr_stepwise(fx$fit, scope = c("age", "allna"), data = fx$data,
                  direction = "forward", criterion = "wald", trace = FALSE,
                  control = list(n_starts = 1L))
   )
@@ -556,5 +560,5 @@ test_that("partial refit failure keeps the steps it did accept", {
   expect_equal(nrow(sw$steps), 1L)
   expect_identical(sw$steps$variable, "age")
   expect_gt(sw$criteria$n_refit_failures, 0L)
-  expect_true(all(sw$criteria$refit_failures == "nonexistent"))
+  expect_true(all(sw$criteria$refit_failures == "allna"))
 })

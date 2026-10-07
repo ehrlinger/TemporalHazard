@@ -245,7 +245,10 @@ hzr_read_outhaz <- function(path) {
   fit <- list(
     theta = theta, par = theta,
     converged = TRUE, objective = NA_real_,
-    se = NULL, vcov = NULL, weak = NA,
+    # boundary = NA for the same reason weak is: an imported fit was never
+    # run through R's post-fit checks, so "never examined" must stay
+    # distinguishable from "examined, nothing found" (#444).
+    se = NULL, vcov = NULL, weak = NA, boundary = NA,
     phases = phases, covariate_counts = cov_counts, x_list = x_list,
     fixed_mask = !free_slot
   )
@@ -274,7 +277,8 @@ hzr_read_outhaz <- function(path) {
   # examined here, so the record says so rather than printing "none" over a
   # SAS fit.
   record <- .hzr_degraded_record(
-    vcov = fit$vcov, weak = fit$weak, control = obj$spec$control,
+    vcov = fit$vcov, weak = fit$weak, boundary = fit$boundary,
+    control = obj$spec$control,
     dist = "multiphase", fitted = TRUE, imported = TRUE,
     fixed_mask = fit$fixed_mask, param_names = theta_sas
   )

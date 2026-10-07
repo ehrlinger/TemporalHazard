@@ -3,6 +3,12 @@
 # now warn, naming the cause, and predict the same values as before
 # (#331, #334, #335).
 
+# This file predicts from models built with fit = FALSE on purpose, so the
+# warning that those numbers come from starting values is switched off for
+# this file only (#398). A file that does not expect the warning sees it as
+# an ordinary leaked warning.
+withr::local_options(TemporalHazard.warn_unfitted_prediction = FALSE)
+
 .sw_data <- local({
   data(avc, package = "TemporalHazard", envir = environment())
   d <- stats::na.omit(avc)

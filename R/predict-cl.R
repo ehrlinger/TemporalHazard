@@ -49,13 +49,14 @@ NULL
 # Jacobian: Weibull
 # ---------------------------------------------------------------------------
 #
-# Parameter layout (natural scale, matching .hzr_logl_weibull):
-#   theta = [mu, nu, beta_1, ..., beta_p]
+# Parameter layout: log(mu) in place of mu (#566), as .hzr_weibull_log_scale()
+# gives it; mu itself can overflow or underflow at a genuine maximum.
+#   theta = [log(mu), nu, beta_1, ..., beta_p]
 #
-# H(t|x) = (mu t)^nu exp(eta),   h_rel = exp(eta),   eta = x beta.
+# H(t|x) = exp(nu (log(mu) + log t) + eta),   h_rel = exp(eta),   eta = x beta.
 #
 # Analytical derivatives used below:
-#   dH/dmu       = (nu / mu) H
+#   dH/dlog(mu)  = nu H
 #   dH/dnu       = log(mu t) H
 #   dH/dbeta_j   = x_ij H
 #
@@ -66,15 +67,15 @@ NULL
 #' Jacobian of Weibull predictions with respect to theta
 #'
 #' @param type Prediction type (see `.hzr_predict_with_se`).
-#' @param theta MLE parameter vector `c(mu, nu, beta_1, ...)`.
+#' @param theta MLE parameter vector `c(log(mu), nu, beta_1, ...)` (#566).
 #' @param time Prediction times (may be NULL for `hazard` / `linear_predictor`).
 #' @param x Design matrix (n x p_cov) or NULL.
 #' @param p Length of theta.
-#' @return Numeric n x p Jacobian.
+#' @return Numeric n x p Jacobian, with respect to `log(mu)`, `nu` and beta.
 #' @keywords internal
 .hzr_predict_jacobian_weibull <- function(type, theta, time, x, p) {
   n_shape <- 2L
-  mu <- theta[1]
+  log_mu <- theta[1]
   nu <- theta[2]
   beta <- if (p > n_shape) theta[(n_shape + 1L):p] else numeric(0)
 
@@ -90,9 +91,12 @@ NULL
   J <- matrix(0, nrow = n, ncol = p)
 
   if (type %in% c("cumulative_hazard", "survival")) {
-    H <- (mu * time) ^ nu * exp(eta)
-    J[, 1L] <- (nu / mu) * H
-    J[, 2L] <- log(mu * time) * H
+    # On the log scale, as predict() computes H: mu * time can overflow where
+    # H is finite (#566).
+    log_mu_t <- log_mu + log(time)
+    H <- exp(nu * log_mu_t + eta)
+    J[, 1L] <- nu * H
+    J[, 2L] <- log_mu_t * H
     if (length(beta) > 0L && !is.null(x)) {
       J[, (n_shape + 1L):p] <- x * H
     }
@@ -333,46 +337,245 @@ NULL
 # Free-parameter vcov helper (shared by aggregate and decomposed se.fit paths)
 # ---------------------------------------------------------------------------
 
-#' Free-parameter vcov submatrix for the delta-method sandwich
+#' A Weibull fit's parameters with log(mu) in place of mu (#566)
 #'
-#' Fixed parameters (e.g. `fixed = "shapes"`) leave NA rows/cols in the expanded
-#' vcov. Treat them as known-with-zero-variance: restrict the sandwich to the
-#' free submatrix. (The CoE-conserved `log_mu` normally participates, because
-#' CoE fits use the full-information vcov, but it leaves an NA row, like a fixed
-#' parameter, when that recomputation was unavailable.) Returns `NULL` (with a
-#' warning) when CLs cannot be computed. Shared by the aggregate and decomposed
-#' se.fit paths.
+#' Predictions read a Weibull fit on this scale. Where the fit recorded that
+#' mu, or its variance, cannot be represented (`$fit$log_scale$needed`), the
+#' stored log-scale estimate and covariance are used, provided they still
+#' agree with `$fit$theta` (an object whose theta was edited is read from its
+#' theta). Otherwise they are derived from theta and the natural-scale vcov:
+#' `log(mu)`, and `D V D` with `D = diag(1 / mu, 1, ...)`, formed by dividing
+#' mu's row and column by mu so that `1 / mu^2` is never formed.
+#' @return `list(theta, vcov, stored)`; `vcov` is `NULL` when there is none.
+#' @noRd
+.hzr_weibull_log_scale <- function(object) {
+  theta <- unname(object$fit$theta)
+  ls <- object$fit$log_scale
+  stored <- isTRUE(ls$needed) && length(ls$theta) == length(theta) &&
+    isTRUE(all(unname(ls$theta)[-1L] == theta[-1L])) &&
+    identical(exp(unname(ls$theta)[[1L]]), theta[[1L]]) &&
+    is.finite(ls$theta[[1L]])
+  if (stored) {
+    v <- ls$vcov
+    if (is.matrix(v)) dimnames(v) <- NULL
+    return(list(theta = unname(ls$theta), vcov = v, stored = TRUE))
+  }
+  v <- object$fit$vcov
+  if (is.matrix(v) && nrow(v) == length(theta) && ncol(v) == length(theta)) {
+    # Divided by mu twice, not by mu^2: 1 / mu^2 overflows for mu below about
+    # 1e-154, where var(mu) / mu^2 is an ordinary number.
+    v[1L, ] <- v[1L, ] / theta[[1L]]
+    v[, 1L] <- v[, 1L] / theta[[1L]]
+  }
+  list(theta = c(log(theta[[1L]]), theta[-1L]), vcov = v, stored = FALSE)
+}
+
+#' Which variances overflowed or underflowed (#566)
+#'
+#' `TRUE` for a variance that is `NaN`, infinite, or below the smallest normal
+#' double. `NA` is `FALSE`: that is how a fixed or masked parameter is marked.
+#' @param d Numeric vector of variances, a vcov diagonal.
+#' @return Logical vector, never `NA`.
+#' @noRd
+.hzr_variance_unrepresentable <- function(d) {
+  # A negative variance is not an overflow or underflow; .hzr_free_vcov()
+  # names it separately.
+  is.nan(d) | is.infinite(d) |
+    (!is.na(d) & d >= 0 & d < .Machine$double.xmin)
+}
+
+#' Which parameters a Weibull prediction depends on (#566)
+#'
+#' Read off the prediction's form, not the Jacobian's values. The relative
+#' hazard and linear predictor never read mu or nu; a coefficient is unused
+#' only where its covariate is 0 in every row.
+#' @return Logical vector of length `p`.
+#' @noRd
+.hzr_weibull_used <- function(type, x, p) {
+  used <- rep(TRUE, p)
+  if (!type %in% c("cumulative_hazard", "survival")) used[1:2] <- FALSE
+  if (p > 2L) {
+    used[3:p] <- if (is.null(x)) FALSE else colSums(is.na(x) | x != 0) > 0
+  }
+  used
+}
+
+#' Which parameters each phase of a multiphase prediction depends on (#566)
+#'
+#' A phase depends on its own shape slots, and on each of its coefficients
+#' whose covariate is not 0 in every row. The walk follows
+#' .hzr_predict_jacobian_multiphase(). If it does not account for exactly `p`
+#' parameters, every parameter counts as used, which withholds rather than
+#' drops.
+#' @return Named list of logical vectors of length `p`, one per phase.
+#' @noRd
+.hzr_multiphase_used <- function(phases, covariate_counts, x_list, p) {
+  out <- list()
+  pos <- 1L
+  for (nm in names(phases)) {
+    u <- rep(FALSE, p)
+    n_shape <- switch(phases[[nm]]$type, constant = 1L, g3 = 5L, 4L)
+    u[pos:(pos + n_shape - 1L)] <- TRUE
+    pos <- pos + n_shape
+    n_beta <- covariate_counts[[nm]]
+    if (n_beta > 0L) {
+      x <- x_list[[nm]]
+      if (!is.null(x)) {
+        u[pos:(pos + n_beta - 1L)] <- colSums(is.na(x) | x != 0) > 0
+      }
+      pos <- pos + n_beta
+    }
+    out[[nm]] <- u
+  }
+  if (pos - 1L != p) {
+    out <- lapply(out, function(u) rep(TRUE, p))
+  }
+  out
+}
+
+#' Whether a vcov has the shape .hzr_free_vcov() can use
+#' @noRd
+.hzr_vcov_shape_ok <- function(vcov_mat, p) {
+  !is.null(vcov_mat) && is.matrix(vcov_mat) &&
+    nrow(vcov_mat) == p && ncol(vcov_mat) == p
+}
+
+#' Vcov submatrix for the delta-method sandwich
+#'
+#' Restricts the sandwich to the parameters the prediction uses. A parameter
+#' held fixed (`fixed`, from the fit's `fixed_mask`; e.g. `fixed = "shapes"`)
+#' with an NA row is dropped as known. (The CoE-conserved `log_mu` is one when
+#' its full-information recompute failed; the caller warns.) A fixed one with
+#' a variance, such as a shape a g3 constraint derives, stays in. An NA
+#' variance on a parameter that is NOT fixed was masked by `.hzr_safe_solve()`
+#' as non-positive: it withholds the standard error if the prediction uses
+#' it (#586). Returns `NULL` (with a warning) when CLs cannot be computed.
+#' Shared by the aggregate and decomposed se.fit paths.
 #'
 #' @param vcov_mat The fitted vcov (or NULL / wrong shape).
 #' @param p Length of the parameter vector.
+#' @param unused Indices of parameters the prediction does not depend on, by
+#'   the prediction's form (`.hzr_weibull_used()`, `.hzr_multiphase_used()`),
+#'   never read off numeric zeros in the Jacobian. They are dropped exactly,
+#'   whatever their variance.
+#' @param fixed Logical, `TRUE` for a parameter held fixed in the fit, or
+#'   `NULL` when nothing is fixed (every single-distribution fit).
+#' @param param_names Names for the warning, or `NULL`.
 #' @return `list(vcov_use, free_idx)`, or `NULL` if unusable.
 #' @keywords internal
-.hzr_free_vcov <- function(vcov_mat, p) {
-  vcov_ok <- !is.null(vcov_mat) && is.matrix(vcov_mat) &&
-               nrow(vcov_mat) == p && ncol(vcov_mat) == p
-  if (!vcov_ok) {
+.hzr_free_vcov <- function(vcov_mat, p, unused = integer(0), fixed = NULL,
+                           param_names = NULL) {
+  if (!.hzr_vcov_shape_ok(vcov_mat, p)) {
     warning("Variance-covariance matrix is unavailable; ",
             "standard errors and CLs will be NA.", call. = FALSE)
     return(NULL)
   }
-  free_idx <- which(is.finite(diag(vcov_mat)))
-  if (length(free_idx) < p) {
-    free_submat <- vcov_mat[free_idx, free_idx, drop = FALSE]
-    if (anyNA(free_submat)) {
-      warning("Variance-covariance matrix has NA entries outside the ",
-              "fixed-parameter rows/cols; standard errors and CLs will be NA.",
+  is_fixed <- if (length(fixed) == p) as.logical(fixed) %in% TRUE else
+    rep(FALSE, p)
+  # The sandwich runs over these: neither unused by the prediction nor fixed
+  # without a variance. A shape a g3 constraint derives from the others is
+  # fixed in fixed_mask but carries its delta-method variance and
+  # covariances (#325), and the Jacobian treats it as its own column, so it
+  # stays in; dropping it lost the constraint's chain-rule term.
+  d_all <- diag(vcov_mat)
+  known <- which(is_fixed & is.na(d_all) & !is.nan(d_all))
+  free_idx <- setdiff(seq_len(p), union(unused, known))
+  # A fixed or masked parameter carries an NA variance and is dropped from the
+  # sandwich below. A variance that overflowed or underflowed is not that. A
+  # Weibull mu's variance carries mu^2: it is Inf for mu near exp(600), and
+  # subnormal or 0 for mu near exp(-400), while its covariances are still
+  # ordinary numbers. Dropping such a parameter computed the standard error
+  # as if it were known exactly, and keeping a variance of 0 loses the
+  # sandwich's positive term; both gave finite, wrong standard errors (#566).
+  d <- diag(vcov_mat)[free_idx]
+  # An NA here is not a fixed parameter: .hzr_safe_solve() masks a
+  # non-positive variance with NA, the same mark. Dropping it computed the
+  # standard error as if the parameter were known exactly (#586).
+  masked <- free_idx[is.na(d) & !is.nan(d)]
+  if (length(masked)) {
+    nms <- if (length(param_names) == p) param_names[masked] else
+      paste0("par", masked)
+    warning("Variance-covariance matrix has no variance for an estimated ",
+            "parameter (", paste(nms, collapse = ", "), "): it was masked ",
+            "as non-positive when the Hessian was inverted; standard errors ",
+            "and CLs will be NA.", call. = FALSE)
+    return(NULL)
+  }
+  # A negative variance is a different fault: the covariance is not positive
+  # definite (possible after the Weibull back-transform when the internal one
+  # is indefinite). Name it; main returned an SE of 0 there.
+  if (any(!is.na(d) & d < 0)) {
+    warning("Variance-covariance matrix has a negative variance, so it is not ",
+            "positive definite; standard errors and CLs will be NA.",
+            call. = FALSE)
+    return(NULL)
+  }
+  # A variance that overflowed or underflowed is not that either. A Weibull
+  # mu's variance carries mu^2: it is Inf for mu near exp(600), and subnormal
+  # or 0 for mu near exp(-400), while its covariances are still ordinary
+  # numbers (#566).
+  if (any(.hzr_variance_unrepresentable(d))) {
+    warning("Variance-covariance matrix has a variance that cannot be ",
+            "represented (it overflowed or underflowed, as for a parameter ",
+            "far outside the usual range); standard errors and CLs will be ",
+            "NA. Centre or rescale the covariates and refit.", call. = FALSE)
+    return(NULL)
+  }
+  vcov_use <- vcov_mat[free_idx, free_idx, drop = FALSE]
+  # Unused and fixed parameters are already out, so an infinite or NA
+  # covariance here is one the prediction reads (#587 item 1).
+  if (!all(is.finite(vcov_use))) {
+    warning("Variance-covariance matrix has a covariance that is not finite ",
+            "among the parameters this prediction uses; standard errors and ",
+            "CLs will be NA.", call. = FALSE)
+    return(NULL)
+  }
+  # A positive diagonal does not make a covariance: an indefinite one gave a
+  # negative quadratic form, clamped to an SE of 0, or a positive one that is
+  # no variance (#586). Screened on the correlation scale, so the tolerance
+  # does not depend on the parameters' units.
+  if (length(free_idx) > 0L) {
+    s <- sqrt(diag(vcov_use))
+    e <- eigen(vcov_use / outer(s, s), symmetric = TRUE,
+               only.values = TRUE)$values
+    if (min(e) < -length(e) * .Machine$double.eps * max(abs(e))) {
+      warning("Variance-covariance matrix is not positive definite over the ",
+              "parameters this prediction uses (the fit's Hessian was not at ",
+              "a proper maximum); standard errors and CLs will be NA.",
               call. = FALSE)
       return(NULL)
     }
-    return(list(vcov_use = free_submat, free_idx = free_idx))
   }
-  if (anyNA(vcov_mat)) {
-    warning("Variance-covariance matrix has NA entries; ",
-            "standard errors and CLs will be NA.", call. = FALSE)
-    return(NULL)
-  }
-  list(vcov_use = vcov_mat, free_idx = free_idx)
+  list(vcov_use = vcov_use, free_idx = free_idx)
 }
+
+#' Warn when a failed CoE recompute leaves a phase's variance out (#586)
+#'
+#' The conserved `log_mu` is then held fixed in `fixed_mask` and dropped from
+#' the sandwich, and the object does not record which position it is.
+#' @noRd
+.hzr_warn_conserved_variance <- function(object) {
+  if ("conserved_phase_variance" %in% object$degraded) {
+    warning("Conservation of Events could not recompute the conserved ",
+            "phase's variance for this fit, so these standard errors leave ",
+            "it out and may be understated.", call. = FALSE)
+  }
+  invisible(NULL)
+}
+
+# When the failed recompute leaves a prediction reading no estimated
+# parameter at all -- the conserved phase alone -- its SE is unknown, and the
+# empty sandwich would report it as exactly 0 (#586). Only a decomposed
+# component can: CoE applies with two or more phases, no phase's log_mu can
+# be fixed, so a total always reads a free one.
+.hzr_conserved_nothing_left <- function(object, free_idx) {
+  "conserved_phase_variance" %in% object$degraded && length(free_idx) == 0L
+}
+.hzr_conserved_nothing_left_msg <- paste0(
+  "This prediction reads no estimated parameter whose variance is known: ",
+  "the conserved phase's variance could not be recomputed. Standard errors ",
+  "and CLs will be NA."
+)
 
 # ---------------------------------------------------------------------------
 # Public entry point
@@ -430,11 +633,69 @@ NULL
   if (type == "survival") conf_type <- match.arg(conf_type)
 
   theta <- object$fit$theta
-  p <- length(theta)
+  vcov_mat <- object$fit$vcov
   dist <- object$spec$dist
+  # A Weibull fit is read with log(mu) in place of mu (#566): `diff_fn` and
+  # the Jacobian take that scale, and so does the covariance.
+  if (dist == "weibull") {
+    lsc <- .hzr_weibull_log_scale(object)
+    theta <- lsc$theta
+    vcov_mat <- lsc$vcov
+  }
+  p <- length(theta)
   target <- diff_fn(theta)
 
-  fv <- .hzr_free_vcov(object$fit$vcov, p)
+  # --- Build Jacobian of the delta-method target ---------------------------
+  # Built before the vcov is screened, so the screen knows which parameters
+  # this prediction depends on (#566).
+  jacobian <- function() {
+    if (dist == "weibull") {
+      .hzr_predict_jacobian_weibull(type, theta, time, x, p)
+    } else if (dist == "multiphase") {
+      # The analytic multiphase Jacobian is for the cumulative hazard; the
+      # instantaneous hazard has no analytic Jacobian here, so fall back to
+      # a numeric Jacobian of its evaluator. (linear_predictor is rejected
+      # upstream for multiphase.)
+      if (type == "hazard") {
+        .hzr_predict_jacobian_numeric(diff_fn, theta)
+      } else {
+        .hzr_predict_jacobian_multiphase(theta, time, phases,
+                                          cov_counts, x_list, p)
+      }
+    } else {
+      .hzr_predict_jacobian_numeric(diff_fn, theta)
+    }
+  }
+  # An absent or wrong-sized vcov withholds every SE; say so before paying
+  # for a Jacobian.
+  if (.hzr_vcov_shape_ok(vcov_mat, p)) {
+    J <- jacobian()
+    # A parameter this prediction does not depend on, by its form: a Weibull
+    # mu or nu for the relative hazard and linear predictor, or a coefficient
+    # whose covariate is 0 in every row of newdata. Its variance, representable
+    # or not, cannot change the standard error, so it is dropped exactly
+    # rather than withholding it. Read off the form, not J's values: a column
+    # can be zero numerically (exp(eta) underflowing, mu * time == 1) where
+    # the prediction still depends on that parameter (#566).
+    used <- if (dist == "weibull") {
+      .hzr_weibull_used(type, x, p)
+    } else if (dist == "multiphase") {
+      Reduce(`|`, .hzr_multiphase_used(phases, cov_counts, x_list, p))
+    } else {
+      rep(TRUE, p)
+    }
+    # A Weibull fit is read on the log(mu) scale (#566), so its first
+    # parameter is named for that scale.
+    fv <- .hzr_free_vcov(vcov_mat, p, unused = which(!used),
+                         fixed = object$fit$fixed_mask,
+                         param_names = if (dist == "weibull") {
+                           c("log(mu)", names(object$fit$theta)[-1L])
+                         } else {
+                           names(theta)
+                         })
+  } else {
+    fv <- .hzr_free_vcov(vcov_mat, p)
+  }
   if (is.null(fv)) {
     n <- length(target)
     fit <- if (type == "survival") exp(-target) else target
@@ -442,26 +703,9 @@ NULL
     return(data.frame(fit = fit, se.fit = na_vec,
                       lower = na_vec, upper = na_vec))
   }
+  .hzr_warn_conserved_variance(object)
   vcov_use <- fv$vcov_use
   free_idx <- fv$free_idx
-
-  # --- Build Jacobian of the delta-method target ---------------------------
-  if (dist == "weibull") {
-    J <- .hzr_predict_jacobian_weibull(type, theta, time, x, p)
-  } else if (dist == "multiphase") {
-    # The analytic multiphase Jacobian is for the cumulative hazard; the
-    # instantaneous hazard has no analytic Jacobian here, so fall back to a
-    # numeric Jacobian of its evaluator. (linear_predictor is rejected
-    # upstream for multiphase.)
-    if (type == "hazard") {
-      J <- .hzr_predict_jacobian_numeric(diff_fn, theta)
-    } else {
-      J <- .hzr_predict_jacobian_multiphase(theta, time, phases,
-                                              cov_counts, x_list, p)
-    }
-  } else {
-    J <- .hzr_predict_jacobian_numeric(diff_fn, theta)
-  }
 
   # Restrict J to the free columns so the sandwich dimensions match.
   J <- J[, free_idx, drop = FALSE]
@@ -531,13 +775,16 @@ NULL
     res
   }
 
-  fv <- .hzr_free_vcov(object$fit$vcov, p)
-  if (is.null(fv)) {
-    na_cl <- lapply(components, function(cmp) {
-      n <- length(time)
-      data.frame(fit = fit_by_comp[[cmp]], se.fit = rep(NA_real_, n),
-                 lower = rep(NA_real_, n), upper = rep(NA_real_, n))
-    })
+  na_cl_of <- function(cmp) {
+    n <- length(time)
+    data.frame(fit = fit_by_comp[[cmp]], se.fit = rep(NA_real_, n),
+               lower = rep(NA_real_, n), upper = rep(NA_real_, n))
+  }
+
+  vcov_mat <- object$fit$vcov
+  if (!.hzr_vcov_shape_ok(vcov_mat, p)) {
+    .hzr_free_vcov(vcov_mat, p)  # warns
+    na_cl <- lapply(components, na_cl_of)
     names(na_cl) <- components
     return(make_long(na_cl))
   }
@@ -546,12 +793,36 @@ NULL
   J_list <- .hzr_predict_jacobian_multiphase(theta, time, phases, cov_counts,
                                              x_list, p, per_phase = TRUE)
   J_by_comp <- c(list(total = Reduce(`+`, J_list)), J_list)
+  used_list <- .hzr_multiphase_used(phases, cov_counts, x_list, p)
+  used_by_comp <- c(list(total = Reduce(`|`, used_list)), used_list)
 
+  # Screen the vcov per component, against the parameters that component
+  # depends on (#566): a bad variance in one phase's block withholds that
+  # phase's SE and the total's, not every phase's. Every warning of
+  # .hzr_free_vcov() is followed by a NULL return, so catching it loses
+  # nothing; the distinct messages are raised once below.
   cl_list <- lapply(components, function(cmp) {
-    J <- J_by_comp[[cmp]][, fv$free_idx, drop = FALSE]
-    se <- .hzr_predict_se_from_jacobian(J, fv$vcov_use)
-    .hzr_predict_cl_from_se(fit_by_comp[[cmp]], se, level, "log")
+    J <- J_by_comp[[cmp]]
+    fv <- tryCatch(.hzr_free_vcov(vcov_mat, p,
+                                  unused = which(!used_by_comp[[cmp]]),
+                                  fixed = object$fit$fixed_mask,
+                                  param_names = names(theta)),
+                   warning = function(w) conditionMessage(w))
+    if (!is.list(fv)) {
+      return(list(cl = na_cl_of(cmp), msg = fv))
+    }
+    if (.hzr_conserved_nothing_left(object, fv$free_idx)) {
+      return(list(cl = na_cl_of(cmp), msg = .hzr_conserved_nothing_left_msg))
+    }
+    se <- .hzr_predict_se_from_jacobian(J[, fv$free_idx, drop = FALSE],
+                                        fv$vcov_use)
+    list(cl = .hzr_predict_cl_from_se(fit_by_comp[[cmp]], se, level, "log"),
+         msg = character(0))
   })
+  msgs <- unique(unlist(lapply(cl_list, `[[`, "msg")))
+  for (m in msgs) warning(m, call. = FALSE)
+  .hzr_warn_conserved_variance(object)
+  cl_list <- lapply(cl_list, `[[`, "cl")
   names(cl_list) <- components
   make_long(cl_list)
 }

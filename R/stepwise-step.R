@@ -19,9 +19,13 @@
 #'   one-sided formula (single-dist), or a named list of one-sided
 #'   formulas keyed by phase (multiphase).
 #' @param data Data frame to derive candidates from when `scope = NULL`.
-#' @param force_out Character vector of variable names to exclude.
+#' @param force_out Term labels to exclude: RESOLVED identities, as
+#'   `.hzr_resolve_names()` returns them, not the user's strings.
+#'   hzr_stepwise() resolves once, at entry (#442).
 #'
-#' @return A list of `list(var = <chr>, phase = <chr or NULL>)`.
+#' @return A list of `list(var = <chr>, phase = <chr or NULL>, id = <chr>)`.
+#'   `var` is the spelling the refit and the score read; `id` is the term
+#'   label every comparison uses.
 #'
 #' @keywords internal
 #' @noRd
@@ -32,17 +36,25 @@
   if (dist == "multiphase") {
     phase_names <- names(fit$spec$phases)
     current_per_phase <- .hzr_scope_current_vars(fit)
+    column_of <- character() # term label -> column name, default scope only
 
     if (is.null(scope)) {
       # Default: all data-frame vars (excluding Surv components and
       # force_out) are candidates for every phase.
       stored <- .hzr_stored_formula(fit)
       lhs_vars <- if (is.null(stored)) character() else all.vars(stored[[2L]])
-      data_vars <- setdiff(colnames(data), c(lhs_vars, force_out))
+      data_vars <- setdiff(colnames(data), lhs_vars)
+      data_ids <- .hzr_column_label(data_vars)
+      data_vars <- data_vars[!data_ids %in% force_out &
+                               !.hzr_is_label_placeholder(data_ids)]
       data_vars <- .hzr_modellable_vars(data, data_vars)
+      # Written as term labels, never pasted names: a pasted `age ` read back
+      # as `age`, and `_X1` did not parse (#449). The column name stays the
+      # candidate's spelling, which the score reads from `data`.
+      column_of <- stats::setNames(data_vars, .hzr_column_label(data_vars))
       scope <- setNames(
         lapply(phase_names, function(p) {
-          rhs_syms <- data_vars
+          rhs_syms <- names(column_of)
           # Return as a one-sided formula for symmetry with the
           # user-supplied case.
           if (length(rhs_syms) == 0L) return(NULL)
@@ -86,8 +98,9 @@
       terms_p <- .hzr_formula_rhs_terms(sc)
       eligible <- setdiff(terms_p, c(current_per_phase[[p]], force_out))
       for (v in eligible) {
+        spelling <- if (v %in% names(column_of)) column_of[[v]] else v
         candidates[[length(candidates) + 1L]] <-
-          list(var = v, phase = p)
+          list(var = spelling, phase = p, id = v)
       }
     }
     return(candidates)
@@ -97,27 +110,45 @@
   if (is.null(scope)) {
     f <- .hzr_stored_formula(fit)
     lhs_vars <- if (is.null(f)) character() else all.vars(f[[2L]])
-    data_vars <- setdiff(colnames(data), c(lhs_vars, force_out))
-    data_vars <- .hzr_modellable_vars(data, data_vars)
+    data_vars <- setdiff(colnames(data), lhs_vars)
+    data_ids  <- .hzr_column_label(data_vars)
+    keep <- !data_ids %in% force_out & !.hzr_is_label_placeholder(data_ids)
+    data_vars <- data_vars[keep]
+    data_ids  <- data_ids[keep]
+    keep <- data_vars %in% .hzr_modellable_vars(data, data_vars)
+    data_vars <- data_vars[keep]
+    data_ids  <- data_ids[keep]
   } else {
     if (inherits(scope, "formula")) {
       data_vars <- .hzr_formula_rhs_terms(scope)
+      data_ids  <- data_vars
     } else if (is.character(scope)) {
-      data_vars <- scope
       # A character scope never passes through terms(), so an offset in it
       # reached a refit and failed there with a message that did not say why.
       scope_f <- tryCatch(stats::reformulate(scope), error = function(e) NULL)
       if (!is.null(scope_f)) .hzr_refuse_offset(scope_f, "`scope`")
+      # Each name keeps the spelling the user gave, which the refit and the
+      # score read, and is COMPARED by the term it resolves to (#437, #442).
+      # hzr_stepwise() has already dropped, with a warning, any that resolve
+      # to nothing, so this warns only for a direct internal call.
+      resolved  <- .hzr_resolve_names(scope, data, arg = "`scope`",
+                                      self_label = TRUE)
+      data_vars <- resolved$spelling
+      data_ids  <- resolved$id
     } else {
       stop("`scope` must be NULL, a one-sided formula, or a character vector.",
            call. = FALSE)
     }
-    data_vars <- setdiff(data_vars, force_out)
   }
 
+  # By identity, never by spelling. De-duplicated as `setdiff()` did: a
+  # scope naming a variable twice offers it once, under its first spelling.
   current_vars <- .hzr_scope_current_vars(fit)
-  eligible <- setdiff(data_vars, current_vars)
-  lapply(eligible, function(v) list(var = v, phase = NULL))
+  keep <- !duplicated(data_ids) &
+    !data_ids %in% c(force_out, current_vars) &
+    !.hzr_is_label_placeholder(data_ids)
+  Map(function(v, id) list(var = v, phase = NULL, id = id),
+      data_vars[keep], data_ids[keep], USE.NAMES = FALSE)
 }
 
 
@@ -150,8 +181,8 @@
 #' @param criterion One of `"score"`, `"wald"`, or `"aic"`.
 #' @param slentry Entry threshold for the score / Wald criteria (ignored when
 #'   `criterion = "aic"`; the entry rule there is dAIC < 0).
-#' @param force_out Character vector of variables that may never be
-#'   considered as candidates.
+#' @param force_out Term labels that may never be considered as candidates,
+#'   resolved (see `.hzr_stepwise_candidates()`).
 #' @param ... Forwarded to `.hzr_refit_with_scope()` (and thence to
 #'   `hazard()`), e.g. `control = list(...)`.
 #'
@@ -225,6 +256,8 @@
   }
 
   rows     <- vector("list", length(cands))
+  # Why a converged candidate went unscored, when the scorer says (#488).
+  score_reasons <- rep(NA_character_, length(cands))
   failures <- character()
   failure_reasons <- character()
 
@@ -240,7 +273,7 @@
     candidate_fit <- tryCatch(
       .hzr_refit_with_scope(
         current, action = "add",
-        var = cand$var, phase = cand$phase,
+        var = .hzr_candidate_term(cand), phase = cand$phase,
         data = data, ...
       ),
       error = function(e) e
@@ -250,6 +283,24 @@
       cand$var
     } else {
       paste0(cand$var, "@", cand$phase)
+    }
+
+    # Coefficient name of the newly-entered variable in the candidate fit,
+    # resolved by the column the refit added rather than by `var`, which
+    # another term's column can carry (a factor dummy named `flag` beside a
+    # logical `flag`, whose own column is `flagTRUE`). It refuses a refit
+    # that added no column, or more than one, and that refusal is this
+    # candidate's failure, caught here like the refit's own: outside the
+    # catch it ended the whole screen under wald and aic (#442).
+    coef_name <- NULL
+    if (!inherits(candidate_fit, "error") &&
+          !isFALSE(candidate_fit$fit$converged)) {
+      coef_name <- tryCatch(
+        .hzr_candidate_coef_name(candidate_fit, cand$var, cand$phase,
+                                 current = current),
+        error = function(e) e
+      )
+      if (inherits(coef_name, "error")) candidate_fit <- coef_name
     }
 
     if (inherits(candidate_fit, "error") ||
@@ -269,23 +320,18 @@
         stat      = NA_real_,
         stat_type = NA_character_,
         df        = NA_integer_,
+        reason    = NA_character_,
         stringsAsFactors = FALSE
       )
       next
     }
-
-    # Coefficient name of the newly-entered variable in the candidate fit,
-    # resolved by the column the refit added rather than by `var`, which
-    # another term's column can carry (a factor dummy named `flag` beside a
-    # logical `flag`, whose own column is `flagTRUE`).
-    coef_name <- .hzr_candidate_coef_name(candidate_fit, cand$var,
-                                           cand$phase, current = current)
 
     s <- .hzr_candidate_score(
       criterion = criterion, mode = "entry",
       current = current, candidate = candidate_fit,
       names = coef_name
     )
+    score_reasons[i] <- s$reason %||% NA_character_
 
     rows[[i]] <- data.frame(
       variable  = cand$var,
@@ -296,6 +342,10 @@
       stat      = s$stat,
       stat_type = s$stat_type,
       df        = s$df,
+      # Why the row went unscored, when the scorer knows: read by
+      # hzr_stepwise() so a refused Wald entry is not also reported as one
+      # left untested for want of a variance (#538).
+      reason    = s$reason %||% NA_character_,
       stringsAsFactors = FALSE
     )
     # Cache the fit on the row so we can recover it for the winner
@@ -303,6 +353,7 @@
   }
 
   all_scores <- do.call(rbind, rows)
+  all_scores$id <- vapply(cands, .hzr_candidate_term, character(1))
   # Strip the per-row fit attributes from the combined frame but keep
   # them in a parallel list keyed by row for winner lookup.
   candidate_fits <- lapply(rows, function(r) attr(r, "fit"))
@@ -312,12 +363,16 @@
   # It stays out of the model exactly as if it had missed `slentry`, so count
   # it, as the backward step counts an untested removal (#389).  A failed
   # refit also scores NA, but is reported as a refit failure.  Under AIC the
-  # score needs no variance, so an NA there is a non-finite objective.
+  # score needs no variance, so an NA there is a non-finite objective, unless
+  # the candidate was refused for being fitted on other rows (#488). Under
+  # either criterion a refit that ended below the current model's
+  # log-likelihood is refused with its own reason (#490, #538).
   refit_ok <- vapply(candidate_fits, inherits, logical(1L), what = "hazard")
-  n_uncomputable <- sum(is.na(all_scores$score) & refit_ok)
-  uncomputable_reasons <- .hzr_tally_reasons(rep(
-    if (criterion == "wald") "wald_no_variance" else "nonfinite",
-    n_uncomputable
+  unscored <- is.na(all_scores$score) & refit_ok
+  n_uncomputable <- sum(unscored)
+  default_reason <- if (criterion == "wald") "wald_no_variance" else "nonfinite"
+  uncomputable_reasons <- .hzr_tally_reasons(ifelse(
+    is.na(score_reasons[unscored]), default_reason, score_reasons[unscored]
   ))
 
   valid <- which(!is.na(all_scores$score))
@@ -355,6 +410,7 @@
     accepted  = TRUE,
     fit       = candidate_fits[[best_idx]],
     variable  = best$variable,
+    id        = cands[[best_idx]]$id %||% best$variable,
     phase     = best$phase,
     score     = best$score,
     p_value   = best$p_value,
@@ -400,9 +456,13 @@
   rows <- vector("list", length(cands))
   for (i in seq_along(cands)) {
     cand <- cands[[i]]
-    .hzr_score_check_numeric(data, cand$var, cand$phase)
+    # Read by the column the candidate resolved to, never by its spelling or
+    # label (#438, #449); NA when it is no column, which the score declines.
+    col <- .hzr_candidate_column(cand, data)
+    .hzr_score_check_numeric(data, cand$var, cand$phase, col = col)
 
-    s_q <- .hzr_score_q(current, cand$var, phase = cand$phase, data = data,
+    s_q <- .hzr_score_q(current, col, phase = cand$phase, data = data,
+                        term = .hzr_candidate_term(cand),
                         nuisance = nuisance)
     s <- .hzr_candidate_score(
       criterion = "score", mode = "entry",
@@ -424,6 +484,7 @@
     )
   }
   all_scores <- do.call(rbind, rows)
+  all_scores$id <- vapply(cands, .hzr_candidate_term, character(1))
 
   # --- Wald fallback for candidates the score could not test (#130) --------
   # Q is SAS's exactly (src/vars/q1.c), and so is its blind spot: the observed
@@ -446,10 +507,22 @@
     cand_phase <- if (is.na(all_scores$phase[i])) NULL else all_scores$phase[i]
     refit <- tryCatch(
       .hzr_refit_with_scope(current, action = "add",
-                            var = all_scores$variable[i], phase = cand_phase,
-                            data = data, ...),
+                            var = .hzr_candidate_term(cands[[i]]),
+                            phase = cand_phase, data = data, ...),
       error = function(e) e
     )
+    # The coefficient-name refusal (no column added, or several) is this
+    # candidate's failure too, caught as the Wald path catches it (#442).
+    fallback_coef <- NULL
+    if (!is.null(refit) && !inherits(refit, "error") &&
+          !isFALSE(refit$fit$converged)) {
+      fallback_coef <- tryCatch(
+        .hzr_candidate_coef_name(refit, all_scores$variable[i], cand_phase,
+                                 current = current),
+        error = function(e) e
+      )
+      if (inherits(fallback_coef, "error")) refit <- fallback_coef
+    }
     # A refit that fails or does not converge leaves the row NA with its
     # original reason, so it still counts as uncomputable below rather than
     # quietly becoming a candidate with no score.  Record and warn as every
@@ -473,9 +546,15 @@
     }
     w <- .hzr_candidate_score(
       criterion = "wald", mode = "entry", current = current, candidate = refit,
-      names = .hzr_candidate_coef_name(refit, all_scores$variable[i],
-                                       cand_phase, current = current)
+      names = fallback_coef
     )
+    if (is.na(w$score) && identical(w$reason, "loglik_below_base")) {
+      # The refit ended below the current model, which it contains, so it did
+      # not converge and its Wald test is not one (#538). It is not the
+      # variance failure below, and is not reported as that.
+      all_scores$reason[i] <- "loglik_below_base"
+      next
+    }
     if (is.na(w$score)) {
       # The refit CONVERGED -- it returned a point estimate -- but its Hessian
       # was not invertible, so there is no standard error and .hzr_wald_p()
@@ -558,8 +637,8 @@
   if (is.null(refitted)) {
     refitted <- tryCatch(
       .hzr_refit_with_scope(
-        current, action = "add", var = best$variable, phase = best_phase,
-        data = data, ...
+        current, action = "add", var = .hzr_candidate_term(cands[[best_idx]]),
+        phase = best_phase, data = data, ...
       ),
       error = function(e) e
     )
@@ -593,6 +672,7 @@
     accepted  = TRUE,
     fit       = refitted,
     variable  = best$variable,
+    id        = cands[[best_idx]]$id %||% best$variable,
     phase     = best$phase,
     score     = best$score,
     p_value   = best$p_value,
@@ -651,8 +731,25 @@
 #'
 #' @keywords internal
 #' @noRd
-.hzr_score_check_numeric <- function(data, var, phase) {
-  xcand <- data[[var]]
+.hzr_score_check_numeric <- function(data, var, phase, col = var) {
+  if (is.na(col)) {
+    # The candidate resolved to a term that is no column: an interaction or
+    # a transform. A column spelled the same, when there is one, is another
+    # variable, so "not found in `data`" would be false (#449).
+    where <- if (is.null(phase)) "" else paste0(" in phase ", sQuote(phase))
+    warning(
+      "Stepwise forward: candidate ", sQuote(var), where, " is not a single ",
+      "column of `data`, which is all the score criterion can test",
+      if (var %in% names(data)) {
+        paste0(" (the column named ", sQuote(var), " is a different ",
+               "variable, written `` `", var, "` `` in a formula)")
+      },
+      "; skipping. `criterion = \"wald\"` refits it instead.",
+      call. = FALSE
+    )
+    return(invisible(NULL))
+  }
+  xcand <- data[[col]]
   if (is.null(xcand)) {
     where <- if (is.null(phase)) "" else paste0(" in phase ", sQuote(phase))
     warning(
@@ -725,8 +822,9 @@
 #' @param criterion Either `"wald"` or `"aic"`.
 #' @param slstay Retention threshold for the Wald criterion (ignored
 #'   when `criterion = "aic"`; the drop rule there is dAIC_drop < 0).
-#' @param force_in Character vector of variables that may never be
-#'   dropped.
+#' @param force_in Term labels that may never be dropped: RESOLVED
+#'   identities, as `.hzr_resolve_names()` returns them. hzr_stepwise()
+#'   resolves the user's strings once, at entry (#442).
 #' @param ... Forwarded to `.hzr_refit_with_scope()` for the post-drop
 #'   refit.
 #'
@@ -829,7 +927,7 @@
     rows[[i]] <- data.frame(
       variable  = cand$var,
       phase     = cand$phase %||% NA_character_,
-      force_in  = cand$var %in% force_in,
+      force_in  = cand$var %in% force_in, # both are term labels
       score     = s$score,
       p_value   = s$p_value,
       delta_aic = s$delta_aic,
@@ -964,6 +1062,7 @@
     accepted  = TRUE,
     fit       = refitted,
     variable  = best$variable,
+    id        = cands[[best_idx]]$id %||% best$variable,
     phase     = best$phase,
     score     = best$score,
     p_value   = best$p_value,
@@ -1178,6 +1277,14 @@
       call. = FALSE
     )
   }
+  # A refit that added no column at all is said so first; the message below
+  # would list the same design twice (#442).
+  if (length(added) == 0L) {
+    stop("Variable ", sQuote(var), where,
+         " added no design-matrix column the current fit lacks, so its ",
+         "coefficient cannot be identified.",
+         call. = FALSE)
+  }
   # One new NAME is not one new column: `z` added to `~ z:f` turns
   # `z:fa, z:fb` into `z, z:fb`, the same column space and likelihood.  The
   # score path requires the count to rise by one for the same reason.
@@ -1190,12 +1297,6 @@
       "), so there is no coefficient of its own to test.",
       call. = FALSE
     )
-  }
-  if (length(added) == 0L) {
-    stop("Variable ", sQuote(var), where,
-         " added no design-matrix column the current fit lacks, so its ",
-         "coefficient cannot be identified.",
-         call. = FALSE)
   }
   if (multiphase) paste0(phase, ".", new_cols[added]) else paste0("beta", added)
 }

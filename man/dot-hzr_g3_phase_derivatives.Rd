@@ -17,7 +17,13 @@
 
 \item{eta}{Positive scalar outer exponent.}
 
-\item{h}{Relative step size for finite differences (default 1e-5).}
+\item{h}{Finite-difference step (default 1e-5). It is an ABSOLUTE step in
+\code{log_tau}, and so relative in \code{tau} only to first order; a relative step
+with a \code{1e-10} floor for \code{gamma} and \code{eta}; and strictly proportional for
+\code{alpha}. No caller passes it. Accuracy degrades where the function's
+natural scale in \code{log_tau}, roughly \code{alpha / gamma}, is far from 1: at
+\verb{alpha = 0.05, gamma = 4} the \code{tau} derivative is accurate to about
+1e-6 rather than the 1e-11 it reaches for ordinary shapes.}
 }
 \value{
 Named list with Phi, phi, and 8 derivative vectors.

@@ -45,8 +45,8 @@
 # time-only newdata (every covariate at 0); beta_j is read from theta by name.
 .pn_reference <- function(fit, time, x, z, g) {
   th <- fit$fit$theta
-  base <- predict(fit, newdata = data.frame(time = time),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = time),
+                           type = "cumulative_hazard", decompose = TRUE)
   early <- base$early * exp(th[["early.z"]] * z)
   constant <- base$constant *
     exp(th[["constant.x"]] * x +

@@ -10,11 +10,13 @@
 
 #' Evaluate a hazard model at parameters you supply
 #'
-#' Computes a model's log-likelihood, and optionally its hazard and
-#' cumulative hazard, at parameters **you** supply rather than at parameters
-#' fitted from the data. This is what a parity check needs: the likelihood at
-#' another program's converged estimates, evaluated by this package's own
-#' likelihood.
+#' Computes a model's objective, and optionally its hazard and cumulative
+#' hazard, at parameters **you** supply rather than at parameters fitted from
+#' the data. The objective is the log-likelihood, except for a model built
+#' with `objective = "sas"` on data with interval-censored rows, where it is
+#' PROC HAZARD's interval-mean-hazard objective (see `objective` under
+#' Value). This is what a parity check needs: the objective at another
+#' program's converged estimates, evaluated by this package's own code.
 #'
 #' The result is not a fit and does not pretend to be one. It carries no
 #' standard errors, no convergence status and no covariance matrix, because
@@ -26,11 +28,16 @@
 #' from the others, and that rule is applied to `theta` here as the fit
 #' applies it, so the derived entry you pass is replaced rather than
 #' used as given. At a fitted model's own estimates this returns that fit's
-#' objective, with one exception: under Conservation of Events the fit
-#' re-solves the conserved scale after recording its objective, so a fit
-#' whose likelihood is steep in that scale can report a value it is not at.
-#' Then this function returns the likelihood at the estimates, and the two
-#' differ.
+#' objective, under Conservation of Events too: since #362 the fit's objective
+#' is recomputed at the estimates it returns, except where the fit warns that
+#' it could not, and then the two can differ.
+#'
+#' A `theta` that passes the input checks but that the likelihood cannot
+#' evaluate -- an overflowing rate, a shape outside the family, or a value
+#' past a guard that stops short of where the log-likelihood itself
+#' overflows -- gives `-Inf`, with a warning of class
+#' `"hzr_evaluate_not_finite"`, for every distribution. A Weibull `mu` or
+#' `nu` at or below 0 is still refused outright by those input checks.
 #'
 #' @param object A `hazard` object, fitted or built with `fit = FALSE`. Its
 #'   data, distribution and phase specification are used; its own `theta` is
@@ -50,11 +57,15 @@
 #' @return An object of class `hzr_evaluation`: a list with `theta`, the
 #'   parameters the likelihood was evaluated at -- the vector supplied, with
 #'   any constrained entry replaced by the value its phase derives, which is
-#'   warned about as [hazard()] warns; `logLik`, the log-likelihood there;
-#'   `dist`; `n_obs` and `n_events`, the rows the likelihood scored and the
+#'   warned about as [hazard()] warns; `logLik`, the log-likelihood there,
+#'   or, for a model built with `objective = "sas"`, that objective, which
+#'   is not a log-likelihood wherever the data have interval-censored rows;
+#'   `objective`, `"likelihood"` or `"sas"`, saying which of the two
+#'   `logLik` holds; `dist`; `n_obs` and `n_events`, the rows the likelihood scored and the
 #'   exact events among them (a left- or interval-censored row counts in
 #'   `n_obs`, not in `n_events`); and, when `times` was given, `curve`, a
-#'   data frame of `time`, `hazard` and `cumulative_hazard`.
+#'   data frame of `time`, `hazard` and `cumulative_hazard`, which is `NA`
+#'   throughout where `logLik` is `-Inf`.
 #'
 #' @seealso [hazard()] to fit a model, [hzr_theta_names()] for the parameter
 #'   order.
@@ -105,6 +116,18 @@ hzr_evaluate <- function(object, theta, times = NULL) {
          },
          " There is no likelihood to report.", call. = FALSE)
   }
+  if (!identical(dist, "multiphase")) {
+    # POSITIVITY ONLY, deliberately: `n_coef` is withheld so the helper's
+    # length check stays off here. The check below counts the same parameters
+    # and says MORE, naming them ("takes 3: mu, nu, x."), and it is the one
+    # the user should see. Passing n_coef here would fire first with the
+    # generic sentence and make that message unreachable.
+    #
+    # Withholding n_coef is the right call HERE and was the defect in
+    # predict(), where nothing else checked the length. The difference is
+    # whether a better check follows, not a preference about the argument.
+    .hzr_check_theta(theta, dist)
+  }
   if (length(theta) != prepared$n_par) {
     stored <- length(object$fit$theta)
     stop(if (identical(dist, "multiphase") && stored &&
@@ -148,6 +171,13 @@ hzr_evaluate <- function(object, theta, times = NULL) {
   if (is.null(names(theta)) && !is.null(prepared$names)) {
     names(theta) <- prepared$names
   }
+  # The likelihood's sentinel for an out-of-model theta is Inf, which would
+  # be returned as the log-likelihood (#383).
+  .hzr_check_theta(theta, dist)
+  # The Weibull likelihood is computed on the log scale (#566), so a product
+  # mu * t or mu^nu below the smallest normal double no longer loses digits:
+  # the guard that refused such a theta is gone. A mu that is not finite and
+  # positive is still refused above.
 
   if (identical(dist, "multiphase")) {
     # As hazard(fit = FALSE) does with a supplied theta: derive the
@@ -160,11 +190,18 @@ hzr_evaluate <- function(object, theta, times = NULL) {
     theta <- constrained
   }
 
-  logl <- .hzr_logl_at(object, theta, prepared)
+  logl <- .hzr_logl_at(object, theta, prepared,
+                       with_curve = !is.null(times) &&
+                         identical(dist, "multiphase"))
   curve <- if (is.null(times)) {
     NULL
   } else {
-    .hzr_evaluate_curve(object, theta, times, prepared)
+    # Where the likelihood cannot be evaluated, neither is the curve: its
+    # shape functions have no such guard, and at late.log_tau = 800 a g3
+    # phase switched itself off there and the cumulative hazard came back
+    # finite and plausible (#503).
+    .hzr_evaluate_curve(object, theta, times, prepared,
+                        feasible = is.finite(logl))
   }
 
   out <- list(
@@ -175,7 +212,11 @@ hzr_evaluate <- function(object, theta, times = NULL) {
     # carries: a phase design with an NA drops rows (#144 review).
     n_obs = length(prepared$time),
     n_events = sum(prepared$status == 1),
-    curve = curve
+    curve = curve,
+    # Which objective `logLik` holds: under "sas" the interval-censored rows
+    # contribute PROC HAZARD's interval-mean-hazard term, which is not a
+    # log-likelihood (#503). Last, so no existing element moves.
+    objective = object$spec$objective %||% "likelihood"
   )
   structure(out, class = "hzr_evaluation")
 }
@@ -235,7 +276,11 @@ hzr_evaluate <- function(object, theta, times = NULL) {
     out$phases <- phases_v
     return(out)
   }
-  out$n_par <- .hzr_shape_parameter_count(dist, control = object$spec$control) +
+  # The likelihood's own count: it ignores control$shape_param_count, as
+  # wald.R, the score test and the stepwise refit do (#489). Taking
+  # the control count refused a fit's own theta and accepted a longer one,
+  # evaluating another model's likelihood.
+  out$n_par <- .hzr_shape_parameter_count(dist) +
     (if (is.null(x)) 0L else ncol(x))
   # Only if they describe THIS model: a stored theta of the wrong length
   # would otherwise be pasted onto a vector of another, and `names<-` errors
@@ -255,10 +300,36 @@ hzr_evaluate <- function(object, theta, times = NULL) {
 #' @param object A `hazard` object.
 #' @param theta Parameters, on the internal scale.
 #' @param prepared The result of `.hzr_evaluate_prepare()`.
+#' @param with_curve Whether a curve was asked for, so the warning can say
+#'   that it is withheld too.
 #' @return A single log-likelihood.
 #' @keywords internal
 #' @noRd
-.hzr_logl_at <- function(object, theta, prepared) {
+.hzr_logl_at <- function(object, theta, prepared, with_curve = FALSE) {
+  # The single-distribution likelihoods return +Inf as a sentinel for a
+  # theta they cannot evaluate (an overflowing rate, an infeasible shape),
+  # and it reached the user as logLik = Inf, the best possible fit (1.2.12
+  # release review, N1; #383 covered Weibull mu/nu <= 0 only). Whatever the
+  # family, a log-likelihood that is not finite is reported as -Inf, the
+  # value the multiphase likelihood already returns, and said so.
+  logl <- .hzr_logl_at_raw(object, theta, prepared)
+  if (length(logl) != 1L || !is.finite(logl)) {
+    warning(structure(
+      class = c("hzr_evaluate_not_finite", "warning", "condition"),
+      list(message = paste0(
+        "hzr_evaluate(): the ", object$spec$dist, " likelihood could not ",
+        "be evaluated at this 'theta' (it returned ", format(logl), "): the ",
+        "parameters are outside the range it computes, which is not always ",
+        "where the log-likelihood itself stops being finite. Reported as -Inf",
+        if (with_curve) ", and the curve at `times` as NA." else "."
+      ), call = NULL)
+    ))
+    logl <- -Inf
+  }
+  logl
+}
+
+.hzr_logl_at_raw <- function(object, theta, prepared) {
   dist <- object$spec$dist
   args <- list(theta = unname(theta), time = prepared$time,
                status = prepared$status, time_lower = prepared$time_lower,
@@ -300,10 +371,13 @@ hzr_evaluate <- function(object, theta, times = NULL) {
 #' @param theta Parameters, on the internal scale.
 #' @param times Times to evaluate at.
 #' @param prepared The result of `.hzr_evaluate_prepare()`.
+#' @param feasible `FALSE` when the likelihood could not be evaluated at
+#'   `theta`; the curve is then `NA` rather than computed.
 #' @return A data frame of `time`, `hazard`, `cumulative_hazard`.
 #' @keywords internal
 #' @noRd
-.hzr_evaluate_curve <- function(object, theta, times, prepared) {
+.hzr_evaluate_curve <- function(object, theta, times, prepared,
+                                feasible = TRUE) {
   dist <- object$spec$dist
   if (!identical(dist, "multiphase")) {
     # Only the multiphase model has internal shape functions that take
@@ -316,6 +390,10 @@ hzr_evaluate <- function(object, theta, times = NULL) {
          "log-likelihood at the supplied parameters. For a curve, fit the ",
          "model and use predict(), or evaluate the distribution directly.",
          call. = FALSE)
+  }
+  if (!feasible) {
+    return(data.frame(time = times, hazard = NA_real_,
+                      cumulative_hazard = NA_real_))
   }
   phases <- prepared$phases
   counts <- prepared$covariate_counts
@@ -341,8 +419,15 @@ print.hzr_evaluation <- function(x, ...) {
   cat("  no covariance. Use hazard(fit = TRUE) to fit.\n\n")
   cat("  distribution: ", x$dist, "\n", sep = "")
   cat("  observations: ", x$n_obs, " (", x$n_events, " events)\n", sep = "")
-  cat("  logLik at the supplied parameters: ",
-      format(x$logLik, digits = 8), "\n", sep = "")
+  if (identical(x$objective, "sas")) {
+    cat("  SAS objective at the supplied parameters: ",
+        format(x$logLik, digits = 8), "\n",
+        "  (objective = \"sas\": not a log-likelihood where the data have\n",
+        "  interval-censored rows)\n", sep = "")
+  } else {
+    cat("  logLik at the supplied parameters: ",
+        format(x$logLik, digits = 8), "\n", sep = "")
+  }
   cat("\n  parameters supplied:\n")
   print(x$theta)
   if (!is.null(x$curve)) {

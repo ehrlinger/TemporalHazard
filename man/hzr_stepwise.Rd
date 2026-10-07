@@ -37,21 +37,60 @@ hzr_stepwise(
 \verb{formula = Surv(...) ~ predictors, data = df} interface.}
 
 \item{scope}{Candidate set.  \code{NULL} (default) uses every data-frame
-column not already in the model for every phase.  For
+column not already in the model for every phase.  A candidate enters
+as the column it names, whatever its name: a column literally named
+\code{age:mal} enters as that column, not the interaction, and a column
+\code{"age "} beside \code{age} enters as itself (#449).  For
 single-distribution fits, pass a one-sided formula
-(\code{~ age + nyha}) or a character vector of names.  For multiphase
+(\code{~ age + nyha}) or a character vector of names.  Each name in a
+character \code{scope} is looked up, not parsed: a name that is exactly a
+column of \code{data} is that column, otherwise a name that is exactly a
+term label as \code{terms()} writes it (\code{"`_X1`"}, \code{"log(age)"},
+\code{"age:mal"}) is that term, and any other name is ignored with a
+warning naming it.  The column is looked up first, so when \code{data} has
+a column literally named \code{age:mal}, \code{"age:mal"} puts that column in
+the scope rather than the interaction.  A candidate enters as the
+column or term its name resolved to, so a bare \code{"_X1"} enters the
+column \verb{_X1} (#449, #441), and the score reads the values of that
+column however the name was written (#438).  For multiphase
 fits, pass a named list of one-sided formulas keyed by phase, naming
 each phase once.  \code{scope} lists what may enter; a drop considers every
 term in the model except \code{force_in} and terms frozen by \code{max_move}
-before the iteration began (see the \strong{Known limitation (the frozen
-set)} section).  A two-sided formula is an error,
+at an earlier iteration (see the \strong{The frozen set} section).  A
+two-sided formula is an error,
 since its left-hand side would never be a candidate, and so is a
 non-empty \code{scope} under \code{direction = "backward"}, which does not read
 it.  An empty scope (\code{~ 1}, \code{character()}, or a list of \code{NULL}s and
 \code{~ 1}s) is accepted there.}
 
 \item{data}{Data frame the base fit was built on.  Required for
-refits.}
+refits.  Its rows must be the fit's rows in the same order: the score
+criterion reads each candidate by position, so a sorted or reordered
+frame is refused when the fit stored the frame it was given.  On the
+vector interface, and for any fit with \code{weights}, every criterion's
+refits pair \code{data} with vectors stored in the fit's row order, so there
+the frame is checked whatever the \code{criterion}.  Columns
+added after the fit, such as derived candidates, are allowed.  A
+vector-interface fit made without \verb{data =}, or with a \code{data} of another
+row count used only to look names up, stores no frame to compare, and
+a \code{data} holding only columns added after the fit shares none; and
+shared columns with duplicate rows cannot show rows reordered among
+those duplicates.  For
+those the order is checked against a column of \code{data} holding the fit's
+event times, and refused if they are out of order.  Rows reordered
+within a tie leave that column unchanged, so when the times have ties
+the fit's other per-row inputs (status, interval bounds, weights and
+covariate design columns) are looked for in \code{data} too, each under the
+column it came from: the column the call named (\code{status = dead},
+\code{status = d$dead}, or the event in \code{Surv(time, event)}), or a
+covariate's own name.  Rows reordered within a tie are refused.  The order is accepted when the inputs found
+tell every row apart, or when all of them are found: rows that could
+still be swapped are then identical in everything the fit reads, and
+the screen's answer is the same.  With no column of event times, or
+tied times the other inputs cannot resolve, the order cannot be
+checked, and a warning of class \code{hzr_score_rows_unverified} says so and
+names the inputs to add.  Column names must be unique: every check
+reads \code{data} by name, so a \code{data} with duplicated names is refused.}
 
 \item{direction}{Search strategy: one of \code{"both"} (default),
 \code{"forward"}, or \code{"backward"}.  Controls whether variables may only
@@ -77,22 +116,42 @@ Default \code{0.20} matches SAS \code{SLSTAY}.}
 
 \item{max_move}{Per-variable oscillation cap.  When a variable has
 entered + exited more than \code{max_move} times it is frozen for the
-remainder of the run.  Default \code{4}.  In a two-way screen
-(\code{direction = "both"}), a variable frozen on entry can still be
-dropped in the same iteration; see the
-\strong{Known limitation (the frozen set)} section.}
+remainder of the run, in the state it ends that iteration in.  Default
+\code{4}.  See the \strong{The frozen set} section.}
 
 \item{force_in}{Character vector of variables that must remain in
 the model.  Such variables are still scored and reported in the
-selection trace, but are never dropped.}
+selection trace, but are never dropped.  Each name is looked up, not
+parsed, once, when the screen starts: a name that is exactly a column
+of \code{data} is that column, so the bare \code{"_X1"} pins the column \verb{_X1}
+although \code{terms()} labels it \code{`_X1`}, and \code{"TRUE"} pins a column
+named \code{TRUE}.  The exception is a column no model formula can hold,
+\code{"."} or \code{""}: it can never become a model term, so it cannot be
+pinned, and naming it warns and lists it in \code{unresolved}.  Otherwise a name that is exactly a term label of the
+model or \code{scope} is that term, so \code{"`_X1`"} and \code{"age:mal"} work
+too.  Any other name, \code{"age "} with a trailing space when there is no
+such column, say, matches nothing and is ignored with a warning naming
+it.  The column is looked up first: when \code{data} has a column literally
+named \code{age:mal}, \code{"age:mal"} resolves to that column and not to the
+interaction.}
 
 \item{force_out}{Character vector of variables that may never be
-considered as candidates.}
+considered as candidates.  Names are looked up as for \code{force_in}:
+a column of \code{data} first, then a term label of the model or \code{scope},
+and a warning for a name that is neither.}
 
 \item{trace}{Logical; print step-by-step progress to the console.
 Default \code{TRUE}.}
 
-\item{...}{Unused.}
+\item{...}{Passed to every candidate refit. Only \code{control} (e.g.
+\code{control = list(maxit = 500)}) and an \code{objective} equal to the base
+fit's are accepted. Any other name is an error: a misspelling such as
+\code{slentyr} would be stored by \code{hazard()} without being read, and every
+other \code{hazard()} argument (the response, \code{weights}, \code{time_windows},
+\code{dist}, \code{theta}, \code{phases}, \code{fit} and so on) is set by the refit itself,
+from the base model and \code{data}, so that each candidate is compared with
+the model it extends.
+The \code{print()}, \code{summary()} and \code{as.data.frame()} methods ignore \code{...}.}
 
 \item{x}{An \code{hzr_stepwise} object.}
 
@@ -105,9 +164,39 @@ final fit augmented with:
 \item{\code{steps}}{Data frame with one row per accepted /
 frozen action; see Details.}
 \item{\code{scope}}{Record of the candidate scope, plus
-\code{force_in}, \code{force_out}, and the frozen set.  In a two-way
-screen, \code{frozen} can name a variable the final model does not
-contain; see the \strong{Known limitation (the frozen set)} section.}
+\code{force_in}, \code{force_out}, and the frozen set.  Four fields answer
+four different questions about the pins, and none substitutes for
+another: \code{force_in} and \code{force_out} are the names \strong{as given},
+including any that pinned nothing; \code{force_in_resolved} and
+\code{force_out_resolved} are what those names \strong{resolved to}, as a
+column or term label, so a bare \code{"_X1"} appears there as
+\code{"`_X1`"}; \code{unresolved} is which of them resolved to nothing;
+and \code{frozen} is what the loop held in that the caller never named.
+The resolved fields carry the resolved names only: the frozen set
+is \strong{not} merged into them, because \code{frozen} already records it
+and merging would list variables nobody asked for (#451).  Resolving
+is not applying: a name that resolves to a variable the model does
+not contain is recorded here and still pins nothing, because
+\code{force_in} only keeps a variable that is already in.  The resolved
+fields are \strong{not} aligned element for element with the as-given
+ones, which stay longer by every name that resolved to nothing.
+A variable in \code{frozen} is in the final model if it was in the model
+when it was frozen, and out of it otherwise; see the \strong{The frozen
+set} section.
+\code{unresolved} is a list with elements \code{force_in}, \code{force_out} and
+\code{scope}, each the names that could not be used and were therefore
+ignored (\code{character()} when none were). That is usually a name
+matching neither a column of \code{data} nor a term label; for \code{force_in}
+and \code{force_out} it also covers a name that IS a column but which no
+model formula can hold, such as \code{"."} or \code{""}, since such a column
+can never become a model term and so can never be pinned.
+The trace, and so \code{print()} and \code{summary()}, carries a
+line for each non-empty one, and a screen whose character \code{scope}
+was emptied this way says so where it stops.  \code{candidates},
+\code{force_in} and \code{force_out} here are the arguments as given, so a
+character \code{candidates} still lists the names that were ignored,
+as \code{force_in} and \code{force_out} do; read \code{unresolved} for which
+those were (#451).}
 \item{\code{criteria}}{Named list of the threshold / direction
 settings actually applied, plus
 \code{n_uncomputable_scores} (how many candidate scores were \code{NA},
@@ -116,13 +205,18 @@ under \code{criterion = "score"}; an entry under \code{criterion = "wald"}, or
 a removal under any criterion, whose Wald statistic could not be
 computed for want of a variance, \code{wald_no_variance}; or an entry
 under \code{criterion = "aic"} whose fit had no finite objective,
-\code{nonfinite}),
+\code{nonfinite}, or was fitted on different rows from the current model
+because the candidate is missing on some, \code{rows_differ}; or an entry
+under \code{criterion = "aic"} or \code{"wald"}, or rescued by the Wald
+fallback under \code{"score"}, whose refit ended below the current
+model's log-likelihood, which it contains, so that the refit cannot
+have converged, \code{loglik_below_base}),
 \code{uncomputable_reasons} (a named integer vector of \emph{why}),
 \code{wald_untested_removals} and \code{wald_untested_entries} (the
 \code{"var"} / \code{"var@phase"} tokens of variables kept in, or left out,
 on a step whose Wald test for them could not be computed; a
-variable tested at a later step is not listed.  Entries are listed
-under \code{criterion = "wald"} only: under \code{"score"} an entry no test
+variable tested, or refused as \code{loglik_below_base}, at a later step
+is not listed.  Entries are listed under \code{criterion = "wald"} only: under \code{"score"} an entry no test
 could reach is reported by its reason, such as
 \code{fallback_no_variance}) and
 \code{stopped_uncomputable} (\code{TRUE} when the last iteration had
@@ -132,10 +226,15 @@ an unscored candidate as a bad one: \code{information_indefinite} marks
 candidates whose effect is too large for the score test's
 approximation at zero, which are typically the strongest variables
 on offer rather than degenerate ones. Candidates with that cause,
-or with \code{coefficient_diverging}, are refit and tested by Wald
-automatically, counted in \code{n_wald_fallbacks}. A candidate still
+or with \code{coefficient_diverging}, \code{information_nonpositive} or
+\code{nuisance_singular}, are refit and tested by Wald
+automatically, counted in \code{n_wald_fallbacks}. \code{nuisance_singular}
+is a fault of the score test at the current model, whose
+information matrix could not be formed or inverted, so it applies
+to every candidate at that step and each of them is refitted. A
+candidate still
 reaches \code{uncomputable_reasons} when that refit fails, or when its
-cause is any other, which no refit can rescue. Read
+cause is any other, for which no refit is attempted. Read
 \code{uncomputable_reasons} for which one it was in any given run.  For
 every criterion it also carries
 \code{refit_failures} (the \code{"var"} / \code{"var@phase"} tokens of candidate
@@ -181,7 +280,10 @@ The \code{steps} data frame has columns:
 \describe{
 \item{\code{step_num}}{Integer sequence starting at 1.}
 \item{\code{action}}{\code{"enter"}, \code{"drop"}, or \code{"frozen"}.}
-\item{\code{variable}}{Variable affected.}
+\item{\code{variable}}{The term entered, dropped or frozen, as the
+model's \code{terms()} label: a non-syntactic column \verb{_X1} is recorded as
+\code{`_X1`} on every row, whether the scope named it \code{"_X1"},
+\code{"`_X1`"} or in a formula.}
 \item{\code{phase}}{Phase name (multiphase) or \code{NA_character_}.}
 \item{\code{criterion}}{The criterion actually applied to this step:
 \code{"score"}, \code{"wald"}, or \code{"aic"}.  Under \code{criterion = "score"} the drop
@@ -205,7 +307,25 @@ is tested on the current model's Wald p-value), so they read
 \item{\code{p_value}, \code{delta_aic}}{Always populated when
 computable, regardless of the active criterion.}
 \item{\code{logLik}, \code{aic}, \code{n_coef}}{Goodness-of-fit
-diagnostics of the model \emph{after} this step.}
+diagnostics of the model \emph{after} this step. Under
+\code{objective = "sas"}, on a step whose model reads an interval-censored
+row (one of positive weight, not dropped by a phase design), \code{logLik}
+holds PROC HAZARD's objective, not a log-likelihood, and \code{aic} is
+computed from it. A step can change which rows are read (see
+\code{n_rows}), so on a step that starts or stops reading such rows
+\code{delta_logLik} is the difference of two different quantities. The
+trace's final line labels the final model's value, and
+\code{criterion = "aic"} warns once (class \code{hzr_stepwise_sas_objective})
+as soon as a step's model reads such a row.}
+\item{\code{n_rows}}{Number of rows in the fit's data after this step
+(rows given weight 0 are counted).  A multiphase fit drops every row
+where a variable in the model is missing, so entering a variable with
+missing values shrinks the sample every later step is tested on, and
+dropping it grows the sample back.  A step that changes the rows of
+positive weight raises a warning of class \code{hzr_stepwise_sample_changed} naming the
+step, the variable and the row counts before and after.  Which
+variables enter is not changed by this: compare \code{n_rows} across steps
+to see how many rows each test rested on.}
 }
 }
 \section{Selection direction and criterion}{
@@ -227,9 +347,8 @@ with \code{force_in}.}
 \item{\code{direction = "both"} (default)}{Two-way stepwise: on every
 iteration, whether or not a variable entered, every term in the model,
 the base model's included, is re-tested and may be dropped unless it
-is in \code{force_in} or was frozen by \code{max_move} before the iteration
-began; a variable frozen on entry can still be dropped in the same
-iteration (see the \strong{Known limitation (the frozen set)} section).
+is in \code{force_in} or was frozen by \code{max_move} at an earlier iteration
+(see the \strong{The frozen set} section).
 \code{scope} limits what may enter, not what may leave.
 This is the SAS \code{SELECTION = STEPWISE} strategy.  \code{max_move} caps how
 often a single variable may oscillate before it is frozen.}
@@ -282,31 +401,34 @@ information-criterion search.}
 }
 }
 
-\section{Known limitation (the frozen set)}{
+\section{The frozen set}{
 
 
-In a two-way screen (\code{direction = "both"}), \verb{$scope$frozen} can name a
-variable that the final model does not contain.  Each two-way iteration
-makes a forward step and then a backward step, and the sets of protected
-variables are fixed at the start of the iteration.  A variable that the
-forward step freezes can therefore still be dropped by the backward step
-that follows it, so it is reported as frozen while the final model
-excludes it.  Nothing warns when this happens.
+A variable that has moved (entered or left) more than \code{max_move} times
+is frozen: it is held in the state it is in, in the model or out of it,
+for the rest of the run, and listed in \verb{$scope$frozen}.
 
-Forward-only and backward-only screens are not affected: a forward-only
-screen never makes a backward step to drop the frozen variable, and a
-backward-only screen never makes a forward step to freeze it on entry.
-In those, \verb{$scope$frozen} and the final model agree.
+The freeze takes effect at the end of the iteration in which the variable
+reached the cap.  A two-way iteration (\code{direction = "both"}) makes a
+forward step and then a backward step, so a variable that reaches the
+cap by entering and is dropped by the same iteration's backward step is
+frozen \strong{out}.  Its \code{"frozen"} row in \verb{$steps} follows the \code{"drop"}.  A
+variable is therefore in the final model exactly when it was in the model
+when it was frozen, and \verb{$scope$frozen} agrees with the final model.
 
-\strong{When the two disagree, trust the final model and \verb{$steps}.}  The
-final model is what was selected, and \verb{$steps} records both the
-\code{"frozen"} row and the \code{"drop"} that followed it.  Read \verb{$scope$frozen}
-only as the list of variables that reached the \code{max_move} cap, not as a
-list of variables held in the model.
+Earlier versions froze such a variable as it entered and then dropped it
+anyway, so \verb{$scope$frozen} could name a variable the final model did not
+contain (#580).
 
-This is a known limitation of this release.  The analysis, including why
-fixing it changes which variables are selected, is in
-\url{https://github.com/ehrlinger/TemporalHazard/issues/378} and
+This is not PROC HAZARD's MOVE rule.  PROC HAZARD makes one move per
+step, a removal before any entry; it counts a variable's exits (and,
+under \code{NOSTEPWISE}, its entries too), separately for each phase; and a
+variable at its limit can neither leave nor enter.  Outside \code{NOSTEPWISE}
+it therefore freezes a variable only as it leaves.  \code{max_move} counts
+entries and exits alike, by name across phases, which is why the SAS
+translator records \verb{MOVE=} rather than mapping it.  Adopting PROC
+HAZARD's rule would change which variables are selected, and is deferred;
+see \url{https://github.com/ehrlinger/TemporalHazard/issues/378} and
 \url{https://github.com/ehrlinger/TemporalHazard/issues/379}.
 }
 

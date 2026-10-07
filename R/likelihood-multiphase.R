@@ -453,19 +453,28 @@
 #'   `setcoe` under `LCENSOR`/`STARTTME`). Any other row has no entry
 #'   (`H(start) = 0`); see `.hzr_multiphase_entry()`. `NULL` (the default)
 #'   means no truncation.
-#' @return Updated theta vector with fixmu phase's log_mu adjusted.
+#' @param details `FALSE` (the default) returns the theta vector alone.
+#'   `TRUE` returns `list(theta, solved)`, `solved` saying whether the log_mu
+#'   was solved for, as against handed back unchanged because there was
+#'   nothing to solve.
+#' @return Updated theta vector with fixmu phase's log_mu adjusted, or the
+#'   list described under `details`.
 #' @keywords internal
 .hzr_conserve_events <- function(theta, fixmu_phase, fixmu_pos,
                                   time, status,
                                   phases, covariate_counts, x_list,
                                   total_events, weights = NULL,
-                                  time_lower = NULL) {
+                                  time_lower = NULL, details = FALSE) {
+  # `solved` is FALSE on every path that hands theta back untouched.
+  done <- function(theta, solved) {
+    if (details) list(theta = theta, solved = solved) else theta
+  }
   # An infeasible time scale has no cumulative hazard to solve against; leave
   # theta for the likelihood, which penalises it (#262).
   theta_split <- .hzr_split_theta(theta, phases, covariate_counts)
   for (nm in names(phases)) {
     pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
-    if (!.hzr_phase_scale_feasible(pars, phases[[nm]]$type)) return(theta)
+    if (!.hzr_phase_scale_feasible(pars, phases[[nm]]$type)) return(done(theta, FALSE))
   }
 
   # Compute per-phase cumulative hazard contributions
@@ -494,7 +503,7 @@
   # Weighted contribution from the fixmu phase alone
   sumcj <- sum(weights * decomp[[fixmu_phase]])
 
-  if (sumcj <= 0 || !is.finite(sumcj)) return(theta)
+  if (sumcj <= 0 || !is.finite(sumcj)) return(done(theta, FALSE))
 
   # Discrepancy: how many events are unaccounted for
   devent <- total_events - sumcz
@@ -502,21 +511,32 @@
   # Events the fixmu phase should absorb
   jevent <- sumcj + devent
 
-  if (jevent <= 0 || !is.finite(jevent)) return(theta)
+  if (jevent <= 0 || !is.finite(jevent)) return(done(theta, FALSE))
 
   # Multiplicative adjustment in log scale
   lfactor <- log(jevent / sumcj)
 
-  if (!is.finite(lfactor)) return(theta)
+  if (!is.finite(lfactor)) return(done(theta, FALSE))
 
   theta[fixmu_pos] <- theta[fixmu_pos] + lfactor
-  theta
+  done(theta, TRUE)
 }
 
 
 # ============================================================================
 # Interval-censored contribution
 # ============================================================================
+
+#' Stop on a data defect, as a classed condition (#407)
+#'
+#' The message is built exactly as `stop()` builds it, and carries the class
+#' `hzr_data_error`, so a caller that absorbs numerical failures (the score
+#' path's `tryCatch` sites) can let a data defect through instead of
+#' reporting it as "information matrix could not be inverted".
+#' @noRd
+.hzr_stop_data <- function(...) {
+  stop(errorCondition(.makeMessage(...), class = "hzr_data_error"))
+}
 
 #' Reject row types the SAS objective has no counterpart for
 #'
@@ -536,9 +556,9 @@
 #' @keywords internal
 .hzr_check_sas_status <- function(status, objective) {
   if (identical(objective, "sas") && any(status == -1)) {
-    stop("objective = \"sas\" does not support left-censored rows ",
+    .hzr_stop_data("objective = \"sas\" does not support left-censored rows ",
          "(status == -1): PROC HAZARD has no left-censoring statement, so no ",
-         "SAS run corresponds to the result.", call. = FALSE)
+         "SAS run corresponds to the result.")
   }
   invisible(NULL)
 }
@@ -577,10 +597,10 @@
   # defined", which is the framing #213 removed -- and which invites raising
   # `n_starts`, a remedy that cannot work on a pure function of the data.
   if (anyNA(status)) {
-    stop("'status' must be complete; ",
+    .hzr_stop_data("'status' must be complete; ",
          sum(is.na(status)), " row(s) are NA, at index/indices ",
          paste(utils::head(which(is.na(status)), 10L), collapse = ", "),
-         if (sum(is.na(status)) > 10L) ", ..." else "", ".", call. = FALSE)
+         if (sum(is.na(status)) > 10L) ", ..." else "", ".")
   }
 
   if (!identical(objective, "sas")) {
@@ -601,8 +621,8 @@
     for (b in list(list(if (is.null(time_lower)) "time" else "time_lower", lower),
                    list(if (is.null(time_upper)) "time" else "time_upper", upper))) {
       if (length(b[[2L]]) != length(status)) {
-        stop(b[[1L]], " has length ", length(b[[2L]]), ", but status has ",
-             "length ", length(status), ".", call. = FALSE)
+        .hzr_stop_data(b[[1L]], " has length ", length(b[[2L]]), ", but status has ",
+             "length ", length(status), ".")
       }
     }
     # An NA bound makes the width comparison NA, which then stood in for the
@@ -610,22 +630,20 @@
     na_bound <- idx_interval[is.na(lower[idx_interval]) |
                                is.na(upper[idx_interval])]
     if (length(na_bound) > 0) {
-      stop("objective = \"sas\" requires both bounds on every ",
+      .hzr_stop_data("objective = \"sas\" requires both bounds on every ",
            "interval-censored row. ", length(na_bound), " of ",
            length(idx_interval), " interval row(s) have an NA bound, at ",
            "index/indices ", paste(utils::head(na_bound, 10L), collapse = ", "),
-           if (length(na_bound) > 10L) ", ..." else "", ".",
-           call. = FALSE)
+           if (length(na_bound) > 10L) ", ..." else "", ".")
     }
     bad <- idx_interval[!(upper[idx_interval] > lower[idx_interval])]
     if (length(bad) > 0) {
-      stop("objective = \"sas\" requires upper > lower on every ",
+      .hzr_stop_data("objective = \"sas\" requires upper > lower on every ",
            "interval-censored row; the interval-mean hazard divides by ",
            "(u - l). ", length(bad), " of ", length(idx_interval),
            " interval row(s) fail this, at index/indices ",
            paste(utils::head(bad, 10L), collapse = ", "),
-           if (length(bad) > 10L) ", ..." else "", ".",
-           call. = FALSE)
+           if (length(bad) > 10L) ", ..." else "", ".")
     }
   }
 
@@ -675,13 +693,12 @@
     # away from; the entry check stops on the same row (#340).
     bad <- which(!(upper > lower) | is.na(upper) | is.na(lower))
     if (length(bad) > 0) {
-      stop("objective = \"sas\" requires upper > lower on every ",
+      .hzr_stop_data("objective = \"sas\" requires upper > lower on every ",
            "interval-censored row; the interval-mean hazard divides by ",
            "(u - l). ", length(bad), " of ", length(upper),
            " interval row(s) fail this, at index/indices ",
            paste(utils::head(bad, 10L), collapse = ", "),
-           if (length(bad) > 10L) ", ..." else "", ".",
-           call. = FALSE)
+           if (length(bad) > 10L) ", ..." else "", ".")
     }
   }
 
@@ -2036,7 +2053,7 @@
   list(time = time, status = status, time_lower = time_lower,
        time_upper = time_upper, x = x, weights = weights,
        x_list = x_list, covariate_counts = covariate_counts,
-       x_design = x_design)
+       x_design = x_design, rows_used = !drop_rows)
 }
 
 
@@ -2047,7 +2064,9 @@
 #'
 #' @param time Numeric vector of follow-up times.
 #' @param status Numeric event indicator vector.
-#' @param time_lower Optional lower bounds for interval censoring.
+#' @param time_lower Optional lower bounds: the counting-process ENTRY time
+#'   on a status 0/1 row when 0 < time_lower < time (left truncation), and the
+#'   interval's lower bound on a status-2 row.
 #' @param time_upper Optional upper bounds for left/interval censoring.
 #' @param x Global design matrix (n x p) or NULL.
 #' @param theta_start Starting parameter vector (full internal scale).
@@ -2095,6 +2114,7 @@
   x_list           <- built_designs$x_list
   covariate_counts <- built_designs$covariate_counts
   x_design         <- built_designs$x_design
+  rows_used        <- built_designs$rows_used
 
   # --- Assemble starting values if not provided ------------------------------
   if (is.null(theta_start)) {
@@ -2116,6 +2136,18 @@
   # further down then leaves the derived slot out of the search.
   theta_start <- .hzr_constrain_supplied_theta(theta_start, phases,
                                                covariate_counts)
+  # A g3 phase with alpha FIXED at 1 is re-expressed as PROC HAZARD does
+  # (#415): tau and one of gamma/eta are held, since the data cannot see them.
+  # Before the CoE setup and the fixed-parameter mask, which both read the
+  # phases' fixed sets and this start.
+  held <- .hzr_g3_alpha_one_hold(theta_start, phases)
+  theta_start <- held$theta
+  phases <- held$phases
+  # And under FIXGE2 (#418): refuse a fixed alpha above 1, move a free start
+  # at or above 1 to 2/3, as SETG3 does.
+  fixge2 <- .hzr_g3_fixge2_alpha(theta_start, phases)
+  theta_start <- fixge2$theta
+  held$records <- c(held$records, fixge2$records)
 
   # --- Likelihood wrapper matching .hzr_optim_generic() signature -----------
   # NOTE: `weights` is an explicit formal so that .hzr_optim_generic can pass
@@ -2272,19 +2304,33 @@
       }
 
       gradient_fn_pre_coe <- gradient_fn
+      # The objective above is L(phi, c(phi)): the conserved log_mu, c, is
+      # re-solved from the other parameters at every evaluation. Its gradient
+      # is the partial score plus how c moves, dL/dc * dc/dphi (#565). The
+      # CoE equation is S(phi, c) = total_events, S the weighted sum of
+      # H(stop) - H(start), so dc/dphi = -(dS/dphi) / (dS/dc). S is minus the
+      # log-likelihood of the same rows with every event read as censored,
+      # so its derivatives are the score at status 0.
       # Same formals as the base gradient_fn, sanitize included: R CMD check
       # flags local redefinitions whose formal arguments differ.
       gradient_fn <- function(theta, time, status, time_lower,
                               time_upper, x, weights = NULL,
                               sanitize = TRUE, ...) {
-        theta <- .hzr_conserve_events(
+        coe <- .hzr_conserve_events(
           theta, fixmu_phase, fixmu_pos,
           time, status, phases, covariate_counts, x_list, total_events,
-          weights = weights, time_lower = time_lower
+          weights = weights, time_lower = time_lower, details = TRUE
         )
-        gradient_fn_pre_coe(theta, time, status, time_lower,
-                            time_upper, x, weights = weights,
-                            sanitize = sanitize, ...)
+        g <- gradient_fn_pre_coe(coe$theta, time, status, time_lower,
+                                 time_upper, x, weights = weights,
+                                 sanitize = sanitize, ...)
+        # Where there was nothing to solve, c stayed where it was and does
+        # not move with phi: the partial score is the whole gradient.
+        if (!coe$solved) return(g)
+        g_s <- gradient_fn_pre_coe(coe$theta, time, 0 * status, time_lower,
+                                   time_upper, x, weights = weights,
+                                   sanitize = sanitize, ...)
+        g - g[fixmu_pos] * g_s / g_s[fixmu_pos]
       }
     } else {
       use_conserve <- FALSE
@@ -2347,9 +2393,10 @@
     theta_start_optim <- theta_start
   }
 
-  # Positions, in the optimizer's vector, of each free shape m. The
-  # finite-difference acceptance check (gradient_exact = FALSE) must not
-  # straddle m = 0, where the cdf and hazard families meet in a cusp (#251).
+  # Positions, in the optimizer's vector, of each free shape m. A
+  # finite-difference acceptance check (gradient_exact = FALSE, which no fit
+  # passes since #565) must not straddle m = 0, where the cdf and hazard
+  # families meet in a cusp (#251).
   # Taken from the layout -- log_mu, log_t_half, nu, m, then covariates --
   # not from names, which a covariate called m would collide with.
   mu_pos <- .hzr_log_mu_positions(phases, covariate_counts)
@@ -2532,10 +2579,13 @@
         control     = control,
         use_bounds  = FALSE,
         hessian_fn  = hessian_fn_mp,
-        # Under CoE gradient_fn is the partial score at the conserved theta,
-        # not the gradient of the objective being maximised.
-        gradient_exact = !(use_conserve && !is.null(fixmu_pos)),
-        sign_bounded = m_free_idx
+        # Under CoE too: gradient_fn carries the conserved log_mu's
+        # chain-rule term, so it is the gradient of the objective (#565).
+        gradient_exact = TRUE,
+        sign_bounded = m_free_idx,
+        # Each start is scored against the likelihood below and an
+        # infeasible one recorded in `starts` (#486).
+        mark_infeasible = FALSE
       ),
       error = function(e) e
     )
@@ -2630,6 +2680,10 @@
     )
   }
 
+  # FALSE when the reported objective is not the likelihood at the returned
+  # point (the CoE recompute below could not evaluate there).
+  value_at_returned <- TRUE
+
   # Expand optimized free params back to full theta vector
   if (any_fixed) {
     best_result$par <- expand_theta(best_result$par)
@@ -2644,6 +2698,72 @@
         time, status, phases, covariate_counts, x_list, total_events,
         weights = weights, time_lower = time_lower
       )
+      # The objective must describe the parameters returned (#362). The
+      # optimizer's value is the objective at the point IT held, and the line
+      # above has just moved the conserved scale, so the two can describe
+      # different points: on one fit the reported log-likelihood was
+      # -71.934410193 while the likelihood of the returned theta was
+      # -78.1497959154. Recomputed here from the unwrapped likelihood, which
+      # takes a full theta and applies no further conservation step.
+      #
+      # This corrects the REPORT only. The gap was largest where the fit
+      # itself is unsound -- estimates standing on a likelihood discontinuity,
+      # where a one-ulp parameter change moves the log-likelihood by several
+      # units (#448) -- and recomputing the value does not make such a fit
+      # sound. A non-finite recomputation is left alone rather than reported,
+      # because there the optimizer's own value is the better record and
+      # `converged` and the gradient test already speak to it.
+      # tryCatch for the same reason the per-start evaluation above has one: an
+      # error here would turn a completed optimisation into a hard failure
+      # after all the work is done.
+      value_at_par <- tryCatch(
+        logl_fn_unwrapped(
+          best_result$par, time, status, time_lower, time_upper, x,
+          weights = weights
+        ),
+        error = function(e) NA_real_
+      )
+      if (is.finite(value_at_par)) {
+        best_result$value <- value_at_par
+        # Is the likelihood higher with the conserved phase switched off
+        # (#261)? Only here, where the value IS the likelihood at the
+        # returned point; a certificate against any other value would compare
+        # two different points.
+        coe_boundary <- .hzr_coe_boundary_record(
+          theta = best_result$par, value = value_at_par,
+          converged = isTRUE(best_result$convergence == 0),
+          objective_fn = function(p) {
+            logl_fn_unwrapped(p, time, status, time_lower, time_upper, x,
+                              weights = weights)
+          },
+          fixmu_phase = fixmu_phase, fixmu_pos = fixmu_pos,
+          log_mu_positions = log_mu_positions, phases = phases,
+          covariate_counts = covariate_counts, x_list = x_list, time = time,
+          status = status, time_lower = time_lower, weights = weights,
+          total_events = total_events
+        )
+        if (!is.null(coe_boundary)) {
+          held$records <- c(held$records, list(coe_boundary))
+        }
+      } else {
+        value_at_returned <- FALSE
+        # Not silent. Keeping the optimizer's value here restores exactly the
+        # defect this block fixes, an objective describing a point other than
+        # the estimates, so it is said rather than left to be inferred from a
+        # number that looks ordinary.
+        warning(
+          "The log-likelihood could not be evaluated at the conserved ",
+          "estimates, so the reported objective is the optimizer's own value ",
+          "and describes a slightly different parameter vector. Compare ",
+          "hzr_evaluate(fit, coef(fit)) before relying on it.",
+          call. = FALSE
+        )
+      }
+      # `starts$objective` is deliberately NOT updated. It records what each
+      # start's optimisation reached, on one footing across rows, and `best` is
+      # the argmax of that column; rewriting only the winning row would break
+      # that. So under CoE the winning row can differ from the reported
+      # objective, by the size of the conservation adjustment.
     }
 
     # Expand vcov to full dimension (NA for fixed params -- not estimated)
@@ -2758,11 +2878,31 @@
     coe_reason
   }
 
+  # A FIXGE2 g3 phase that stopped short of its gamma = Inf supremum (#418).
+  # Post-fit and report-only: its records join the setup holds' channel, so
+  # hazard() puts them in $boundary and warns, and no estimate moves.
+  held$records <- c(held$records, .hzr_g3_corner_supremum(
+    theta = best_result$par,
+    # Only a value AT the returned point can be contradicted by a certificate.
+    value = if (value_at_returned) best_result$value else NA_real_,
+    converged = isTRUE(best_result$convergence == 0),
+    objective_fn = function(p) {
+      logl_fn_unwrapped(p, time, status, time_lower, time_upper, x,
+                        weights = weights)
+    },
+    phases = phases, covariate_counts = covariate_counts, x_list = x_list,
+    time = time, status = status, time_lower = time_lower, weights = weights
+  ))
+
   # Store phase metadata for downstream use (predict, summary)
   best_result$phases <- phases
+  best_result$held <- held$records
   best_result$covariate_counts <- covariate_counts
   best_result$x_list <- x_list
   best_result$x_design <- x_design
+  # Which of hazard()'s rows the likelihood read, in hazard()'s row order:
+  # post-fit checks over the observed times must not count a dropped row.
+  best_result$rows_used <- rows_used
 
   # Which starts survived, and which one the reported fit came from.
   best_result$starts <- starts
@@ -2781,6 +2921,14 @@
     tol = phase_share_tol,
     other_times = c(time_lower[status %in% c(0, 1, 2)],
                     time_upper[status %in% c(-1, 2)]))
+
+  # When the phase that check found absent is the conserved one, the fit is
+  # on the CoE boundary (#565). Recorded; the check above has warned.
+  # Without conservation fixmu_phase is NULL and nothing is recorded.
+  best_result$held <- c(best_result$held, list(.hzr_coe_vanished_record(
+    best_result$phase_share, fixmu_phase, phase_share_tol
+  )))
+  best_result$held <- Filter(Negate(is.null), best_result$held)
 
   best_result
 }
@@ -2801,7 +2949,13 @@
 #' @param gamma Positive scalar time exponent.
 #' @param alpha Non-negative scalar shape parameter.
 #' @param eta Positive scalar outer exponent.
-#' @param h Relative step size for finite differences (default 1e-5).
+#' @param h Finite-difference step (default 1e-5). It is an ABSOLUTE step in
+#'   `log_tau`, and so relative in `tau` only to first order; a relative step
+#'   with a `1e-10` floor for `gamma` and `eta`; and strictly proportional for
+#'   `alpha`. No caller passes it. Accuracy degrades where the function's
+#'   natural scale in `log_tau`, roughly `alpha / gamma`, is far from 1: at
+#'   `alpha = 0.05, gamma = 4` the `tau` derivative is accurate to about
+#'   1e-6 rather than the 1e-11 it reaches for ordinary shapes.
 #' @return Named list with Phi, phi, and 8 derivative vectors.
 #' @keywords internal
 .hzr_g3_phase_derivatives <- function(time, tau, gamma, alpha, eta,
@@ -2813,24 +2967,50 @@
   Phi0 <- d0$G3
   phi0 <- d0$g3
 
-  # Central differences for log_tau: tau * d/d(tau) = d/d(log(tau))
-  eps_tau <- max(abs(tau) * h, 1e-10)
-  if (tau - eps_tau > 0) {
-    d_plus  <- hzr_decompos_g3(time, tau = tau + eps_tau, gamma = gamma,
-                                 alpha = alpha, eta = eta)
-    d_minus <- hzr_decompos_g3(time, tau = tau - eps_tau, gamma = gamma,
-                                 alpha = alpha, eta = eta)
-    dPhi_dtau <- (d_plus$G3 - d_minus$G3) / (2 * eps_tau)
-    dphi_dtau <- (d_plus$g3 - d_minus$g3) / (2 * eps_tau)
+  # Central difference IN log_tau, which is what this block has always said
+  # it computes. It used to step tau LINEARLY by max(|tau| * h, 1e-10) and
+  # then multiply by tau. Below tau = 1e-10 that floor is larger than tau
+  # itself, the minus step would reach 0 so it fell back to a one-sided
+  # difference, and `tau * dPhi_dtau` cannot rescue a slope measured a
+  # hundred times away: dPhi/dlog_tau came back 99.4% wrong at tau = 1e-12,
+  # 1.4% at 1e-9 (#352, measured against an analytic derivative of the
+  # closed form).
+  #
+  # Stepping log_tau makes the step proportional to tau at every scale, so
+  # the one-sided fallback -- reachable only where a linear step could reach
+  # 0 -- has been removed. At tau == 0 exactly `hzr_decompos_g3()` already
+  # returns `G3 = Inf`, so the base evaluation above is degenerate before any
+  # step is taken and the fallback could not have rescued that case either.
+  #
+  # WHERE THE STEP ITSELF COLLAPSES. A multiplicative step needs `tau` to
+  # have bits left to move. In the denormal range it does not: `5e-324` IS
+  # `4.9406564584124654e-324`, the smallest positive double, and both
+  # `5e-324 * exp(1e-5)` and `5e-324 * exp(-1e-5)` round back to it, so the
+  # two evaluation points COINCIDE and the difference quotient is 0/(2h).
+  # That returns a clean, plausible ZERO for a derivative whose true value
+  # is around -1.8e126 -- the shape of defect this package exists to avoid.
+  # `tau = Inf` coincides the same way. So the degeneracy is detected and
+  # reported as NaN, which is not a number anyone will mistake for an answer.
+  # Measured: the collapse begins below tau ~ 5e-319.
+  #
+  # gamma and eta keep their floored linear steps DELIBERATELY: G3 is very
+  # nearly linear in each of them near zero, so a 1e-10 step stays small
+  # relative to the scale on which the function varies even when it is 100%
+  # of the parameter, and both measure clean (1.1e-6 and 2.0e-7 at worst) at
+  # the shapes the review of #332 flagged.
+  tau_plus  <- tau * exp(h)
+  tau_minus <- tau * exp(-h)
+  if (!is.finite(tau) || tau_plus == tau_minus) {
+    dPhi_dlog_tau <- rep(NaN, length(Phi0))
+    dphi_dlog_tau <- rep(NaN, length(phi0))
   } else {
-    d_plus  <- hzr_decompos_g3(time, tau = tau + eps_tau, gamma = gamma,
+    d_plus  <- hzr_decompos_g3(time, tau = tau_plus, gamma = gamma,
                                  alpha = alpha, eta = eta)
-    dPhi_dtau <- (d_plus$G3 - Phi0) / eps_tau
-    dphi_dtau <- (d_plus$g3 - phi0) / eps_tau
+    d_minus <- hzr_decompos_g3(time, tau = tau_minus, gamma = gamma,
+                                 alpha = alpha, eta = eta)
+    dPhi_dlog_tau <- (d_plus$G3 - d_minus$G3) / (2 * h)
+    dphi_dlog_tau <- (d_plus$g3 - d_minus$g3) / (2 * h)
   }
-  # Chain rule: d/d(log_tau) = tau * d/d(tau)
-  dPhi_dlog_tau <- tau * dPhi_dtau
-  dphi_dlog_tau <- tau * dphi_dtau
 
   # Central differences for gamma (must stay positive)
   eps_g <- max(abs(gamma) * h, 1e-10)
