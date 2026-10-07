@@ -103,7 +103,7 @@ The rest run and report but do not block.
 | `lint.yaml` → `house-style` | PR, push | **yes** | fails when `.claude/house-style.md` has drifted from its vault sources |
 | `lint.yaml` → `docs-current` | PR, push | no | `git diff --exit-code man/ NAMESPACE DESCRIPTION` after `document()` |
 | `spelling.yaml` | PR, push | **yes** | `spelling::spell_check_package(use_wordlist = TRUE)` |
-| `R-CMD-check.yaml`, Linux | PR, push, manual | **yes** | ubuntu devel/release/oldrel-1 |
+| `R-CMD-check.yaml`, Linux | PR, push, manual | **yes** | ubuntu devel/release/oldrel-1; also ubuntu R 4.1, the declared floor, which reports but is not required |
 | `R-CMD-check.yaml`, macOS and Windows | push to `main`, manual | **yes**, but see below | macOS release, Windows release |
 | `test-coverage.yaml` | push to `main` | no | coverage upload |
 | `pkgdown.yaml` → `build-and-deploy` | push to `main`, manual | no | docs site |
