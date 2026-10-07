@@ -14,7 +14,14 @@ as one.
 ## Usage
 
 ``` r
-.hzr_check_sas_data(status, time, time_lower, time_upper, objective)
+.hzr_check_sas_data(
+  status,
+  time,
+  time_lower,
+  time_upper,
+  objective,
+  row_ids = NULL
+)
 ```
 
 ## Arguments
@@ -34,6 +41,13 @@ as one.
 - objective:
 
   Resolved objective, `"likelihood"` or `"sas"`.
+
+- row_ids:
+
+  Optional row numbers to report in place of positions: the rows as the
+  caller gave them, when
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  has dropped rows at time 0 (#484). `NULL` reports positions.
 
 ## Value
 

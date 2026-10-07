@@ -80,7 +80,14 @@ this once, before any optimization, so a data defect is reported as one.</p>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">.hzr_check_sas_data</span><span class="op">(</span><span class="va">status</span>, <span class="va">time</span>, <span class="va">time_lower</span>, <span class="va">time_upper</span>, <span class="va">objective</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">.hzr_check_sas_data</span><span class="op">(</span></span>
+<span>  <span class="va">status</span>,</span>
+<span>  <span class="va">time</span>,</span>
+<span>  <span class="va">time_lower</span>,</span>
+<span>  <span class="va">time_upper</span>,</span>
+<span>  <span class="va">objective</span>,</span>
+<span>  row_ids <span class="op">=</span> <span class="cn">NULL</span></span>
+<span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -101,6 +108,12 @@ this once, before any optimization, so a data defect is reported as one.</p>
 
 <dt id="arg-objective">objective<a class="anchor" aria-label="anchor" href="#arg-objective"></a></dt>
 <dd><p>Resolved objective, <code>"likelihood"</code> or <code>"sas"</code>.</p></dd>
+
+
+<dt id="arg-row-ids">row_ids<a class="anchor" aria-label="anchor" href="#arg-row-ids"></a></dt>
+<dd><p>Optional row numbers to report in place of positions: the
+rows as the caller gave them, when <code><a href="hazard.html">hazard()</a></code> has dropped rows at time 0
+(#484). <code>NULL</code> reports positions.</p></dd>
 
 </dl></div>
     <div class="section level2">
