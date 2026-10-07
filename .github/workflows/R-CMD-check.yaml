@@ -101,6 +101,9 @@ jobs:
           # runs it: oldrel-1 is the previous release, not the floor. Not a
           # required check, so a dependency that drops 4.1 cannot block merges.
           - {os: ubuntu-latest, r: '4.1', per_pr: true}
+          - {os: ubuntu-latest, r: '4.2', per_pr: true}
+          - {os: ubuntu-latest, r: '4.3', per_pr: true}
+          - {os: ubuntu-latest, r: '4.4', per_pr: true}
           - {os: macos-latest,  r: 'release'}
           - {os: windows-latest, r: 'release'}
 
