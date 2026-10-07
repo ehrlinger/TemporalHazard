@@ -1623,6 +1623,11 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #' frequency across replicates, and `summary$mean`/`sd`/`ci_*` describe the
 #' coefficient distribution conditional on selection.
 #'
+#' A replicate in which any fit (the base refit, a stepwise refit or the final
+#' fit) may not be a maximum, by the rule [hazard()] warns on with class
+#' `"hzr_possible_false_maximum"`, is counted, and `hzr_bootstrap()` warns
+#' once with that count. Such replicates are kept in the pooled results.
+#'
 #' @param object A fitted `hazard` object (with `fit = TRUE`).
 #' @param n_boot Integer: number of bootstrap replicates (default 200).
 #' @param fraction Numeric in (0, 1]: fraction of data to sample per

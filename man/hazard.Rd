@@ -523,8 +523,8 @@ iteration limit (raise \code{control$maxit}), and code 5, where the
 log-likelihood kept rising along some direction and the model may have no
 maximum. Codes 2 and 3, where SAS/C prints a caution, are recorded without
 one, except for the single-distribution fits: there a converged fit with
-a relative gradient above 1e-3 that did not stop on code 4 or 5 (so code
-2 or 3, or no code, which is recorded only when the continuation's point
+a relative gradient above 1e-3 that did not stop on code 4 or 5 (in
+practice code 2 or 3, or no code, which is recorded only when the continuation's point
 was kept: none is when it found no better point, \code{\link[stats:nlm]{stats::nlm()}} raised
 an error, or its minimum was not finite) warns,
 with class \code{"hzr_possible_false_maximum"}, that the fit may not be a
