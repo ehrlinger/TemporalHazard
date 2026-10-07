@@ -235,7 +235,7 @@
     )
   }
   h <- .hzr_score_try(
-    numDeriv::hessian(
+    .hzr_numeric_hessian(
       function(par) .hzr_score_single_nll(current, x, par), theta
     )
   )
@@ -283,7 +283,7 @@
       objective = .hzr_fit_objective(current)
     )
   }
-  h <- .hzr_score_try(numDeriv::hessian(nll, theta))
+  h <- .hzr_score_try(.hzr_numeric_hessian(nll, theta))
   if (is.null(h) || !is.matrix(h) || nrow(h) != length(theta) ||
         !all(is.finite(h))) {
     return(NULL)

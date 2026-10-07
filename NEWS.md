@@ -9,6 +9,29 @@
 
 ## Bug fixes
 
+* **Standard errors computed numerically could be far too small, with no
+  warning, when a covariate was far from zero (#598).** Fits with left- or
+  interval-censored rows, which have no analytic Hessian, take theirs
+  from `numDeriv::hessian()`, as does the score criterion of
+  `hzr_stepwise()`. Its default step is a tenth of each parameter's size,
+  and an intercept that absorbs a covariate's offset is large, so the step
+  spanned many standard errors. With the covariate offset by 100, a fit
+  reached the same log-likelihood as the centred fit and reported SE(beta)
+  at 0.035 (Weibull), 0.047 (exponential), 0.073 (log-logistic) and 0.52
+  (lognormal) of the centred fit's; at an offset of 1000, an exponential
+  SE was 1e-28 of it, a Weibull fit had no covariance, and a lognormal
+  fit's standard errors were `NA`.
+    - The step is now set from the curvature: 0.1 standard error along each
+      direction of the Hessian, refined twice, with each direction's step
+      capped at `numDeriv`'s own first step in every parameter. The same fits
+      now agree with the centred fit's standard errors at offsets of 100
+      and 1000.
+    - A Hessian that is not positive definite is still reported as found.
+    - The remaining limit is double precision: at an offset of 1e4 the
+      exact Hessian's reciprocal condition number is about 1e-16, so no
+      Hessian on that scale can be inverted reliably. Centring the
+      covariates avoids it.
+
 * **A single-distribution fit (exponential, Weibull, lognormal or
   loglogistic) could stop at a false maximum, far below the best
   log-likelihood, and report `converged = TRUE` with no warning (#531).**
