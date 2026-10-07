@@ -49,13 +49,14 @@ NULL
 # Jacobian: Weibull
 # ---------------------------------------------------------------------------
 #
-# Parameter layout (natural scale, matching .hzr_logl_weibull):
-#   theta = [mu, nu, beta_1, ..., beta_p]
+# Parameter layout: log(mu) in place of mu (#566), as .hzr_weibull_log_scale()
+# gives it; mu itself can overflow or underflow at a genuine maximum.
+#   theta = [log(mu), nu, beta_1, ..., beta_p]
 #
-# H(t|x) = (mu t)^nu exp(eta),   h_rel = exp(eta),   eta = x beta.
+# H(t|x) = exp(nu (log(mu) + log t) + eta),   h_rel = exp(eta),   eta = x beta.
 #
 # Analytical derivatives used below:
-#   dH/dmu       = (nu / mu) H
+#   dH/dlog(mu)  = nu H
 #   dH/dnu       = log(mu t) H
 #   dH/dbeta_j   = x_ij H
 #
@@ -66,15 +67,15 @@ NULL
 #' Jacobian of Weibull predictions with respect to theta
 #'
 #' @param type Prediction type (see `.hzr_predict_with_se`).
-#' @param theta MLE parameter vector `c(mu, nu, beta_1, ...)`.
+#' @param theta MLE parameter vector `c(log(mu), nu, beta_1, ...)` (#566).
 #' @param time Prediction times (may be NULL for `hazard` / `linear_predictor`).
 #' @param x Design matrix (n x p_cov) or NULL.
 #' @param p Length of theta.
-#' @return Numeric n x p Jacobian.
+#' @return Numeric n x p Jacobian, with respect to `log(mu)`, `nu` and beta.
 #' @keywords internal
 .hzr_predict_jacobian_weibull <- function(type, theta, time, x, p) {
   n_shape <- 2L
-  mu <- theta[1]
+  log_mu <- theta[1]
   nu <- theta[2]
   beta <- if (p > n_shape) theta[(n_shape + 1L):p] else numeric(0)
 
@@ -92,9 +93,9 @@ NULL
   if (type %in% c("cumulative_hazard", "survival")) {
     # On the log scale, as predict() computes H: mu * time can overflow where
     # H is finite (#566).
-    log_mu_t <- log(mu) + log(time)
+    log_mu_t <- log_mu + log(time)
     H <- exp(nu * log_mu_t + eta)
-    J[, 1L] <- (nu / mu) * H
+    J[, 1L] <- nu * H
     J[, 2L] <- log_mu_t * H
     if (length(beta) > 0L && !is.null(x)) {
       J[, (n_shape + 1L):p] <- x * H
@@ -335,6 +336,39 @@ NULL
 # ---------------------------------------------------------------------------
 # Free-parameter vcov helper (shared by aggregate and decomposed se.fit paths)
 # ---------------------------------------------------------------------------
+
+#' A Weibull fit's parameters with log(mu) in place of mu (#566)
+#'
+#' Predictions read a Weibull fit on this scale. Where the fit recorded that
+#' mu, or its variance, cannot be represented (`$fit$log_scale$needed`), the
+#' stored log-scale estimate and covariance are used, provided they still
+#' agree with `$fit$theta` (an object whose theta was edited is read from its
+#' theta). Otherwise they are derived from theta and the natural-scale vcov:
+#' `log(mu)`, and `D V D` with `D = diag(1 / mu, 1, ...)`, formed by dividing
+#' mu's row and column by mu so that `1 / mu^2` is never formed.
+#' @return `list(theta, vcov, stored)`; `vcov` is `NULL` when there is none.
+#' @noRd
+.hzr_weibull_log_scale <- function(object) {
+  theta <- unname(object$fit$theta)
+  ls <- object$fit$log_scale
+  stored <- isTRUE(ls$needed) && length(ls$theta) == length(theta) &&
+    isTRUE(all(unname(ls$theta)[-1L] == theta[-1L])) &&
+    identical(exp(unname(ls$theta)[[1L]]), theta[[1L]]) &&
+    is.finite(ls$theta[[1L]])
+  if (stored) {
+    v <- ls$vcov
+    if (is.matrix(v)) dimnames(v) <- NULL
+    return(list(theta = unname(ls$theta), vcov = v, stored = TRUE))
+  }
+  v <- object$fit$vcov
+  if (is.matrix(v) && nrow(v) == length(theta) && ncol(v) == length(theta)) {
+    # Divided by mu twice, not by mu^2: 1 / mu^2 overflows for mu below about
+    # 1e-154, where var(mu) / mu^2 is an ordinary number.
+    v[1L, ] <- v[1L, ] / theta[[1L]]
+    v[, 1L] <- v[, 1L] / theta[[1L]]
+  }
+  list(theta = c(log(theta[[1L]]), theta[-1L]), vcov = v, stored = FALSE)
+}
 
 #' Which variances overflowed or underflowed (#566)
 #'
@@ -599,8 +633,16 @@ NULL
   if (type == "survival") conf_type <- match.arg(conf_type)
 
   theta <- object$fit$theta
-  p <- length(theta)
+  vcov_mat <- object$fit$vcov
   dist <- object$spec$dist
+  # A Weibull fit is read with log(mu) in place of mu (#566): `diff_fn` and
+  # the Jacobian take that scale, and so does the covariance.
+  if (dist == "weibull") {
+    lsc <- .hzr_weibull_log_scale(object)
+    theta <- lsc$theta
+    vcov_mat <- lsc$vcov
+  }
+  p <- length(theta)
   target <- diff_fn(theta)
 
   # --- Build Jacobian of the delta-method target ---------------------------
@@ -626,7 +668,7 @@ NULL
   }
   # An absent or wrong-sized vcov withholds every SE; say so before paying
   # for a Jacobian.
-  if (.hzr_vcov_shape_ok(object$fit$vcov, p)) {
+  if (.hzr_vcov_shape_ok(vcov_mat, p)) {
     J <- jacobian()
     # A parameter this prediction does not depend on, by its form: a Weibull
     # mu or nu for the relative hazard and linear predictor, or a coefficient
@@ -642,11 +684,17 @@ NULL
     } else {
       rep(TRUE, p)
     }
-    fv <- .hzr_free_vcov(object$fit$vcov, p, unused = which(!used),
+    # A Weibull fit is read on the log(mu) scale (#566), so its first
+    # parameter is named for that scale.
+    fv <- .hzr_free_vcov(vcov_mat, p, unused = which(!used),
                          fixed = object$fit$fixed_mask,
-                         param_names = names(theta))
+                         param_names = if (dist == "weibull") {
+                           c("log(mu)", names(object$fit$theta)[-1L])
+                         } else {
+                           names(theta)
+                         })
   } else {
-    fv <- .hzr_free_vcov(object$fit$vcov, p)
+    fv <- .hzr_free_vcov(vcov_mat, p)
   }
   if (is.null(fv)) {
     n <- length(target)
