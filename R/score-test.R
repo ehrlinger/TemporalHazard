@@ -936,9 +936,14 @@
     why_frame
   } else if (is.data.frame(frame) && !shares) {
     "`data` shares no column with the data frame stored with the fit"
-  } else if (is.data.frame(frame)) {
+  } else if (is.data.frame(frame) && nrow(frame) != length(time)) {
     paste0("the data frame stored with the fit has ", nrow(frame),
            " rows, not the fit's ", length(time))
+  } else if (is.data.frame(frame)) {
+    # The frame is the fit's rows; it is `data` that differs. Comparing the
+    # frame with the fit here printed two equal counts (#484).
+    paste0("`data` has ", nrow(data), " rows, not the ", nrow(frame),
+           " of the data frame stored with the fit")
   } else {
     "the fit was made without `data =`, so it stores no data frame"
   }

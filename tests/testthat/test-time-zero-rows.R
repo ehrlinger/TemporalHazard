@@ -424,3 +424,168 @@ test_that("an unnamed list column is named by position in the refusal", {
                                        theta = tz_theta$weibull, fit = TRUE)),
                "'data[[3]]' has 3 row(s)", fixed = TRUE)
 })
+
+test_that("row numbers after a drop refer to the rows as given (#484)", {
+  d <- tz_data()
+  d0 <- rbind(data.frame(time = 0, status = 1, x = 0.1), d)
+  # Original row 10 is the 9th row that remains.
+  st <- d0$status
+  st[10] <- NA
+  expect_error(suppressWarnings(hazard(time = d0$time, status = st,
+                                       dist = "weibull",
+                                       theta = tz_theta$weibull, fit = TRUE)),
+               "at index/indices 10\\.")
+  st <- d0$status
+  st[12] <- 7
+  expect_error(suppressWarnings(hazard(time = d0$time, status = st,
+                                       dist = "weibull",
+                                       theta = tz_theta$weibull, fit = TRUE)),
+               "at index/indices 12\\.")
+  # objective = "sas": an interval row with upper <= lower, at original row 5.
+  st <- d0$status
+  st[5] <- 2
+  lo <- d0$time
+  up <- d0$time
+  up[5] <- lo[5] / 2
+  expect_error(suppressWarnings(hazard(
+    time = d0$time, status = st, time_lower = lo, time_upper = up,
+    dist = "multiphase", phases = list(c = hzr_phase("constant")),
+    objective = "sas", fit = TRUE)),
+    "at index/indices 5\\.")
+  # With nothing dropped, positions are the rows given, as before.
+  st <- d$status
+  st[10] <- NA
+  expect_error(suppressWarnings(hazard(time = d$time, status = st,
+                                       dist = "weibull",
+                                       theta = tz_theta$weibull, fit = TRUE)),
+               "at index/indices 10\\.")
+})
+
+test_that("the re-parse after a drop does not repeat a term's warnings (#484)", {
+  d <- tz_data()
+  d0 <- rbind(data.frame(time = 0, status = 1, x = 0.1), d)
+  noisy <- function(a) {
+    warning("noisy term")
+    a
+  }
+  count <- function(data) {
+    k <- 0L
+    withCallingHandlers(
+      hazard(survival::Surv(time, status) ~ noisy(x), data = data,
+             dist = "weibull", theta = c(tz_theta$weibull, 0), fit = TRUE),
+      warning = function(w) {
+        if (identical(conditionMessage(w), "noisy term")) k <<- k + 1L
+        invokeRestart("muffleWarning")
+      })
+    k
+  }
+  k_kept <- count(d)
+  expect_gt(k_kept, 0L)
+  expect_identical(count(d0), k_kept)
+  # A warning only the retained rows raise is not a repeat, and still shows.
+  only_kept <- function(a) {
+    if (length(a) == nrow(d)) warning("retained rows only")
+    a
+  }
+  msgs <- character(0)
+  withCallingHandlers(
+    hazard(survival::Surv(time, status) ~ only_kept(x), data = d0,
+           dist = "weibull", theta = c(tz_theta$weibull, 0), fit = TRUE),
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+  expect_gt(sum(msgs == "retained rows only"), 0L)
+})
+
+test_that("hzr_stepwise() names the drop when given the data before it (#484)", {
+  withr::local_seed(6)
+  n <- 120
+  dm <- data.frame(time = c(rep(0, 4), stats::rexp(n - 4, 0.3) + 0.01),
+                   status = stats::rbinom(n, 1, 0.7),
+                   x1 = stats::rnorm(n), x2 = stats::rnorm(n))
+  fit <- suppressWarnings(hazard(
+    time = dm$time, status = dm$status, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1),
+                  const = hzr_phase("constant")), fit = TRUE))
+  expect_identical(fit$data$dropped_time_zero, 4L)
+  msgs <- character(0)
+  withCallingHandlers(
+    hzr_stepwise(fit, data = dm, scope = list(const = ~ x1 + x2),
+                 criterion = "wald", trace = FALSE),
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+  hit <- grep("it dropped at time 0", msgs, fixed = TRUE, value = TRUE)
+  expect_length(hit, 1L)
+  expect_match(hit, "has 120 rows: the fit's 116 plus the 4", fixed = TRUE)
+  expect_match(hit, "(rows 1, 2, 3, 4 of", fixed = TRUE)
+  # Given the rows that remain, there is nothing to say.
+  msgs <- character(0)
+  withCallingHandlers(
+    hzr_stepwise(fit, data = dm[-(1:4), ], scope = list(const = ~ x1 + x2),
+                 criterion = "wald", trace = FALSE),
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+  expect_false(any(grepl("it dropped at time 0", msgs, fixed = TRUE)))
+  # A formula fit given a frame whose dropped row differs is not trimmed
+  # either, and stops on a row count; the drop is named first.
+  df <- dm[-(2:4), ]
+  ff <- suppressWarnings(hazard(survival::Surv(time, status) ~ 1, data = df,
+                                dist = "weibull", theta = c(0.3, 1.2),
+                                fit = TRUE))
+  other <- df
+  other$time[1] <- 2
+  msgs <- character(0)
+  expect_error(
+    withCallingHandlers(
+      hzr_stepwise(ff, scope = c("x1", "x2"), data = other, trace = FALSE),
+      warning = function(w) {
+        msgs <<- c(msgs, conditionMessage(w))
+        invokeRestart("muffleWarning")
+      }),
+    "rows but the fitted model used")
+  expect_true(any(grepl("plus the 1 it dropped at time 0 (rows 1 of", msgs,
+                        fixed = TRUE)))
+  # The row-order note compares `data` with the stored frame; it used to
+  # compare the frame with the fit, and printed "116 rows, not the fit's 116".
+  expect_true(any(grepl("`data` has 117 rows, not the 116 of the data frame",
+                        msgs, fixed = TRUE)))
+  expect_false(any(grepl("rows, not the fit's", msgs, fixed = TRUE)))
+})
+
+test_that("hzr_bootstrap() resamples the rows that remain (#484)", {
+  d <- tz_data()
+  d0 <- rbind(data.frame(time = 0, status = 1, x = 0.1), d)
+  boot <- function(data) {
+    f <- suppressWarnings(hazard(survival::Surv(time, status) ~ x,
+                                 data = data, dist = "weibull",
+                                 theta = c(tz_theta$weibull, 0), fit = TRUE))
+    suppressWarnings(hzr_bootstrap(f, n_boot = 5, seed = 484))
+  }
+  with_zero <- boot(d0)
+  without <- boot(d)
+  # Premise: the replicates differ from one another, so equality below
+  # compares resamples, not one repeated fit.
+  est <- with_zero$replicates$estimate[with_zero$replicates$parameter == "x"]
+  expect_gt(stats::sd(est), 0)
+  expect_identical(with_zero$n_success, 5L)
+  expect_equal(with_zero$replicates, without$replicates, tolerance = 1e-10)
+})
+
+test_that("a transformed response that does not depend on the dropped rows is fitted (#484)", {
+  d <- tz_data()
+  d0 <- rbind(data.frame(time = 0, status = 1, x = 0.1), d)
+  # time / max(time) is the same on the rows that remain: max is not at 0.
+  got <- suppressWarnings(hazard(
+    survival::Surv(time / max(time), status) ~ x, data = d0,
+    dist = "weibull", theta = c(tz_theta$weibull, 0), fit = TRUE))
+  ref <- suppressWarnings(hazard(
+    survival::Surv(time / max(time), status) ~ x, data = d,
+    dist = "weibull", theta = c(tz_theta$weibull, 0), fit = TRUE))
+  expect_identical(got$data$dropped_time_zero, 1L)
+  expect_equal(coef(got), coef(ref), tolerance = 1e-8)
+})
