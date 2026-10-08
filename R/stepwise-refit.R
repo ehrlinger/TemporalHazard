@@ -531,6 +531,12 @@
       old_windows = current$spec$time_windows,
       new_windows = new_design$spec$time_windows
     )
+    if (identical(dist, "weibull")) {
+      theta_start <- .hzr_refit_weibull_start(
+        theta_start, current, new_design$data$x,
+        n_win = length(new_design$spec$time_windows) + 1L
+      )
+    }
 
     .hzr_muffle_intercept_warning(do.call(hazard, c(
       list(
@@ -612,6 +618,54 @@
     return(unname(theta_start))
   }
   names(theta_start) <- c(names(theta_old)[seq_len(n_shape)], names_new)
+  theta_start
+}
+
+#' A representable Weibull warm start for a refit (#566)
+#'
+#' A Weibull fit with a covariate far from zero can sit at a maximum whose
+#' `log(mu)` is outside the range a double holds, so its `mu` reads 0, `Inf`
+#' or a subnormal number while the fit keeps `log(mu)` in `$fit$log_scale`.
+#' `hazard()` takes a natural-scale `theta`, and `.hzr_check_theta()` refuses
+#' such a `mu`, so a warm start copied from the fit failed every candidate
+#' refit and the screen tested nothing.
+#'
+#' The start takes `log(mu)` from the fit instead, moved to the nearest value
+#' whose `exp()` is a normal double. Moving it alone left the start too far
+#' from the base fit for the optimizer to come back: the log cumulative hazard
+#' is `nu * log(mu) + x'beta`, and the move shifts it by `nu` times the
+#' distance moved, which was 12.6 on one resample, and that refit stopped at a
+#' log-likelihood thousands of units below its base. So the shift is put back
+#' through the coefficients, as the least-squares combination of the refit's
+#' design columns closest to that constant. A column far from zero, the cause
+#' of the problem, carries it almost exactly. Under `time_windows` each
+#' window's block of columns is on only in its own window, so the same
+#' combination is added to every block.
+#'
+#' @param theta_start The warm start from `.hzr_refit_warm_start()`.
+#' @param current The base fit.
+#' @param x_new The refit's design, before any time-window expansion.
+#' @param n_win The refit's number of time windows (1 without them).
+#' @return `theta_start`, unchanged where the fit's `mu` is representable.
+#' @noRd
+.hzr_refit_weibull_start <- function(theta_start, current, x_new, n_win) {
+  mu <- theta_start[[1L]]
+  if (!(.hzr_unrepresentable(mu) || mu == 0)) return(theta_start)
+  log_mu <- .hzr_weibull_log_scale(current)$theta[[1L]]
+  # Not finite only where the fit kept no log scale; the start is left as it
+  # was, and hazard() refuses it by name.
+  if (!is.finite(log_mu)) return(theta_start)
+  # One unit inside each end, so the start is a normal double after exp().
+  lim <- log(c(.Machine$double.xmin, .Machine$double.xmax)) + c(1, -1)
+  log_mu_start <- min(max(log_mu, lim[[1L]]), lim[[2L]])
+  theta_start[[1L]] <- exp(log_mu_start)
+  shift <- theta_start[[2L]] * (log_mu - log_mu_start)
+  if (is.matrix(x_new) && ncol(x_new) > 0L) {
+    b <- qr.coef(qr(x_new), rep(shift, nrow(x_new)))
+    b[is.na(b)] <- 0
+    at <- -seq_len(2L)
+    theta_start[at] <- theta_start[at] + rep(unname(b), n_win)
+  }
   theta_start
 }
 
