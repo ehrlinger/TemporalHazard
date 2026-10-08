@@ -2249,22 +2249,118 @@
   unique(sub("^.*[= ]", "", m))
 }
 
+#' The macro a statement calls, or `NULL`.
+#'
+#' `%INCLUDE` (and `%INC`) counts as a call: it runs code this cannot see.
+#' The macro language's own statements and functions do not.
+#' @noRd
+.hzr_sas_macro_call <- function(stmt) {
+  m <- regmatches(stmt, regexec("^%([A-Z_][A-Z0-9_]*)", stmt))[[1L]]
+  if (!length(m)) return(NULL)
+  nm <- m[[2L]]
+  if (nm == "INC") nm <- "INCLUDE"
+  lang <- c("LET", "PUT", "IF", "THEN", "ELSE", "DO", "END", "TO", "BY",
+            "WHILE", "UNTIL", "GLOBAL", "LOCAL", "MACRO", "MEND", "GOTO",
+            "RETURN", "ABORT", "SYMDEL", "SYSCALL", "SYSEXEC", "SYSLPUT",
+            "SYSRPUT", "SYSMACDELETE", "WINDOW", "DISPLAY", "INPUT", "COPY",
+            "STR", "NRSTR", "QUOTE", "NRQUOTE", "BQUOTE", "NRBQUOTE", "SUPERQ",
+            "UNQUOTE", "EVAL", "SYSEVALF", "SYSFUNC", "QSYSFUNC")
+  if (nm %in% lang) NULL else nm
+}
+
+#' The `%MACRO ... %MEND` definitions among a job's statements.
+#' @return `list(scope, bodies)`: `scope[i]` numbers the outermost
+#'   definition statement `i` belongs to, `%MACRO` and `%MEND` included, and
+#'   is 0 outside every definition; `bodies` holds each macro's statements,
+#'   named by the macro.
+#' @noRd
+.hzr_sas_macro_defs <- function(stmts) {
+  scope <- integer(length(stmts))
+  bodies <- list()
+  depth <- 0L
+  n_def <- 0L
+  open <- character(0)
+  for (i in seq_along(stmts)) {
+    t <- stmts[[i]]
+    if (grepl("^%MACRO ", t)) {
+      if (depth == 0L) n_def <- n_def + 1L
+      depth <- depth + 1L
+      open <- c(open, sub("^%MACRO +([A-Z_][A-Z0-9_]*).*$", "\\1", t))
+      bodies[[open[[depth]]]] <- character(0)
+      scope[[i]] <- n_def
+      next
+    }
+    if (depth == 0L) next
+    scope[[i]] <- n_def
+    if (grepl("^%MEND( |$)", t)) {
+      open <- open[-depth]
+      depth <- depth - 1L
+      next
+    }
+    for (nm in open) bodies[[nm]] <- c(bodies[[nm]], t)
+  }
+  list(scope = scope, bodies = bodies)
+}
+
+#' The definition the statement holding offset `pos` stands in, or 0.
+#' @noRd
+.hzr_sas_scope_at <- function(st, defs, pos) {
+  i <- which(st$start <= pos)
+  if (length(i)) defs$scope[[max(i)]] else 0L
+}
+
+#' The datasets a macro body names as written, and whether it may write
+#' others: through a macro variable (`DATA &DS;`), or by calling a macro or
+#' an `%INCLUDE` of its own.
+#' @noRd
+.hzr_sas_body_writes <- function(body) {
+  nms <- character(0)
+  unknown <- FALSE
+  for (t in body) {
+    if (grepl("^DATA( |$)", t) && !grepl("^DATA *=", t)) {
+      rest <- strsplit(gsub("[(][^)]*[)]", " ", trimws(sub("^DATA", "", t))), " +")[[1L]]
+      nms <- c(nms, rest)
+    } else {
+      nms <- c(nms, .hzr_sas_written_names(t))
+      if (!is.null(.hzr_sas_macro_call(t))) unknown <- TRUE
+    }
+    if (grepl("&", t) && grepl("^DATA |(OUT[A-Z]*|BASE) *= *&", t)) unknown <- TRUE
+  }
+  nms <- nms[grepl("^[A-Z_][A-Z0-9_.]*$", nms) & nms != "_NULL_"]
+  list(names = unique(nms), unknown = unknown)
+}
+
 #' Every point in a job where a dataset is (re)defined, in file order.
 #'
-#' Four kinds. `data`: a `DATA <name>;` step, carrying its statements.
+#' Five kinds. `data`: a `DATA <name>;` step, carrying its statements.
 #' `hazpred`: a `PROC HAZPRED ... OUT=`, whose output has one row per row of
 #' its `DATA=` dataset (`hazpred/obsloop.c:17-26`, `:67`). `sort`: a
 #' `PROC SORT ... ; BY ...;`, which reorders its input. `opaque`: anything
 #' else that writes a dataset (another procedure's or a macro's `OUT=`, a
 #' multi-dataset or optioned `DATA` statement), which this cannot read and so
 #' refuses if a grid depends on it.
+#'
+#' A `%MACRO ... %MEND` body is a definition: SAS runs its statements where
+#' the macro is called, not where they stand. Each event carries `scope`,
+#' the definition it stands in (0 outside every one), and
+#' `.hzr_parse_grid()` reads a definition's events only for a PROC HAZPRED
+#' in the same definition. A call of a macro defined in the file is an
+#' `opaque` event for each dataset its body names as written. The fifth
+#' kind, `call`, has no dataset: an `%INCLUDE`, a call of a macro the file does not define, or of
+#' one whose body writes through a macro variable or runs code of its own.
+#' It may rewrite any dataset and this cannot say which, so
+#' `.hzr_parse_grid()` records it rather than refusing.
 #' @noRd
 .hzr_sas_dataset_events <- function(txt, blocks) {
+  st <- .hzr_sas_statements(txt)
+  defs <- .hzr_sas_macro_defs(st$text)
+  scope_at <- function(pos) .hzr_sas_scope_at(st, defs, pos)
   ev <- list()
   add <- function(pos, name, kind, ...) {
     extra <- list(...)
     if (!is.null(extra$from)) extra$from <- .hzr_sas_ds(extra$from)
-    ev[[length(ev) + 1L]] <<- c(list(pos = pos, name = .hzr_sas_ds(name), kind = kind), extra)
+    ev[[length(ev) + 1L]] <<- c(list(pos = pos, name = .hzr_sas_ds(name), kind = kind,
+                                     scope = scope_at(pos)), extra)
   }
   for (b in blocks) {
     head <- sub(";.*$", "", b$text)
@@ -2285,14 +2381,13 @@
     }
   }
 
-  st <- .hzr_sas_statements(txt)
   in_block <- function(s, e) {
     any(vapply(blocks, function(b) e >= b$start && s <= b$end, logical(1L)))
   }
   cur <- NULL
   proc <- NULL
   last_name <- function(p) {
-    before <- Filter(function(x) x$pos < p, ev)
+    before <- Filter(function(x) x$pos < p && !is.na(x$name), ev)
     if (!length(before)) return(NULL)
     before[[which.max(vapply(before, function(x) x$pos, numeric(1L)))]]$name
   }
@@ -2322,6 +2417,21 @@
     if (in_block(p, st$end[[i]])) {
       close_all()
       next
+    }
+    if (grepl("^%(MACRO |MEND( |$))", t)) {
+      close_all()
+      next
+    }
+    mac <- .hzr_sas_macro_call(t)
+    if (!is.null(mac)) {
+      body <- defs$bodies[[mac]]
+      if (is.null(body)) {
+        add(p, NA_character_, "call", what = t)
+      } else {
+        w <- .hzr_sas_body_writes(body)
+        for (nm in w$names) add(p, nm, "opaque", what = paste0("%", mac))
+        if (w$unknown) add(p, NA_character_, "call", what = t)
+      }
     }
     if (grepl("^DATA( |$)", t) && !grepl("^DATA *=", t)) {
       close_all()
@@ -2939,8 +3049,17 @@
       "(hazpred/timeprc.c:10-14), so there is no time to predict at")))
   }
   events <- .hzr_sas_dataset_events(txt, blocks)
+  # A step inside a %MACRO definition runs where the macro is called, so it
+  # builds nothing where it stands, except for a PROC HAZPRED in the same
+  # definition, which runs with it.
+  st <- .hzr_sas_statements(txt)
+  here <- .hzr_sas_scope_at(st, .hzr_sas_macro_defs(st$text), before)
+  events <- Filter(function(e) e$scope %in% c(0L, here), events)
   memo <- list()
   built <- integer(0)
+  # The offset at which each definition is last read: a call after the
+  # definition and before that offset may have rewritten it.
+  until <- rep(-Inf, length(events))
   build <- function(k) {
     key <- as.character(k)
     if (!is.null(memo[[key]])) return(memo[[key]])
@@ -2951,6 +3070,7 @@
         return(list(refuse = paste0(ev$name, " reads ", nm, ", which no DATA step in this job ",
                                     "builds before it")))
       }
+      until[[j]] <<- max(until[[j]], ev$pos)
       build(j)
     }
     res <- switch(ev$kind,
@@ -2988,6 +3108,7 @@
   if (is.na(k)) {
     return(refuse(paste0("no DATA step in this job builds ", name, " before this PROC HAZPRED")))
   }
+  until[[k]] <- before
   res <- build(k)
   if (!is.null(res$refuse)) return(refuse(res$refuse))
   if (!time_var %in% res$cols) {
@@ -2999,6 +3120,23 @@
   parts <- lapply(ks, function(j) memo[[as.character(j)]])
   code <- unlist(lapply(parts, function(x) x$code), recursive = FALSE)
   untr <- do.call(rbind, c(list(empty), lapply(parts, function(x) x$untr)))
+  # An %INCLUDE or a macro call this cannot read, between a definition the
+  # grid uses and the step that reads it, may rewrite it. A dataset it is
+  # known to write is an `opaque` event, and refuses the grid above, as a
+  # macro's OUT= does. This one may write nothing, so the grid the job shows
+  # is emitted and the call recorded, as the PARMS macros of #601 are.
+  for (cl in Filter(function(e) identical(e$kind, "call"), events)) {
+    hit <- vapply(ks, function(j) events[[j]]$pos < cl$pos && cl$pos < until[[j]], logical(1L))
+    if (!any(hit)) next
+    nms <- unique(vapply(ks[hit], function(j) events[[j]]$name, ""))
+    nms <- paste(nms, collapse = " and ")
+    untr <- rbind(untr, .hzr_untranslated_frame(NA_integer_, cl$what, paste0(
+      "This call runs after the step that builds ", nms, " and before PROC HAZPRED reads ",
+      "it, so it may rewrite ", nms, ", and hzr_translate_sas() cannot read what it ",
+      "does. The grid emitted for DATA=", name, " is the one the job's DATA steps ",
+      "show, without anything this call changes. Check that it leaves ", nms,
+      " as it is, or build the grid by hand.")))
+  }
   warn <- unlist(lapply(parts, function(x) x$warn))
   W <- as.name(name)
   body <- c(
