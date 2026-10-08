@@ -2822,7 +2822,7 @@
       # numDeriv fallback only when analytic declines (left/interval rows)
       if (is.null(H_unc) && .hzr_numderiv_available()) {
         H_unc <- tryCatch(
-          numDeriv::hessian(neg_ll_unc, base_theta[idx_unc]),
+          .hzr_numeric_hessian(neg_ll_unc, base_theta[idx_unc]),
           error = function(e) NULL
         )
       }

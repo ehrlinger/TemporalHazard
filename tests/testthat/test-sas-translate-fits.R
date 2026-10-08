@@ -2591,6 +2591,11 @@ test_that("every #461 oracle job's emitted document runs or stops (#461)", {
     "runs"
   }
 }
+# The rows a g1flag 4 job carries for the SETG1 rewrites it mirrors (#601):
+# M's sign flipped (setg1.c:763-770) and NU fixed at 0 (:631-634, :763-770)
+# when NU is free; M moved to 1 for M = 0 (:692-699).
+.p424_mirror_rows <- c(g1flag4_mpos = 2L, g1flag4_mpos_fixnu = 1L,
+                       g1flag4_mneg = 1L, g1flag4_mzero_fixnu = 1L)
 # The row must carry its class as well as the warning (#468 review).
 .p424_row_phrase <- c(
   no_result = "PROC HAZARD produced no result for this job",
@@ -2668,11 +2673,21 @@ test_that("the SETG1 verdict matches the HAZARD binary on a grid (#424)", {
       expect_identical(n_rows, if (o$id %in% .p424_moved) 1L else 0L,
                        info = o$id)
     } else {
-      # Warned once, recorded once, and the row names its class.
+      # Warned once, and the class recorded in exactly one row. A g1flag 4
+      # job also carries a row for each SETG1 rewrite it mirrors (#601).
+      extra <- if (o$id %in% names(.p424_mirror_rows)) {
+        .p424_mirror_rows[[o$id]]
+      } else {
+        0L
+      }
+      reasons <- job$untranslated$reason
       expect_length(w, 1L)
-      expect_identical(n_rows, 1L, info = o$id)
-      expect_match(job$untranslated$reason, .p424_row_phrase[[o$class]],
-                   fixed = TRUE, info = o$id)
+      expect_identical(n_rows, 1L + extra, info = o$id)
+      expect_identical(sum(grepl(.p424_row_phrase[[o$class]], reasons,
+                                 fixed = TRUE)), 1L, info = o$id)
+      expect_identical(sum(startsWith(reasons, "SETG1 replaces") |
+                             startsWith(reasons, "SETG1 fixes")),
+                       extra, info = o$id)
     }
     if (startsWith(o$id, "SETG")) {
       expect_match(paste(w, collapse = " "),
@@ -2762,10 +2777,15 @@ test_that("the SETG1 documents render past the warning (#424)", {
   oracle <- .p424_oracle()
   # Rows whose operands are ALSO outside what hzr_phase() or the likelihood
   # accepts: the fit halts after the warning, as for SETG3910-3930 above.
+  # Since #601 the g1flag 4 rows emit the case SETG1 selects: M = 1 NU = 0
+  # FIXNU now starts at M = -1, which the fit evaluates, and M = 0 NU = 0
+  # FIXNU at M = 1 with NU fixed at 0, where every start stops on
+  # "Decomposition undefined for nu = 0 with m = 1" -- the case PROC HAZARD
+  # cannot evaluate either (DG1RHO970 on both datasets).
   halts <- c("SETG1910_neg", "SETG1910_zero", "SETG1940", "SETG1950",
-             "SETG1960", "SETG1920", "SETG1930", "g1flag4_mpos_fixnu")
+             "SETG1960", "SETG1920", "SETG1930", "g1flag4_mzero_fixnu")
   for (id in c(halts, "SETG1900", "SETG1901", .p424_moved, "g1flag4_mpos",
-               "g1flag4_mneg", "g1flag4_mzero_fixnu")) {
+               "g1flag4_mneg", "g1flag4_mpos_fixnu")) {
     job <- .u1_job(parms = oracle$parms[oracle$id == id])
     res <- suppressWarnings(render_sim(job, list(D = D)))
     expect_identical(res$ok, !(id %in% halts), info = id)

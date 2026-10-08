@@ -37,6 +37,7 @@ test_that(".hzr_aic counts only FREE parameters when fixed_mask is set", {
 # Wald / entry -------------------------------------------------------------
 
 test_that("Wald entry score equals candidate's p-value", {
+  withr::local_seed(39)
   current <- hazard(
     time = rexp(200L, 0.5), status = rep(1L, 200L),
     theta = c(0.5, 1.0), dist = "weibull", fit = TRUE
@@ -82,6 +83,7 @@ test_that("Wald drop score equals 1 - p_value (larger p => smaller score)", {
 # AIC / entry --------------------------------------------------------------
 
 test_that("AIC entry score equals AIC(candidate) - AIC(current)", {
+  withr::local_seed(84)
   current <- hazard(
     time = rexp(200L, 0.5), status = rep(1L, 200L),
     theta = c(0.5, 1.0), dist = "weibull", fit = TRUE

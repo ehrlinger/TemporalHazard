@@ -29,6 +29,7 @@ fit diagnostics, and coefficient-level statistics when available.
 }
 \examples{
 # -- Single-phase Weibull summary ------------------------------------
+set.seed(1)
 fit <- hazard(time = rexp(30, 0.5), status = rep(1L, 30),
               theta = c(0.3, 1.0), dist = "weibull", fit = TRUE)
 summary(fit)
