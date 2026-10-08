@@ -127,7 +127,11 @@ not worth that tax for ordinary incremental cycles.
     component).
 
 2.  `NEWS.md` top heading is `# TemporalHazard X.Y.Z` and describes the
-    user-visible changes since the last CRAN release.
+    user-visible changes since the last CRAN release. **`news/` is
+    empty**: run `python3 .github/scripts/news.py collect` first.
+    `news/` is `.Rbuildignore`d, so a tarball built while fragments
+    remain ships a `NEWS.md` missing those entries, and no check
+    notices.
 
 3.  `cran-comments.md` version heading matches `DESCRIPTION`; if a
     resubmission, each reviewer point is itemised with how it was

@@ -108,7 +108,7 @@
 <div class="section level2">
 <h2 id="pre-submission-checklist">Pre-submission checklist<a class="anchor" aria-label="anchor" href="#pre-submission-checklist"></a></h2>
 <ol style="list-style-type: decimal"><li><p><code>DESCRIPTION</code> <code>Version:</code> is a three-part <code>X.Y.Z</code> (no fourth component).</p></li>
-<li><p><code>NEWS.md</code> top heading is <code># TemporalHazard X.Y.Z</code> and describes the user-visible changes since the last CRAN release.</p></li>
+<li><p><code>NEWS.md</code> top heading is <code># TemporalHazard X.Y.Z</code> and describes the user-visible changes since the last CRAN release. <strong><code>news/</code> is empty</strong>: run <code>python3 .github/scripts/news.py collect</code> first. <code>news/</code> is <code>.Rbuildignore</code>d, so a tarball built while fragments remain ships a <code>NEWS.md</code> missing those entries, and no check notices.</p></li>
 <li><p><code>cran-comments.md</code> version heading matches <code>DESCRIPTION</code>; if a resubmission, each reviewer point is itemised with how it was addressed.</p></li>
 <li><p><code>devtools::document()</code> is clean and <code>man/</code> is in sync.</p></li>
 <li>

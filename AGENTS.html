@@ -318,6 +318,8 @@
 <strong>Always a plain three-digit version. No <code>.9000</code>, no fourth digit, ever</strong> — not for dev snapshots, not to satisfy a version grep. <code>RELEASE.md</code> carries the full convention.</li>
 <li>⚠️ <strong>Unlike ggRandomForests, there is no test here that greps <code>NEWS.md</code> for the <code>DESCRIPTION</code> version.</strong> Nothing will catch a mismatch. Keep <code>DESCRIPTION</code> <code>Version:</code> and the <code>NEWS.md</code> top heading in sync <strong>by hand</strong> on every bump.</li>
 <li>
+<strong>A change that ships writes its NEWS entry to a file of its own,</strong> <code>news/&lt;branch&gt;.md</code> with <code>/</code> in the branch name replaced by <code>-</code>: the bullet or bullets exactly as they will read in <code>NEWS.md</code>, and no heading. Do not edit <code>NEWS.md</code> itself; two pull requests open at once would conflict there. The bump moves <code>Version:</code> in <code>DESCRIPTION</code>, then runs <code>python3 .github/scripts/news.py collect</code>, which files the fragments under that version’s heading in merge order and deletes them. The <code>news-fragment</code> job in <code>lint.yaml</code> fails a pull request that ships something and adds no fragment. A change <code>.Rbuildignore</code> excludes in full writes none.</li>
+<li>
 <strong><code>Closes #123</code> fires on the normal flow.</strong> GitHub auto-closes only on merge into the <em>default</em> branch, and routine work now merges to <code>main</code>, which is it. This inverted on 2026-08-24 when the <code>dev</code> branch was dropped; before that the keyword silently did nothing and issues had to be closed by hand.</li>
 </ul></div>
 <div class="section level2">
