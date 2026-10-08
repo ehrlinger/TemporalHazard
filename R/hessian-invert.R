@@ -7,6 +7,72 @@ NULL
 # and the summary() diagnostic note so they never drift apart.
 .hzr_rcond_tol <- .Machine$double.eps^0.5
 
+#' Numerical Hessian with a step scaled to the likelihood's curvature (#598)
+#'
+#' `numDeriv::hessian()` steps `0.1 * |par|` along each coordinate. On an
+#' intercept that absorbs `beta * offset` from an offset covariate that step
+#' spans many standard errors, and the second difference reads curvature far
+#' from the point: at offset 100 a Weibull fit's SE(beta) came out 0.035 of
+#' the centred fit's. No fixed relative step works at every offset, so the
+#' step is set from the curvature instead.
+#'
+#' Start from numDeriv's default Hessian. While it is positive definite,
+#' whiten with `L` (`L %*% t(L)` is its inverse) and recompute along the
+#' whitened directions with an absolute step of 0.1, which is 0.1 standard
+#' error along each; map back, and do this twice. A default that is not
+#' positive definite is tried once more with `d = 1e-4` as the
+#' preconditioner; if that is not positive definite either, the default is
+#' kept, so a saddle is still reported as one. Each column of `L` is shrunk
+#' so that its step does not exceed numDeriv's own first step in any
+#' coordinate (an off-diagonal evaluation steps along two directions at
+#' once, so up to twice that): a direction with almost no information
+#' otherwise gets a step far outside the quadratic region.
+#'
+#' @param fn Objective (a negative log-likelihood) of a numeric vector.
+#' @param par Point at which to differentiate.
+#' @return A `length(par)` square matrix: the refined Hessian, or numDeriv's
+#'   default where no refinement applies.
+#' @noRd
+.hzr_numeric_hessian <- function(fn, par) {
+  h <- numDeriv::hessian(fn, par)
+  if (!all(is.finite(h))) return(h)
+  p <- length(par)
+  # numDeriv's first step per coordinate: d = 0.1 relative, or eps = 1e-4
+  # where |par| is below its zero tolerance.
+  zero_tol <- sqrt(.Machine$double.eps / 7e-7)
+  step0 <- ifelse(abs(par) < zero_tol, 1e-4, 0.1 * abs(par))
+  whitener <- function(m) {
+    m <- (m + t(m)) / 2
+    r <- tryCatch(chol(solve(m)), error = function(e) NULL)
+    if (is.null(r) || !all(is.finite(r))) NULL else t(r)
+  }
+  L <- whitener(h)
+  if (is.null(L)) {
+    h_pre <- tryCatch(numDeriv::hessian(fn, par,
+                                        method.args = list(d = 1e-4)),
+                      error = function(e) NULL)
+    if (is.matrix(h_pre) && all(is.finite(h_pre))) L <- whitener(h_pre)
+  }
+  for (pass in 1:2) {
+    if (is.null(L)) break
+    ratio <- step0 / (0.1 * abs(L))
+    shrink <- pmin(1, apply(ratio, 2, min))
+    L <- sweep(L, 2, shrink, `*`)
+    hu <- tryCatch(
+      numDeriv::hessian(function(u) fn(par + as.vector(L %*% u)), rep(0, p),
+                        method.args = list(eps = 0.1)),
+      error = function(e) NULL)
+    if (!is.matrix(hu) || !all(is.finite(hu))) break
+    # A badly conditioned L keeps the Hessian of the previous pass.
+    Li <- tryCatch(solve(L), error = function(e) NULL)
+    if (is.null(Li)) break
+    h <- t(Li) %*% hu %*% Li
+    h <- (h + t(h)) / 2
+    L <- whitener(h)
+  }
+  h
+}
+
 #' Stable Hessian inversion with conditioning diagnostics
 #'
 #' Inverts a negative-log-likelihood Hessian into a variance-covariance

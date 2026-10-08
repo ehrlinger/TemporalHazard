@@ -1015,7 +1015,15 @@ hazard <- function(formula = NULL,
       }
     }
 
-    parsed <- .hzr_parse_formula(formula = formula, data = data)
+    # The messages it warns with, so a re-parse after dropping rows at time 0
+    # does not repeat them (#484). Recorded, not muffled.
+    parse_warnings <- character(0)
+    parsed <- withCallingHandlers(
+      .hzr_parse_formula(formula = formula, data = data),
+      warning = function(w) {
+        parse_warnings <<- c(parse_warnings, conditionMessage(w))
+      }
+    )
     time <- parsed$time
     status <- parsed$status
     time_lower <- parsed$time_lower
@@ -1157,8 +1165,13 @@ hazard <- function(formula = NULL,
   n_dropped_time_zero <- sum(at_zero)
   dropped_time_zero_rows <- which(at_zero)
   dropped_frame <- NULL
+  # Positions, among the rows given, of the rows kept: later messages report
+  # these, not positions among the rows that remain (#484). Subset exactly as
+  # `time` is, so the two stay aligned.
+  row_ids <- NULL
   if (n_dropped_time_zero > 0L) {
     keep <- !at_zero
+    row_ids <- seq_len(n)[keep]
     # Anything row-aligned must have exactly n rows to be subset. One of
     # another length used to pass through untouched, so an `x`, `weights`
     # or `data` k rows short was accepted when k rows were dropped, and paired
@@ -1259,7 +1272,17 @@ hazard <- function(formula = NULL,
       if (!is.null(formula) && any(keep)) {
         reparsed <- withCallingHandlers(
           .hzr_parse_formula(formula = formula, data = data),
-          hzr_intercept_removed = function(w) invokeRestart("muffleWarning")
+          hzr_intercept_removed = function(w) invokeRestart("muffleWarning"),
+          # A warning the first parse already raised is muffled, once per
+          # time it was raised; one only these rows raise still reaches the
+          # user (#484).
+          warning = function(w) {
+            hit <- match(conditionMessage(w), parse_warnings)
+            if (!is.na(hit)) {
+              parse_warnings <<- parse_warnings[-hit]
+              invokeRestart("muffleWarning")
+            }
+          }
         )
         same <- function(a, b) isTRUE(all.equal(a, b, check.attributes = FALSE))
         if (!same(reparsed$time, time) || !same(reparsed$status, status) ||
@@ -1284,7 +1307,7 @@ hazard <- function(formula = NULL,
         "fitting, as PROC HAZARD drops them (TIME <= 0 is inadmissible, ",
         "readt.c). The fit uses the other ", n, "; the count is in ",
         "fit$data$dropped_time_zero, and row numbers in later messages ",
-        "count the rows that remain."
+        "refer to the rows as given."
       ), call = NULL)
     ))
   }
@@ -1406,7 +1429,8 @@ hazard <- function(formula = NULL,
     stop("'status' must be coded -1 (left-censored), 0 (right-censored), ",
          "1 (event) or 2 (interval-censored); ", sum(bad_status), " of ", n,
          " row(s) are not, at index/indices ",
-         paste(utils::head(which(bad_status), 10L), collapse = ", "),
+         paste(utils::head(if (is.null(row_ids)) which(bad_status) else
+                            row_ids[bad_status], 10L), collapse = ", "),
          if (sum(bad_status) > 10L) ", ..." else "", ". A Surv object's ",
          "codes differ from these: pass it as the response, or as 'status', ",
          "and it is translated.", call. = FALSE)
@@ -1521,7 +1545,8 @@ hazard <- function(formula = NULL,
   # them through the optimizer's per-start tryCatch framed a data defect as a
   # convergence problem. The guards inside the objective and gradient stay --
   # the gradient is reachable without hazard(). See .hzr_check_sas_data().
-  .hzr_check_sas_data(status, time, time_lower, time_upper, objective)
+  .hzr_check_sas_data(status, time, time_lower, time_upper, objective,
+                      row_ids = row_ids)
 
   # fit_state holds the result of optimization (or just starting values if fit=FALSE).
   # Fields:
@@ -2992,6 +3017,7 @@ print.hazard <- function(x, ...) {
 #'   the standard error of `log(mu)`; it is not tested against 0.
 #' @examples
 #' # -- Single-phase Weibull summary ------------------------------------
+#' set.seed(1)
 #' fit <- hazard(time = rexp(30, 0.5), status = rep(1L, 30),
 #'               theta = c(0.3, 1.0), dist = "weibull", fit = TRUE)
 #' summary(fit)
@@ -3253,6 +3279,7 @@ print.summary.hazard <- function(x, ...) {
 #' @param object A `hazard` object.
 #' @param ... Unused; for S3 compatibility.
 #' @examples
+#' set.seed(1)
 #' fit <- hazard(time = rexp(30, 0.5), status = rep(1L, 30),
 #'               theta = c(0.3, 1.0), dist = "weibull", fit = TRUE)
 #' coef(fit)
@@ -3273,6 +3300,7 @@ coef.hazard <- function(object, ...) {
 #' @param object A `hazard` object.
 #' @param ... Unused; for S3 compatibility.
 #' @examples
+#' set.seed(1)
 #' fit <- hazard(time = rexp(30, 0.5), status = rep(1L, 30),
 #'               theta = c(0.3, 1.0), dist = "weibull", fit = TRUE)
 #' vcov(fit)

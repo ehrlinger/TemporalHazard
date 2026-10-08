@@ -22,15 +22,10 @@ on:
 
 name: Check manual
 
-concurrency:
-  # One in-flight run per workflow per ref. Without this every push starts a
-  # fresh run while the superseded one keeps holding a runner, and the queue
-  # grows faster than it drains -- one run sat queued for 410 minutes on
-  # 2026-08-17 behind work that had already been replaced. Protected branches
-  # are exempt, main among them, so a run there is never cancelled mid-flight.
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ !github.ref_protected }}
-
+# No concurrency group, deliberately, matching the rest of the family. A group
+# holds at most one pending run, so with one here a newer merge's run would
+# replace a pending one on main, and this check runs only after a merge: the
+# replaced run is never repeated for that commit.
 permissions:
   contents: read
 

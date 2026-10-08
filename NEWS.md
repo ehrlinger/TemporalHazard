@@ -1,13 +1,72 @@
 # TemporalHazard (unreleased)
 
+* Articles on the pkgdown site put the table of contents on the left and use
+  the full width of the window, through `pkgdown/extra.css`. The installed
+  vignettes are unchanged: the Quarto vignette engine renders them in its own
+  minimal format, which has no sidebar layout.
+
 * Now requires R 4.4.0 or newer, up from 4.1.0, to match the rest of the
   HVTI family. `hvtiR::install()` installs the members together, and several
   already required 4.4.0, so on an older R the install failed whatever this
   package declared.
 
+
+
+* `hzr_bootstrap(seed = )` no longer resets your random number stream. It
+  seeded the global generator with `set.seed()` and left it there, so a
+  script that called `set.seed()` once at the top lost that seed at its first
+  seeded bootstrap, and every draw after it followed from the bootstrap's
+  seed instead. The seed now holds for the call only, through
+  `withr::local_seed()`, and your stream is restored on return. The
+  replicates for a given `seed` are unchanged. `withr` moves from `Suggests`
+  to `Imports`; it depends only on base R.
+
+* `DESCRIPTION` now declares the Quarto command line tool in
+  `SystemRequirements`. The vignettes have always needed it to build; the
+  field makes that visible to installers and to `R CMD check`.
 # TemporalHazard 1.2.13
 
+## Breaking changes
+
+* **`hzr_bootstrap(seed = )` no longer resets your random number stream
+  (#611).** It seeded the global generator with `set.seed()` and left it
+  there, so a script that called `set.seed()` once at the top lost that seed
+  at its first seeded bootstrap, and every draw after it followed from the
+  bootstrap's seed instead. The seed now holds for the call only, through
+  `withr::local_seed()`, and your stream is restored when the call returns or
+  fails. **A draw after `hzr_bootstrap(seed = k)` no longer follows from
+  `k`**: a script that relied on that must call `set.seed(k)` itself. The
+  replicates for a given `seed` are unchanged, and equal those of
+  `set.seed(k)` followed by `seed = NULL`. `seed` must now be `NULL` or a
+  single whole number: `1.7`, `c(1, 2)` and `TRUE` used to act silently as
+  `seed = 1`, and `NA` failed with a message that did not name `seed`.
+  `withr` moves from `Suggests` to `Imports`; it depends only on base R.
+  This restores the 1.0.2 behaviour, which 1.0.3 removed.
+
 ## Bug fixes
+
+* **Standard errors computed numerically could be far too small, with no
+  warning, when a covariate was far from zero (#598).** Fits with left- or
+  interval-censored rows, which have no analytic Hessian, take theirs
+  from `numDeriv::hessian()`, as does the score criterion of
+  `hzr_stepwise()`. Its default step is a tenth of each parameter's size,
+  and an intercept that absorbs a covariate's offset is large, so the step
+  spanned many standard errors. With the covariate offset by 100, a fit
+  reached the same log-likelihood as the centred fit and reported SE(beta)
+  at 0.035 (Weibull), 0.047 (exponential), 0.073 (log-logistic) and 0.52
+  (lognormal) of the centred fit's; at an offset of 1000, an exponential
+  SE was 1e-28 of it, a Weibull fit had no covariance, and a lognormal
+  fit's standard errors were `NA`.
+    - The step is now set from the curvature: 0.1 standard error along each
+      direction of the Hessian, refined twice, with each direction's step
+      capped at `numDeriv`'s own first step in every parameter. The same fits
+      now agree with the centred fit's standard errors at offsets of 100
+      and 1000.
+    - A Hessian that is not positive definite is still reported as found.
+    - The remaining limit is double precision: at an offset of 1e4 the
+      exact Hessian's reciprocal condition number is about 1e-16, so no
+      Hessian on that scale can be inverted reliably. Centring the
+      covariates avoids it.
 
 * **A single-distribution fit (exponential, Weibull, lognormal or
   loglogistic) could stop at a false maximum, far below the best
@@ -86,6 +145,23 @@
     - When Conservation of Events could not recompute the conserved phase's
       variance, `predict()` keeps its standard errors but now warns that
       they leave that variance out and may be understated.
+
+* **After rows at time 0 are dropped, messages are clearer (#484).**
+    - Row numbers in later error messages refer to the rows as given, not
+      to their positions among the rows that remain: an `NA` status on row
+      10 is reported as row 10, where it used to be reported as row 9.
+    - A warning raised by a term of the formula, such as one a function in
+      it raises, was shown twice, because the formula is evaluated again on
+      the rows that remain. Only a warning that evaluation raises anew is
+      shown now.
+    - `hzr_stepwise()` given `data` with exactly the fit's rows plus the
+      ones it dropped, which it could not confirm as the fit's data, now
+      warns once that those rows were dropped and should be dropped from
+      `data`. Before, it reported only a mismatched row count.
+    - `hzr_stepwise()`'s note that it could not check the row order of
+      `data` said, for a formula fit given `data` of another length, that
+      the stored data frame "has 116 rows, not the fit's 116". It now
+      compares `data` with the stored data frame, as the check does.
 
 * **Multiphase fits under Conservation of Events could stop short of the
   maximum and report `converged = TRUE` (#565). Multiphase estimates from
@@ -767,6 +843,22 @@
   `M=0 NU=1 FIXM` now emit the same model, as they are the same job to
   `PROC HAZARD`. On data drawn from that model, and from a start where the
   `HAZARD` binary converges, the emitted fit reproduces its estimates.
+* **`hzr_translate_sas()` now mirrors `SETG1`'s other early-phase rewrites
+  (#601).** With `M<0` and `NU<0`, `SETG1` flips signs into a valid
+  model: `M`'s when `NU` is fixed, `NU`'s when `M` is fixed, and both
+  otherwise. The translation kept both negative, and the emitted
+  `hzr_phase()` call stopped with an error when the document ran. With
+  `NU=0`, a nonzero `M` and neither fixed, `SETG1` fixes `NU` at 0, and for
+  `M>0` it also flips `M`'s sign, which it does with `NU` fixed too. With
+  `M=0` and `NU=0 FIXNU` it starts `M` at 1. The translation emitted none
+  of these, so the "may not fit" and "no result" notes for those jobs
+  described a model the emitted call did not fit. It now emits the model
+  `PROC HAZARD` starts from, and records each rewrite in `$untranslated`.
+  For `M=0 NU=0 FIXNU`, which `PROC HAZARD` cannot evaluate, the emitted
+  fit now stops with an error as well, where it used to fit a model
+  `PROC HAZARD` never reaches. When a
+  macro reference in `PARMS` could carry a value or flag that changes
+  `SETG1`'s case, the note says the rewrite holds only if it does not.
 
 # TemporalHazard 1.2.12
 

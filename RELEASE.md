@@ -115,7 +115,10 @@ main (X.Y.Z) accumulates, patch-bumping as fixes land
 
 1. `DESCRIPTION` `Version:` is a three-part `X.Y.Z` (no fourth component).
 2. `NEWS.md` top heading is `# TemporalHazard X.Y.Z` and describes the
-   user-visible changes since the last CRAN release.
+   user-visible changes since the last CRAN release. **`news/` is empty**:
+   run `python3 .github/scripts/news.py collect` first. `news/` is
+   `.Rbuildignore`d, so a tarball built while fragments remain ships a
+   `NEWS.md` missing those entries, and no check notices.
 3. `cran-comments.md` version heading matches `DESCRIPTION`; if a
    resubmission, each reviewer point is itemised with how it was addressed.
 4. `devtools::document()` is clean and `man/` is in sync.

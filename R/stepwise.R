@@ -474,6 +474,23 @@ hzr_stepwise <- function(fit,
                        check.attributes = FALSE))
     if (same) data <- data[-dropped, , drop = FALSE]
   }
+  # A frame with exactly the fit's rows plus the ones it dropped, that could
+  # not be confirmed as the fit's (a vector-interface fit stores no frame, or
+  # the dropped rows differ), is most likely the data before the drop. What
+  # follows fails on a row count -- every refit of a vector-interface fit,
+  # once per candidate, or the row-order check of a formula fit -- and says
+  # only that (#484). Name the drop once, here.
+  if (length(dropped) &&
+      nrow(data) == length(fit$data$time) + length(dropped)) {
+    warning("`data` has ", nrow(data), " rows: the fit's ",
+            length(fit$data$time), " plus the ", length(dropped),
+            " it dropped at time 0 (rows ",
+            paste(utils::head(dropped, 10L), collapse = ", "),
+            if (length(dropped) > 10L) ", ..." else "", " of the data it ",
+            "was given). It could not be confirmed to be the fit's data, so ",
+            "those rows were not dropped from it, and candidate refits will ",
+            "not line up. Drop them from `data` first.", call. = FALSE)
+  }
   .hzr_refuse_unhonoured_scope(scope, direction)
   # Candidates are read from `data` by position: by the score test, and by
   # every refit that pairs `data` with vectors stored on the fit (the vector

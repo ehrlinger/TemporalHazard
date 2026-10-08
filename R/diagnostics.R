@@ -1633,13 +1633,11 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #' @param fraction Numeric in (0, 1]: fraction of data to sample per
 #'   replicate (default 1.0 for full bootstrap; < 1 for bagging).
 #' @param seed Optional integer random seed for reproducibility. When
-#'   supplied, `set.seed(seed)` is called at function entry, jumping the
-#'   global RNG to the seeded state; it is not restored on exit. Pass
-#'   `NULL` (the default) to skip the `set.seed()` call and start from
-#'   the caller's current RNG state. The bootstrap consumes
-#'   random numbers either way, so the global RNG state will advance
-#'   during the call; `seed = NULL` avoids the *reset* at entry, not
-#'   the advance during resampling.
+#'   supplied, the resampling runs from that seed and the caller's RNG
+#'   state is restored on exit, so the call neither resets nor advances
+#'   the caller's stream. Pass `NULL` (the default) to resample from the
+#'   caller's current RNG state instead, which the bootstrap then
+#'   advances as it draws.
 #' @param verbose Logical; if `TRUE`, display a text progress bar over the
 #'   `n_boot` replicates (via [utils::txtProgressBar()]).
 #' @param scope **Experimental.** Candidate variable scope for embedded
@@ -2086,8 +2084,24 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   }
 
   # Seeded after the refusals above, so a refused call leaves the caller's
-  # random number stream alone.
-  if (!is.null(seed)) set.seed(seed)
+  # random number stream alone. local_seed() puts the caller's stream back on
+  # exit, error exits included, so a script that seeded once at the top keeps
+  # its own stream after this call (#611). It writes .Random.seed into
+  # .GlobalEnv to do so, as .hzr_start_perturbations() does by hand; 1.0.3
+  # removed this package's own write over CRAN policy, so the 1.3.0
+  # submission should confirm the restore is acceptable.
+  # Validated as control$start_seed is (.hzr_optim_multiphase()): set.seed()
+  # truncates 1.7 to 1 and takes the first of c(1, 2), so either would
+  # silently repeat seed 1, and an NA or out-of-range value failed with a
+  # message that did not name `seed`.
+  if (!is.null(seed)) {
+    if (length(seed) != 1L || !is.numeric(seed) || !is.finite(seed) ||
+        seed != trunc(seed) || abs(seed) > .Machine$integer.max) {
+      stop("`seed` must be NULL or a single whole number no larger in ",
+           "magnitude than ", .Machine$integer.max, ".", call. = FALSE)
+    }
+    withr::local_seed(seed)
+  }
 
   # A vector fit made without `data =` has no frame to count rows in, and
   # nrow(NULL) is NULL: every such fit was refused, naming its vectors 'NA'
