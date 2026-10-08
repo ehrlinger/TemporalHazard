@@ -1236,6 +1236,10 @@
   moved <- if (th <= 0) c(t_half = 1) else numeric(0)
   no_result <- NULL
   no_result_kind <- NULL
+  # The early shapes SETG1 fixes that PARMS did not. A fix is part of the
+  # model, not a starting value: left free, the emitted phase estimates a
+  # parameter PROC HAZARD holds (#471, #601).
+  fix <- character(0)
   if (!mnu1 && nu == 0) {
     if (!fx("m") && (m != 0 || fx("nu"))) {
       # SETG1 selects the limiting positive generic case, g1flag 4, with M
@@ -1248,6 +1252,13 @@
       #   fit raises on some data and not on other data: "may_not_fit".
       no_result <- mnu
       no_result_kind <- if (m == 0) "no_result" else "may_not_fit"
+      # The case SETG1 selects is mirrored, so the emitted model is the one
+      # these rows describe (#601): NU is fixed at 0 for M < 0 (:631-634) and
+      # for M > 0, where M's sign is flipped too (:763-770); with M = 0 (NU
+      # fixed, to reach here) M is moved to 1 (:692-699).
+      if (m != 0 && !fx("nu")) fix <- c(fix, "nu")
+      if (m > 0) moved <- c(moved, m = -m)
+      if (m == 0) moved <- c(moved, m = 1)
     } else if (m == 0 && !fx("m") && !fx("nu")) {
       moved <- c(moved, nu = 1, m = 1)       # setg1.c:686-691
     } else if (fx("m") && !fx("nu")) {
@@ -1258,14 +1269,24 @@
   # M = 0 with NU nonzero: the limiting case at M = 0, which SETG1 fits with
   # M FIXED at 0 (setg1.c:664-666 for NU < 0, :728-730 for NU > 0), unless NU
   # is fixed and M free, when it moves M to 1 instead (:660-663, :724-727).
-  # The fix is part of the model, not a starting value: with M free the
-  # emitted phase estimates a parameter PROC HAZARD holds (#471).
-  fix <- character(0)
   if (!mnu1 && m == 0 && nu != 0) {
     if (fx("nu") && !fx("m")) {
       moved <- c(moved, m = 1)
     } else if (!fx("m")) {
-      fix <- "m"
+      fix <- c(fix, "m")
+    }
+  }
+  # M < 0 and NU < 0 is not a valid model, so SETG1 flips signs into one
+  # (setg1.c:581-613; both fixed is SETG1940, refused above): with NU fixed,
+  # M's sign (:594-597); with M fixed, NU's (:598-602); otherwise both
+  # (:603-611). Unmirrored, the emitted hzr_phase() errors at run time (#601).
+  if (!mnu1 && m < 0 && nu < 0) {
+    if (fx("nu")) {
+      moved <- c(moved, m = -m)
+    } else if (fx("m")) {
+      moved <- c(moved, nu = -nu)
+    } else {
+      moved <- c(moved, nu = -nu, m = -m)
     }
   }
   list(code = NULL, moved = moved, no_result = no_result,
@@ -1628,6 +1649,17 @@
                                setg1$no_result, ")")
     no_result_kind <- setg1$no_result_kind
   }
+  # The rewrites below follow from the PARMS operands as read. A macro
+  # reference in the statement can carry a value or a FIX flag that changes
+  # which case SETG1 takes, so then the claim is conditional (#601).
+  setg1_as_sas <- if (any(.hzr_sas_is_macro(operands))) {
+    paste0("as PROC HAZARD does if the macro reference in this PARMS ",
+           "statement sets no early-phase value or FIX flag (one that does ",
+           "can change which case SETG1 takes)")
+  } else {
+    "as PROC HAZARD does"
+  }
+  mnu_written <- early_full[c("m", "nu")]
   if (length(setg1$moved)) {
     was <- early_full[names(setg1$moved)]
     early_full[names(setg1$moved)] <- setg1$moved
@@ -1636,9 +1668,9 @@
                            was, setg1$moved), collapse = " "),
              paste0(
                "SETG1 replaces this starting value before fitting ",
-               "(setg1.c:343-349 for THALF, :627-630, :660-663, :686-691, ",
-               ":700-707, :724-727 and :759-762 for M and NU), as PROC ",
-               "HAZARD does and reports ",
+               "(setg1.c:343-349 for THALF, :594-611, :627-630, :660-663, ",
+               ":686-699, :700-707, :724-727, :759-762 and :763-770 for M ",
+               "and NU), ", setg1_as_sas, ", and reports it ",
                "through hzr_parm_changed(). The emitted phase starts where ",
                "PROC HAZARD's fit starts, not at the operands written here"))
   }
@@ -1646,12 +1678,20 @@
     # The hand-off: the phase call and n_free below both read fixed_early.
     fixed_early <- intersect(unname(.hzr_parms_early_arg),
                              union(fixed_early, setg1$fix))
-    flag_bad(sprintf("M=%g NU=%g", early_full[["m"]], early_full[["nu"]]),
+    why <- c(
+      m = paste0("M at 0 for an early phase that starts at M = 0 with NU ",
+                 "nonzero and M not fixed (setg1.c:664-666 for NU < 0, ",
+                 ":728-730 for NU > 0)"),
+      nu = paste0("NU at 0 for an early phase that starts at NU = 0 with M ",
+                  "nonzero and neither M nor NU fixed (setg1.c:631-634 for ",
+                  "M < 0, :763-770 for M > 0)"))
+    flag_bad(sprintf("M=%g NU=%g", mnu_written[["m"]], mnu_written[["nu"]]),
              paste0(
-               "SETG1 fixes M at 0 for an early phase that starts at M = 0 ",
-               "with NU nonzero and M not fixed (setg1.c:664-666 for NU < 0, ",
-               ":728-730 for NU > 0), as PROC HAZARD does: the emitted phase ",
-               "holds M at 0 although PARMS did not write FIXM"))
+               "SETG1 fixes ", paste(why[setg1$fix], collapse = ", and "),
+               ", ", setg1_as_sas, ": the emitted phase holds ",
+               paste(toupper(setg1$fix), collapse = " and "), " fixed ",
+               "although PARMS did not write ",
+               paste0("FIX", toupper(setg1$fix), collapse = " or ")))
   }
 
   if (!is.null(delta_seen) && has_early && !setg1_refused) {

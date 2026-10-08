@@ -34,13 +34,11 @@ hzr_bootstrap(
 replicate (default 1.0 for full bootstrap; < 1 for bagging).}
 
 \item{seed}{Optional integer random seed for reproducibility. When
-supplied, \code{set.seed(seed)} is called at function entry, jumping the
-global RNG to the seeded state; it is not restored on exit. Pass
-\code{NULL} (the default) to skip the \code{set.seed()} call and start from
-the caller's current RNG state. The bootstrap consumes
-random numbers either way, so the global RNG state will advance
-during the call; \code{seed = NULL} avoids the \emph{reset} at entry, not
-the advance during resampling.}
+supplied, the resampling runs from that seed and the caller's RNG
+state is restored on exit, so the call neither resets nor advances
+the caller's stream. Pass \code{NULL} (the default) to resample from the
+caller's current RNG state instead, which the bootstrap then
+advances as it draws.}
 
 \item{verbose}{Logical; if \code{TRUE}, display a text progress bar over the
 \code{n_boot} replicates (via \code{\link[utils:txtProgressBar]{utils::txtProgressBar()}}).}

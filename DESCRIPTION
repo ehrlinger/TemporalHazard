@@ -22,9 +22,12 @@ Encoding: UTF-8
 Language: en-US
 Roxygen: list(markdown = TRUE)
 VignetteBuilder: quarto
+SystemRequirements: Quarto command line tool
+    (<https://github.com/quarto-dev/quarto-cli>)
 Depends: R (>= 4.4.0)
 Imports:
-    survival
+    survival,
+    withr
 Suggests:
     covr,
     ggplot2,
@@ -37,8 +40,7 @@ Suggests:
     roxygen2,
     rmarkdown,
     scales,
-    testthat (>= 3.2.0),
-    withr
+    testthat (>= 3.2.0)
 LazyData: true
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.1.0
