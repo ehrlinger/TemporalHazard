@@ -1,22 +1,3 @@
-# TemporalHazard (unreleased)
-
-* Articles on the pkgdown site put the table of contents on the left and use
-  the full width of the window, through `pkgdown/extra.css`. The installed
-  vignettes are unchanged: the Quarto vignette engine renders them in its own
-  minimal format, which has no sidebar layout.
-
-* `hzr_bootstrap(seed = )` no longer resets your random number stream. It
-  seeded the global generator with `set.seed()` and left it there, so a
-  script that called `set.seed()` once at the top lost that seed at its first
-  seeded bootstrap, and every draw after it followed from the bootstrap's
-  seed instead. The seed now holds for the call only, through
-  `withr::local_seed()`, and your stream is restored on return. The
-  replicates for a given `seed` are unchanged. `withr` moves from `Suggests`
-  to `Imports`; it depends only on base R.
-
-* `DESCRIPTION` now declares the Quarto command line tool in
-  `SystemRequirements`. The vignettes have always needed it to build; the
-  field makes that visible to installers and to `R CMD check`.
 # TemporalHazard 1.2.13
 
 ## Breaking changes
@@ -824,6 +805,66 @@
   `PROC HAZARD` never reaches. When a
   macro reference in `PARMS` could carry a value or flag that changes
   `SETG1`'s case, the note says the rewrite holds only if it does not.
+
+* **A `PROC HAZPRED` grid translated by `hzr_translate_sas()` now respects
+  SAS macro scope.** A `DATA PRED;` step inside a `%MACRO ... %MEND`
+  definition was read as if it ran where it stands. A job that built
+  `PRED` with `AGE=50` and then defined a macro rebuilding it with
+  `AGE=70` got predictions at 70, with no `$untranslated` row, although
+  the macro was never called and SAS predicted at 50. A definition's
+  steps now count only for a `PROC HAZPRED` inside the same definition.
+  Calling a macro whose body writes the grid refuses the grid, as a
+  macro's `OUT=` already did. An `%INCLUDE`, or a call of a macro the file
+  does not define, between the grid's DATA step and the `PROC HAZPRED`
+  may rewrite the grid out of sight: the grid the job shows is still
+  emitted, and each such call now has an `$untranslated` row saying so.
+  Jobs with no macros translate as before; the public corpus's calls and
+  `$untranslated` rows are unchanged.
+
+* **A stepwise screen on a Weibull fit whose scale cannot be represented
+  failed every candidate refit, and a selection-mode `hzr_bootstrap()`
+  pooled such replicates as successes (#566).** The refit's warm start
+  copied `mu`, which is 0, `Inf` or subnormal on such a fit, and `hazard()`
+  refuses that as a starting value. `hzr_stepwise()` said so, but
+  `hzr_bootstrap()` did not read it: on 400 rows with a covariate near 1000,
+  20 replicates all counted as successes and `z`, a true effect, was
+  selected in 75% of them, against 100% for the same model with the
+  covariate centered. The warm start now takes `log(mu)` from the fit,
+  moved into the range a number can hold, and carries the difference
+  through the coefficients. The same 20 replicates now select what the
+  centered fit selects, replicate for replicate. Separately,
+  `hzr_bootstrap()` now counts the selection-mode replicates in which a
+  candidate refit failed, for any reason, and warns once: such a candidate
+  was never tested. Those replicates are still pooled. The warning about a
+  `mu` that cannot be represented no longer says the other parameters are
+  unaffected without qualification.
+
+* **`hzr_bootstrap()` pooled replicates that stopped on `nlm()` code 4 or 5
+  and failed the relative-gradient test, with no count and no warning.**
+  `hazard()` warns about such a fit, but replicates run with their warnings
+  suppressed, and the count for #531 leaves those codes out because
+  `hazard()` warns for them. `hzr_bootstrap()` now reads the base refit and
+  the final fit of each replicate and warns once with the number of
+  replicates affected. Their estimates are still pooled. A stepwise refit
+  that was not kept is not read, since the screen does not return it.
+
+* `hzr_translate_sas()` code failed on R before 4.4 when a phase statement
+  named a variable that is not a syntactic R name, such as `_X1`: the fit
+  stopped with "object '_X1' not found". The emitted status chunk adds its
+  column with `transform()`, which renamed `_X1` to `X_X1` before R 4.4. The
+  chunk now passes `check.names = FALSE`, so the column keeps its name on
+  every R version (#609).
+
+## Packaging and documentation
+
+* Articles on the pkgdown site put the table of contents on the left and use
+  the full width of the window, through `pkgdown/extra.css`. The installed
+  vignettes are unchanged: the Quarto vignette engine renders them in its own
+  minimal format, which has no sidebar layout.
+
+* `DESCRIPTION` now declares the Quarto command line tool in
+  `SystemRequirements`. The vignettes have always needed it to build; the
+  field makes that visible to installers and to `R CMD check`.
 
 # TemporalHazard 1.2.12
 
