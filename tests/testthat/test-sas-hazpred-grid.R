@@ -503,3 +503,91 @@ test_that("hp.death.AVC.hm1 and hm2 grids match SAS's listing (#494)", {
     expect_equal(sum(g$DIGITAL == 0), 202L, info = job_name)
   }
 })
+
+# Macro scope (1.2.13 release review). A %MACRO ... %MEND body is a
+# definition: its DATA steps run where the macro is called, not where they
+# stand. And a call this cannot read, between the grid's DATA step and the
+# PROC HAZPRED, may rewrite the grid.
+fit_macro_grid <- c(
+  "%HAZARD( PROC HAZARD DATA=AVC OUTHAZ=OUTEST; TIME INT_DEAD; EVENT DEAD;",
+  "PARMS MUE=0.3504743 THALF=0.1905077 NU=1.437416 M=1 FIXM MUC=4.391673E-07;",
+  "EARLY AGE; );",
+  "DATA PRED; AGE=50; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;"
+)
+hazpred_macro_grid <- "%HAZPRED( PROC HAZPRED DATA=PRED INHAZ=OUTEST OUT=OUT; TIME INT_DEAD; );"
+macro_rows <- function(job) job$untranslated[grepl("^%", job$untranslated$construct), ]
+
+test_that("a DATA step inside a macro that is never called is not the grid", {
+  job <- translate_494(c(
+    fit_macro_grid,
+    "%MACRO ALTGRID; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+    "%MEND ALTGRID;",
+    hazpred_macro_grid
+  ))
+  g <- grid_494(job)
+  # SAS never runs ALTGRID, so it predicts at AGE = 50 (main emitted 70).
+  expect_equal(g$AGE, c(50, 50, 50))
+  expect_equal(g$time, c(1, 2, 3))
+  expect_equal(nrow(macro_rows(job)), 0L)
+})
+
+test_that("calling a macro whose body writes the grid refuses the grid", {
+  job <- translate_494(c(
+    fit_macro_grid,
+    "%MACRO ALTGRID; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+    "%MEND ALTGRID;",
+    "%ALTGRID;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "PRED is written by %ALTGRID", fixed = TRUE)
+})
+
+test_that("an %INCLUDE or an unread macro call after the grid is recorded", {
+  job <- translate_494(c(
+    fit_macro_grid,
+    "%INCLUDE 'makegrid.sas';",
+    "%MAKEGRID;",
+    "%MAKEGRID2(DS=PRED, AGE=70);",
+    hazpred_macro_grid
+  ))
+  rows <- macro_rows(job)
+  expect_equal(rows$construct,
+               c("%INCLUDE 'MAKEGRID.SAS'", "%MAKEGRID", "%MAKEGRID2(DS=PRED, AGE=70)"))
+  expect_true(all(grepl("may rewrite PRED", rows$reason, fixed = TRUE)))
+  # The grid the job shows is still emitted, and the predictions with it.
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+  heads <- vapply(job$calls, function(x) as.character(x[[1L]])[[1L]], "")
+  expect_true("predict" %in% heads)
+})
+
+test_that("a call before the grid's step, or macro statements, add no row", {
+  job <- translate_494(c(
+    "%INCLUDE 'lib.sas'; %MAKEGRID;",
+    fit_macro_grid,
+    "%LET X=1; %PUT &X;",
+    "%MACRO QUIET; %PUT HELLO; %MEND QUIET;",
+    "%QUIET;",
+    hazpred_macro_grid
+  ))
+  expect_equal(nrow(macro_rows(job)), 0L)
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+})
+
+test_that("a job with no macros records no macro row", {
+  job <- translate_494(c(fit_macro_grid, hazpred_macro_grid))
+  expect_equal(nrow(macro_rows(job)), 0L)
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+})
+
+test_that("a PROC HAZPRED inside a macro reads the grid built in that macro", {
+  # The step and the procedure run together when the macro is called, so
+  # the definition's own DATA step is the grid for its own PROC HAZPRED.
+  job <- translate_494(c(
+    fit_macro_grid,
+    "%MACRO ALTPRED; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+    hazpred_macro_grid,
+    "%MEND ALTPRED;"
+  ))
+  expect_equal(grid_494(job)$AGE, c(70, 70, 70))
+  expect_equal(nrow(macro_rows(job)), 0L)
+})
