@@ -104,6 +104,7 @@ the standard error of <code>log(mu)</code>; it is not tested against 0.</p>
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># -- Single-phase Weibull summary ------------------------------------</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="hazard.html">hazard</a></span><span class="op">(</span>time <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Exponential.html" class="external-link">rexp</a></span><span class="op">(</span><span class="fl">30</span>, <span class="fl">0.5</span><span class="op">)</span>, status <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="fl">30</span><span class="op">)</span>,</span></span>
 <span class="r-in"><span>              theta <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.3</span>, <span class="fl">1.0</span><span class="op">)</span>, dist <span class="op">=</span> <span class="st">"weibull"</span>, fit <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></span>
@@ -113,16 +114,16 @@ the standard error of <code>log(mu)</code>; it is not tested against 0.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   dist:         weibull </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   engine:       native-r-m2 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   converged:    TRUE </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   gradient:     relative 1.27e-09 (SAS/C requires &lt;= 6.06e-06; met, nlm code 1)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -49.8926 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   gradient:     relative 4.55e-07 (SAS/C requires &lt;= 6.06e-06; met, nlm code 1)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -52.9685 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   Not done in this run: none</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=15, gr=6</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   message:      continued with nlm() for 3 iterations (code 1) </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=14, gr=6</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   message:      continued with nlm() for 7 iterations (code 1) </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coefficients:</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>     estimate std_error   z_stat      p_value</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> mu 0.5284940 0.1084346 4.873851 1.094438e-06</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> nu 0.9378488 0.1375304 6.819212 9.154120e-12</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     estimate  std_error   z_stat      p_value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> mu 0.4431225 0.07736754 5.727499 1.019222e-08</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> nu 1.1055369 0.15224866 7.261390 3.831314e-13</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="co"># -- Multiphase model summary ----------------------------------------</span></span></span>

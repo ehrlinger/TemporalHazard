@@ -47,15 +47,11 @@ print(x, digits = 4, ...)
 
 - seed:
 
-  Optional integer random seed for reproducibility. When supplied,
-  `set.seed(seed)` is called at function entry, jumping the global RNG
-  to the seeded state; it is not restored on exit. Pass `NULL` (the
-  default) to skip the
-  [`set.seed()`](https://rdrr.io/r/base/Random.html) call and start from
-  the caller's current RNG state. The bootstrap consumes random numbers
-  either way, so the global RNG state will advance during the call;
-  `seed = NULL` avoids the *reset* at entry, not the advance during
-  resampling.
+  Optional integer random seed for reproducibility. When supplied, the
+  resampling runs from that seed and the caller's RNG state is restored
+  on exit, so the call neither resets nor advances the caller's stream.
+  Pass `NULL` (the default) to resample from the caller's current RNG
+  state instead, which the bootstrap then advances as it draws.
 
 - verbose:
 

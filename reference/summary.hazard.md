@@ -50,6 +50,7 @@ for bootstrap CIs and diagnostics.
 
 ``` r
 # -- Single-phase Weibull summary ------------------------------------
+set.seed(1)
 fit <- hazard(time = rexp(30, 0.5), status = rep(1L, 30),
               theta = c(0.3, 1.0), dist = "weibull", fit = TRUE)
 summary(fit)
@@ -59,16 +60,16 @@ summary(fit)
 #>   dist:         weibull 
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
-#>   gradient:     relative 1.27e-09 (SAS/C requires <= 6.06e-06; met, nlm code 1)
-#>   log-lik:      -49.8926 
+#>   gradient:     relative 4.55e-07 (SAS/C requires <= 6.06e-06; met, nlm code 1)
+#>   log-lik:      -52.9685 
 #>   Not done in this run: none
-#>   evaluations: fn=15, gr=6
-#>   message:      continued with nlm() for 3 iterations (code 1) 
+#>   evaluations: fn=14, gr=6
+#>   message:      continued with nlm() for 7 iterations (code 1) 
 #> 
 #> Coefficients:
-#>     estimate std_error   z_stat      p_value
-#> mu 0.5284940 0.1084346 4.873851 1.094438e-06
-#> nu 0.9378488 0.1375304 6.819212 9.154120e-12
+#>     estimate  std_error   z_stat      p_value
+#> mu 0.4431225 0.07736754 5.727499 1.019222e-08
+#> nu 1.1055369 0.15224866 7.261390 3.831314e-13
 
 # \donttest{
 # -- Multiphase model summary ----------------------------------------

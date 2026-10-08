@@ -27,8 +27,9 @@ model has not been fitted (`fit = FALSE`).
 ## Examples
 
 ``` r
+set.seed(1)
 fit <- hazard(time = rexp(30, 0.5), status = rep(1L, 30),
               theta = c(0.3, 1.0), dist = "weibull", fit = TRUE)
 coef(fit)
-#> [1] 0.4647205 0.9724934
+#> [1] 0.4431225 1.1055369
 ```

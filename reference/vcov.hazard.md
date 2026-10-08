@@ -43,10 +43,11 @@ been fitted or no covariance matrix is available.
 ## Examples
 
 ``` r
+set.seed(1)
 fit <- hazard(time = rexp(30, 0.5), status = rep(1L, 30),
               theta = c(0.3, 1.0), dist = "weibull", fit = TRUE)
 vcov(fit)
 #>              mu           nu
-#> mu  0.011758060 -0.004710299
-#> nu -0.004710299  0.018914606
+#> mu  0.005985736 -0.003822896
+#> nu -0.003822896  0.023179654
 ```
