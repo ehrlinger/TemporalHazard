@@ -2,6 +2,28 @@
 
 ## TemporalHazard 1.2.13
 
+### Breaking changes
+
+- **`hzr_bootstrap(seed = )` no longer resets your random number stream
+  ([\#611](https://github.com/ehrlinger/TemporalHazard/issues/611)).**
+  It seeded the global generator with
+  [`set.seed()`](https://rdrr.io/r/base/Random.html) and left it there,
+  so a script that called
+  [`set.seed()`](https://rdrr.io/r/base/Random.html) once at the top
+  lost that seed at its first seeded bootstrap, and every draw after it
+  followed from the bootstrap’s seed instead. The seed now holds for the
+  call only, through
+  [`withr::local_seed()`](https://withr.r-lib.org/reference/with_seed.html),
+  and your stream is restored when the call returns or fails. **A draw
+  after `hzr_bootstrap(seed = k)` no longer follows from `k`**: a script
+  that relied on that must call `set.seed(k)` itself. The replicates for
+  a given `seed` are unchanged, and equal those of `set.seed(k)`
+  followed by `seed = NULL`. `seed` must now be `NULL` or a single whole
+  number: `1.7`, `c(1, 2)` and `TRUE` used to act silently as
+  `seed = 1`, and `NA` failed with a message that did not name `seed`.
+  `withr` moves from `Suggests` to `Imports`; it depends only on base R.
+  This restores the 1.0.2 behaviour, which 1.0.3 removed.
+
 ### Bug fixes
 
 - **Standard errors computed numerically could be far too small, with no
