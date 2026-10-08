@@ -1494,6 +1494,11 @@
     }))
     derive$.hzr_icensor_event <- cens$degenerate_expr
   }
+  # transform() renames a non-syntactic column (`_X1` becomes `X_X1`) before
+  # R 4.4.0, which then sets check.names = FALSE itself. Pass it explicitly so
+  # the phase formula still finds the column it names on older R (#609). It
+  # goes last so the status expression keeps its position, read below.
+  derive$check.names <- FALSE
   status_call <- call("<-", as.name(data_name), derive)
   # Variables in some fitted phase formula: hazard() drops their missing rows
   # itself. Read by the listwise guard and the column check below.
