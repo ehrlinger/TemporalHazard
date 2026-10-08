@@ -46,6 +46,23 @@ constraint_reduced_ll <- function(d, phases, constraint,
   }
 }
 
+# numDeriv references with an explicit Richardson step. The default d = 0.1
+# is a 10% relative stencil, and at the extreme shapes below it is badly
+# wrong (#332): its error there exceeded the quantity these tests measure.
+# d = 1e-2 is used, and where a reference is trusted near its limit it is
+# required to agree with d = 1e-3.
+nd_args <- function(d = 1e-2) {
+  list(d = d, eps = 1e-4, zero.tol = sqrt(.Machine$double.eps / 7e-7), r = 4,
+       v = 2)
+}
+nd_hessian <- function(f, x, d = 1e-2) {
+  numDeriv::hessian(f, x, method.args = nd_args(d))
+}
+nd_grad <- function(f, x, d = 1e-2) {
+  numDeriv::grad(f, x, method.args = nd_args(d)[c("eps", "d", "zero.tol",
+                                                  "r", "v")])
+}
+
 # ---------------------------------------------------------------------------
 # The constructor
 # ---------------------------------------------------------------------------
@@ -162,14 +179,14 @@ for (constraint in c("alpha_gamma_eta", "eta_gamma")) {
                                         covariate_counts = counts,
                                         x_list = list(late = NULL))
       folded <- .hzr_constraint_score(theta, score, phases, counts)[free]
-      expect_equal(folded, numDeriv::grad(ll, theta[free]), tolerance = 1e-5,
+      expect_equal(folded, nd_grad(ll, theta[free]), tolerance = 1e-5,
                    label = paste("score at", point))
 
       hess <- .hzr_constrained_hessian(theta, d$time, d$status,
                                        phases = phases,
                                        covariate_counts = counts,
                                        x_list = list(late = NULL))[free, free]
-      expect_equal(unname(hess), -numDeriv::hessian(ll, theta[free]),
+      expect_equal(unname(hess), -nd_hessian(ll, theta[free]),
                    tolerance = 1e-3, label = paste("Hessian at", point))
 
       plain <- .hzr_hessian_multiphase(theta, d$time, d$status,
@@ -190,11 +207,15 @@ for (constraint in c("alpha_gamma_eta", "eta_gamma")) {
 test_that("at extreme gamma the constraint adds no Hessian error of its own", {
   skip_on_cran()
   skip_if_not_installed("numDeriv")
-  # At gamma 100 and 200 the unconstrained analytic g3 Hessian disagrees with
-  # numDeriv (#332), by up to 160% of an entry here. Whatever of that reaches
-  # the constrained Hessian arrives through J'HJ, so subtract exactly that and
-  # hold what is left. Entries, not standard errors: these points are
-  # ill-conditioned (rcond about 1e-8), where an inverse amplifies noise.
+  # At gamma 100 and 200 the unconstrained analytic g3 Hessian is off (#332),
+  # and J'HJ amplifies that into the constrained one (0.32 and 1.9 of an entry
+  # for eta_gamma, 0.11 for alpha_gamma_eta at gamma 200, on main at
+  # e8edeae). Subtract exactly what J'HJ carries and hold what is left.
+  # Entries, not standard errors: these points are ill-conditioned, where an
+  # inverse amplifies noise. The references use d = 1e-2 and must agree with
+  # d = 1e-3; numDeriv's default d = 0.1 is itself wrong here, and a version
+  # of this test on that default measured its stencil error, not the
+  # constraint's (#332 comment 5718004471).
   d <- constraint_data(c(log(0.3), log(10), 6, 2.4, 0.8))
   counts <- c(late = 0L)
   nulls <- list(late = NULL)
@@ -215,16 +236,25 @@ test_that("at extreme gamma the constraint adds no Hessian error of its own", {
       constrained <- unname(.hzr_constrained_hessian(
         theta, d$time, d$status, phases = phases, covariate_counts = counts,
         x_list = nulls)[free, free])
-      reference <- -numDeriv::hessian(ll, theta[free])
+      reference <- -nd_hessian(ll, theta[free])
+      full_reference <- -nd_hessian(ll_full, theta)
+      # The references are trusted only where the two steps agree (measured
+      # at most 2.1e-3 of an entry here).
+      expect_lt(max(abs(reference + nd_hessian(ll, theta[free], d = 1e-3)) /
+                      pmax(abs(reference), 1e-6)), 1e-2,
+                label = paste(constraint, point, "reduced reference"))
+      expect_lt(max(abs(full_reference + nd_hessian(ll_full, theta, d = 1e-3)) /
+                      pmax(abs(full_reference), 1e-6)), 1e-2,
+                label = paste(constraint, point, "full reference"))
       base_error <- .hzr_hessian_multiphase(
         theta, d$time, d$status, phases = plain, covariate_counts = counts,
-        x_list = nulls) + numDeriv::hessian(ll_full, theta)
+        x_list = nulls) - full_reference
       jac <- .hzr_constraint_jacobian(theta, phases, counts)
       inherited <- crossprod(jac, base_error %*% jac)[free, free]
       own <- (constrained - reference) - inherited
-      # Measured at most 4.2e-3 of an entry; the base error it sits beside
-      # reaches 1.6.
-      expect_lt(max(abs(own) / pmax(abs(reference), 1e-6)), 1e-2,
+      # Measured at most 3.2e-6 of an entry, beside a constrained error of up
+      # to 1.9.
+      expect_lt(max(abs(own) / pmax(abs(reference), 1e-6)), 1e-4,
                 label = paste(constraint, point))
     }
   }
@@ -268,13 +298,15 @@ test_that("the derived variance is the delta method, and an NA does not spread",
 
 # eta_gamma is fitted with alpha held: with alpha free as well, simulated data
 # of this size let gamma run to a ridge (gamma -> Inf, eta -> 0) where the
-# fit says nothing about the constraint.
+# fit says nothing about the constraint. It is held BELOW 1: with gamma * eta
+# = 2, PROC HAZARD needs gamma * eta / alpha > 2 and refuses a fixed alpha
+# above 1 (SETG31040, #418), which hazard() now does too.
 e2e_cases <- list(
   alpha_gamma_eta = list(truth = c(log(0.3), log(10), 6, 2.4, 0.8),
                          start = list(tau = 8, gamma = 5, eta = 1),
                          free = c(1L, 2L, 3L, 5L)),
-  eta_gamma = list(truth = c(log(0.5), log(8), 2, 2, 1),
-                   start = list(tau = 6, gamma = 3, alpha = 2,
+  eta_gamma = list(truth = c(log(0.5), log(8), 2, 0.5, 1),
+                   start = list(tau = 6, gamma = 3, alpha = 0.5,
                                 fixed = "alpha"),
                    free = 1:3)
 )
@@ -316,7 +348,7 @@ for (constraint in names(e2e_cases)) {
     derived <- if (constraint == "alpha_gamma_eta") 4L else 5L
     rows <- sort(c(free, derived))
     jac <- .hzr_constraint_jacobian(theta, phases, counts)[, free]
-    oracle <- jac %*% solve(-numDeriv::hessian(ll, theta[free])) %*% t(jac)
+    oracle <- jac %*% solve(-nd_hessian(ll, theta[free])) %*% t(jac)
     expect_equal(unname(vcov(fit))[rows, rows], oracle[rows, rows],
                  tolerance = 1e-3)
     expect_gt(vcov(fit)[derived, derived], 0)
@@ -328,11 +360,37 @@ for (constraint in names(e2e_cases)) {
       full[free] <- p
       if (constraint == "alpha_gamma_eta") full[3] * full[5] / 2 else 2 / full[3]
     }
-    grad_derived <- numDeriv::grad(derive, theta[free])
-    v_numeric <- solve(-numDeriv::hessian(ll, theta[free]))
+    grad_derived <- nd_grad(derive, theta[free])
+    v_numeric <- solve(-nd_hessian(ll, theta[free]))
     expect_equal(sqrt(vcov(fit)[derived, derived]),
                  sqrt(as.numeric(grad_derived %*% v_numeric %*% grad_derived)),
                  tolerance = 1e-3)
+
+    # predict() keeps the derived slot in its sandwich (#586): it is fixed in
+    # fixed_mask but carries a variance, and dropping it lost the
+    # constraint's chain rule. Truth: the numeric Jacobian of H over the
+    # searched parameters, through the constraint, with their covariance.
+    tt <- c(1, 5, 10, 20)
+    h_of <- function(p) {
+      full <- theta
+      full[free] <- p
+      full <- .hzr_apply_constraints(full, phases, counts)
+      .hzr_multiphase_cumhaz(tt, full, phases, counts, list(late = NULL))
+    }
+    jh <- numDeriv::jacobian(h_of, theta[free])
+    se_truth <- sqrt(rowSums((jh %*% unname(vcov(fit))[free, free]) * jh))
+    se_got <- predict(fit, newdata = data.frame(time = tt),
+                      type = "cumulative_hazard", se.fit = TRUE)$se.fit
+    expect_equal(se_got / se_truth, rep(1, length(tt)), tolerance = 1e-6)
+    # A NaN variance on the derived slot is not "fixed, known": it withholds.
+    nan_fit <- fit
+    nan_fit$fit$vcov[derived, derived] <- NaN
+    expect_warning(
+      se_nan <- predict(nan_fit, newdata = data.frame(time = tt),
+                        type = "cumulative_hazard", se.fit = TRUE)$se.fit,
+      "variance that cannot be represented", fixed = TRUE
+    )
+    expect_true(all(is.na(se_nan)))
   })
 }
 
@@ -434,7 +492,21 @@ test_that("a translated FIXGAE2 job runs as a constrained fit", {
     "  PARMS MUL=0.1 TAU=8 ALPHA=2 GAMMA=5 ETA=1 FIXGAE2 WEIBULL; );"
   ), f)
   out <- withr::local_tempdir()
-  job <- hzr_translate_sas(f, out_dir = out)
+  # PROC HAZARD moves the late shape onto the constraint before fitting
+  # (setg3.c:449-467), so a job written ALPHA=2 is fitted at ALPHA=2.5. The
+  # translation emits 2.5 -- SAS's own model -- and DISCLOSES the rewrite
+  # rather than emitting it silently. Asserted here rather than muffled:
+  # this is where that warning surfaces, and a test whose name says only
+  # that the job "runs as a constrained fit" while the code also warns
+  # documents less than the code does (#433 gate).
+  # The assignment is INSIDE expect_warning() on purpose: it returns the
+  # warning condition, not the value of the expression, so `job <-
+  # expect_warning(...)` binds the warning and every later assertion then
+  # asks the wrong object.
+  job <- NULL
+  expect_warning(job <- hzr_translate_sas(f, out_dir = out),
+                 "ALPHA=2 -> 2.5", fixed = TRUE)
+  expect_true("ALPHA=2 -> 2.5" %in% job$untranslated$construct)
   expect_false("FIXGAE2" %in% job$untranslated$construct)
   qmd <- readLines(file.path(out, sub("[.]sas$", ".qmd", basename(f))))
   expect_true(any(grepl("constraint = \"alpha_gamma_eta\"", qmd, fixed = TRUE)))
@@ -479,16 +551,58 @@ test_that("a theta off the constraint is replaced, with a warning, fitted or not
   )
   expect_equal(unname(coef(unfitted))[4], 2.5)
 
-  # With a phase formula the slot cannot be located unfitted: say so.
+  # With covariates the slots are located from the design, as the optimizer
+  # locates them (#328 item 1): a phase formula against data, else the global
+  # design. A theta already on the constraint is left alone, silently.
   dat <- data.frame(time = d$time, status = d$status,
-                    z = seq_along(d$time) %% 2)
+                    z = seq_along(d$time) %% 2, w = seq_along(d$time) %% 3)
   covaried <- list(late = hzr_phase("g3", tau = 8, gamma = 5, eta = 1,
                                     formula = ~ z,
                                     constraint = "alpha_gamma_eta"))
+  on <- c(log(0.2), log(8), 5, 2.5, 1, 0.3)
+  expect_no_warning(
+    kept <- hazard(time = time, status = status, data = dat,
+                   dist = "multiphase", phases = covaried, theta = on,
+                   fit = FALSE)
+  )
+  expect_equal(unname(coef(kept)), on)
+  expect_warning(
+    moved <- hazard(time = time, status = status, data = dat,
+                    dist = "multiphase", phases = covaried,
+                    theta = c(off, 0.3), fit = FALSE),
+    "was replaced by 2.5"
+  )
+  expect_equal(unname(coef(moved)), on)
+
+  # Global design inherited by a formula-less phase: the late block follows
+  # an early phase with two covariates, so the derived slot is not where a
+  # covariate-free layout would put it.
+  two_phase <- list(early = hzr_phase("cdf"),
+                    late = hzr_phase("g3", tau = 8, gamma = 5, eta = 1,
+                                     constraint = "alpha_gamma_eta"))
+  global_on <- c(log(0.1), 0, 1, 0, 0.1, 0.2,
+                 log(0.2), log(8), 5, 2.5, 1, 0.3, 0.4)
+  expect_no_warning(
+    g_kept <- hazard(survival::Surv(time, status) ~ z + w, data = dat,
+                     dist = "multiphase", phases = two_phase,
+                     theta = global_on, fit = FALSE)
+  )
+  expect_equal(unname(coef(g_kept)), global_on)
+  global_off <- global_on
+  global_off[10] <- 7
+  expect_warning(
+    g_moved <- hazard(survival::Surv(time, status) ~ z + w, data = dat,
+                      dist = "multiphase", phases = two_phase,
+                      theta = global_off, fit = FALSE),
+    "was replaced by 2.5"
+  )
+  expect_equal(unname(coef(g_moved)), global_on)
+
+  # A theta of the wrong length cannot be read either way; that is said.
   expect_warning(
     hazard(time = time, status = status, data = dat, dist = "multiphase",
-           phases = covaried, theta = c(off, 0), fit = FALSE),
-    "applied only under fit = TRUE"
+           phases = covaried, theta = on[-6], fit = FALSE),
+    "theta has 5 entries"
   )
 
   skip_on_cran()
@@ -500,4 +614,30 @@ test_that("a theta off the constraint is replaced, with a warning, fitted or not
   )
   theta <- unname(coef(fitted))
   expect_equal(theta[4], theta[3] * theta[5] / 2)
+})
+
+test_that("hzr_phase() refuses a non-finite shape, given or derived (#329 review)", {
+  # Each of these built an object outside hzr_phase()'s own domain; fitting
+  # one then stopped only inside the optimizer.
+  expect_error(hzr_phase("g3", gamma = Inf), "gamma must be a positive scalar, and finite")
+  expect_error(hzr_phase("g3", tau = Inf), "tau must be a positive scalar, and finite")
+  expect_error(hzr_phase("g3", eta = Inf), "eta must be a positive scalar, and finite")
+  expect_error(hzr_phase("g3", gamma = Inf, constraint = "eta_gamma"),
+               "gamma must be a positive scalar, and finite")
+  # Overflow and underflow of the derived value.
+  expect_error(
+    hzr_phase("g3", gamma = 1e200, eta = 1e200,
+              constraint = "alpha_gamma_eta"),
+    "alpha = gamma * eta / 2 is not a finite positive number", fixed = TRUE
+  )
+  expect_error(
+    hzr_phase("g3", gamma = 1e-200, eta = 1e-200,
+              constraint = "alpha_gamma_eta"),
+    "alpha = gamma * eta / 2 is not a finite positive number", fixed = TRUE
+  )
+  expect_error(hzr_phase("g3", gamma = 1e-320, constraint = "eta_gamma"),
+               "eta = 2 / gamma is not a finite positive number", fixed = TRUE)
+  # In range, untouched.
+  expect_equal(hzr_phase("g3", gamma = 1e100, eta = 1e-100,
+                         constraint = "alpha_gamma_eta")$alpha, 0.5)
 })

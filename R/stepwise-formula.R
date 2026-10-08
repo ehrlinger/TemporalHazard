@@ -61,6 +61,165 @@
 }
 
 
+#' The term label `terms()` gives a data column
+#'
+#' The identity a candidate is compared by. `terms()` backquotes a name that
+#' is not syntactic, so the column `_X1` is labelled `` `_X1` `` and the
+#' column `TRUE` is labelled `` `TRUE` ``. The label is produced by
+#' `terms()` itself, from the column's symbol, so no string is parsed and it
+#' is exactly the label a model containing the column carries. Distinct
+#' columns get distinct labels, and a column's label never equals an
+#' expression's: the column `age:mal` is `` `age:mal` ``, the interaction is
+#' `age:mal`.
+#'
+#' @param x Character vector of column names.
+#' @return Character vector of labels, the same length. A name no symbol can
+#'   carry (`""`) or that `terms()` refuses (`"."`) gets a placeholder no term
+#'   label can equal, so it matches only itself.
+#' @keywords internal
+#' @noRd
+.hzr_column_label <- function(x) {
+  vapply(x, function(nm) {
+    tryCatch(
+      attr(stats::terms(stats::as.formula(call("~", as.name(nm)))),
+           "term.labels"),
+      error = function(e) {
+        paste0("<column ", encodeString(nm, quote = "\""), ">")
+      }
+    )
+  }, character(1), USE.NAMES = FALSE)
+}
+
+#' Is a column label the placeholder for a name no formula can hold?
+#'
+#' `.hzr_column_label()` gives `""` and `"."` a placeholder, `<column ".">`,
+#' because `terms()` cannot label them (`.` means every other column). Such a
+#' column is never a stepwise candidate: pasted into formula text, the
+#' placeholder does not parse (#449).
+#'
+#' @keywords internal
+#' @noRd
+.hzr_is_label_placeholder <- function(label) {
+  startsWith(label, "<column ")
+}
+
+#' The term a candidate's refit writes into the formula
+#'
+#' `.hzr_formula_update()` writes its `var` into the formula TEXT, so the
+#' model gains whatever that text parses to. The candidate's spelling is the
+#' user's column name, which can parse to a different term: `age ` reads as
+#' `age`, the column `age:mal` as the interaction, and `_X1` does not parse
+#' (#449, #441). Its identity is the label `terms()` wrote for the resolved
+#' column or term, which parses back to exactly that, so that is what the
+#' refit is given.
+#'
+#' @param cand A candidate from `.hzr_stepwise_candidates()`.
+#' @return A term label.
+#' @keywords internal
+#' @noRd
+.hzr_candidate_term <- function(cand) {
+  cand$id %||% cand$var
+}
+
+#' The data column a candidate is, if it is one
+#'
+#' The score reads the candidate's values from `data`, so it needs the COLUMN
+#' the candidate resolved to, which is neither its spelling nor its label in
+#' general: a formula `scope` spells `_X1` as its label `` `_X1` ``, which is
+#' no column name (#438), and the interaction `age:mal` is spelled like a
+#' literal column `age:mal` that it is not (#449). The column is the one
+#' whose own `terms()` label is the candidate's identity.
+#'
+#' @param cand A candidate from `.hzr_stepwise_candidates()`.
+#' @param data The screen's data frame.
+#' @return The column name, or `NA` when the candidate is not a column.
+#' @keywords internal
+#' @noRd
+.hzr_candidate_column <- function(cand, data) {
+  cols <- names(data)
+  hit <- match(.hzr_candidate_term(cand), .hzr_column_label(cols))
+  if (is.na(hit)) NA_character_ else cols[[hit]]
+}
+
+#' Is a string a term label of `data`, exactly as `terms()` writes it?
+#'
+#' True when the string is the single label `terms()` gives a formula whose
+#' right-hand side is that string, and every variable that term reads is a
+#' column of `data`. `"age "` and `"age # x"` are not labels (`terms()`
+#' writes `age`), nor is `"TRUE"` (a constant, no term), nor `"age*mal"`
+#' (three terms), nor a bare name that is not a column.
+#'
+#' @keywords internal
+#' @noRd
+.hzr_is_term_label <- function(s, data) {
+  isTRUE(tryCatch({
+    f <- stats::reformulate(s)
+    vars <- all.vars(f)
+    identical(attr(stats::terms(f), "term.labels"), s) &&
+      length(vars) > 0L && all(vars %in% names(data))
+  }, error = function(e) FALSE))
+}
+
+#' Resolve user-supplied names to the terms they name
+#'
+#' `force_in`, `force_out` and a character `scope` are documented as
+#' variables, but a candidate is compared by its `terms()` label, and the
+#' two spellings differ for a name that is not syntactic (#437). Resolving a
+#' string by PARSING it cannot be right: the same text is a raw column name
+#' at some sites and a term label at others, and each rule tried for #442
+#' merged two things that were different. So a string is resolved by LOOKUP,
+#' once, and every later comparison is on the result:
+#'
+#' 1. exactly a column of `data`: that column, identified by
+#'    `.hzr_column_label()`;
+#' 2. otherwise exactly a label in `labels`, or a column's label, or, with
+#'    `self_label = TRUE`, a string that is itself a term label over columns
+#'    of `data` (`.hzr_is_term_label()`): that term;
+#' 3. otherwise it names nothing. It is WARNED about, naming it, and dropped.
+#'
+#' A string that is both a column and a term label names the COLUMN, so with
+#' a column literally called `age:mal` the interaction is reachable only
+#' through a string that is not a column name.
+#'
+#' @param x Character vector supplied by the user.
+#' @param data The screen's data frame.
+#' @param labels Term labels step 2 accepts, besides the columns' own.
+#' @param arg The argument's name, for the warning, e.g. `` "`force_in`" ``.
+#' @param self_label Accept a string that is itself a term label. Used for a
+#'   character `scope`, which introduces its own terms.
+#' @return A list: `spelling`, the resolved elements as the user wrote them;
+#'   `id`, the label each resolves to, in the same order; and `unresolved`,
+#'   the elements that resolved to nothing, which hzr_stepwise() records on
+#'   its result so that the warning is not the only trace of them.
+#' @keywords internal
+#' @noRd
+.hzr_resolve_names <- function(x, data, labels = character(), arg,
+                               self_label = FALSE) {
+  x <- as.character(x)
+  id <- rep(NA_character_, length(x))
+  cols <- names(data)
+  is_col <- x %in% cols
+  id[is_col] <- .hzr_column_label(x[is_col])
+  known <- c(labels, .hzr_column_label(cols))
+  is_lab <- !is_col & x %in% known
+  id[is_lab] <- x[is_lab]
+  if (self_label) {
+    for (i in which(is.na(id))) {
+      if (.hzr_is_term_label(x[i], data)) id[i] <- x[i]
+    }
+  }
+  bad <- is.na(id)
+  if (any(bad)) {
+    warning(arg, " names ",
+            paste(encodeString(x[bad], quote = "\""), collapse = ", "),
+            ", which is neither a column of `data` nor a term label of the ",
+            "model or `scope`; ",
+            if (sum(bad) == 1L) "it is" else "they are", " ignored.",
+            call. = FALSE)
+  }
+  list(spelling = x[!bad], id = id[!bad], unresolved = x[bad])
+}
+
 #' Add or drop a variable from a formula's RHS
 #'
 #' @param formula Existing formula.  One-sided (`~ x`) or two-sided
@@ -397,4 +556,87 @@
   if (is.logical(x)) return(as.numeric(x))
   if (is.numeric(x)) return(x)
   NULL
+}
+
+#' Refuse a `scope` the screen would not honour
+#'
+#' A backward screen only drops terms the base model already has, so it
+#' never reads `scope`: the variables it leaves out are still dropped, and the
+#' ones the base lacks are never tested. A two-sided scope formula is read by
+#' its right-hand side only, so its left-hand side is never a candidate, and a
+#' phase named twice in a scope list is read at its first entry only. Each ran
+#' to a result with no message (#343). `hzr_stepwise()` and `hzr_bootstrap()`
+#' call this before any fitting or seeding.
+#'
+#' @param scope The `scope` argument as given.
+#' @param direction The matched `direction`.
+#' @param caller `"hzr_stepwise"` or `"hzr_bootstrap"`, which need different
+#'   remedies for a backward screen.
+#' @return `NULL`, invisibly; otherwise stops.
+#' @keywords internal
+#' @noRd
+.hzr_refuse_unhonoured_scope <- function(scope, direction,
+                                         caller = "hzr_stepwise") {
+  if (is.null(scope)) {
+    return(invisible(NULL))
+  }
+  # An empty scope offers nothing to enter, which a backward screen honours.
+  # An offset is no candidate, but it is refused under "both", so it is not
+  # treated as empty here either.
+  empty_formula <- function(sc) {
+    if (!inherits(sc, "formula") || length(sc) != 2L) return(FALSE)
+    tt <- tryCatch(stats::terms(sc), error = function(e) NULL)
+    !is.null(tt) && length(attr(tt, "term.labels")) == 0L &&
+      is.null(attr(tt, "offset"))
+  }
+  empty <- if (is.list(scope) && !inherits(scope, "formula")) {
+    # A zero-length element offers nothing to enter, as `character()` does for
+    # a whole scope; refusing one while accepting the other was arbitrary.
+    all(vapply(scope, function(sc) {
+      is.null(sc) || length(sc) == 0L || empty_formula(sc)
+    }, logical(1)))
+  } else {
+    length(scope) == 0L || empty_formula(scope)
+  }
+  one_sided <- function(sc, what) {
+    if (inherits(sc, "formula") && length(sc) == 3L) {
+      stop(what, " must be one-sided: its left-hand side (`",
+           paste(deparse(sc[[2L]]), collapse = " "), "`) would be ignored, ",
+           "so it would never be a candidate. Write every candidate on the ",
+           "right, as in `~ ", paste(deparse(sc[[3L]]), collapse = " "), "`.",
+           call. = FALSE)
+    }
+  }
+  if (is.list(scope) && !inherits(scope, "formula")) {
+    dup <- unique(names(scope)[duplicated(names(scope)) & nzchar(names(scope))])
+    if (length(dup)) {
+      stop("`scope` names ", paste0("`", dup, "`", collapse = ", "),
+           " more than once; only the first entry would be read. Give each ",
+           "phase one formula listing all its candidates.", call. = FALSE)
+    }
+    for (i in seq_along(scope)) {
+      one_sided(scope[[i]], paste0("`scope$", names(scope)[i], "`"))
+    }
+  } else {
+    one_sided(scope, "`scope`")
+  }
+  # After the structural checks, so a malformed scope gets the error that
+  # names its fault (the left-hand side, a repeated phase) under every
+  # direction; the backward refusal is about a well-formed scope.
+  if (direction == "backward" && !empty) {
+    remedy <- if (caller == "hzr_bootstrap") {
+      paste0("For a backward screen on each replicate, pass an empty ",
+             "`scope` such as `~ 1`; to screen a candidate set, use ",
+             "`direction = \"both\"` or `\"forward\"`. With `scope` unset, ",
+             "hzr_bootstrap() does not select at all.")
+    } else {
+      paste0("Pass the full model as the base fit, protect terms with ",
+             "`force_in`, and leave `scope` unset or empty.")
+    }
+    stop("`scope` has no effect when `direction = \"backward\"`: a backward ",
+         "screen only drops terms the base model already has, so a variable ",
+         "left out of `scope` is still dropped and one the base lacks is ",
+         "never tested. ", remedy, call. = FALSE)
+  }
+  invisible(NULL)
 }

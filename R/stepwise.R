@@ -32,11 +32,17 @@
 #'   \item{`direction = "forward"`}{Start from the base model and only
 #'     *add* variables; the best eligible candidate enters each step
 #'     until none clears the entry rule.  Variables never leave once in.}
-#'   \item{`direction = "backward"`}{Start from the full candidate model and
-#'     only *drop* variables; the weakest term leaves each step until all
-#'     survivors clear the retention rule.}
-#'   \item{`direction = "both"` (default)}{Two-way stepwise: after each
-#'     entry, already-selected variables are re-tested and may be dropped.
+#'   \item{`direction = "backward"`}{Start from the base model, which must
+#'     already hold every candidate, and only *drop* variables; the weakest
+#'     term leaves each step until all survivors clear the retention rule.
+#'     `scope` is not read, so a non-empty one is an error: protect terms
+#'     with `force_in`.}
+#'   \item{`direction = "both"` (default)}{Two-way stepwise: on every
+#'     iteration, whether or not a variable entered, every term in the model,
+#'     the base model's included, is re-tested and may be dropped unless it
+#'     is in `force_in` or was frozen by `max_move` at an earlier iteration
+#'     (see the **The frozen set** section).
+#'     `scope` limits what may enter, not what may leave.
 #'     This is the SAS `SELECTION = STEPWISE` strategy.  `max_move` caps how
 #'     often a single variable may oscillate before it is frozen.}
 #' }
@@ -90,12 +96,59 @@
 #' @param fit A fitted `hazard` object built via the
 #'   `formula = Surv(...) ~ predictors, data = df` interface.
 #' @param scope Candidate set.  `NULL` (default) uses every data-frame
-#'   column not already in the model for every phase.  For
+#'   column not already in the model for every phase.  A candidate enters
+#'   as the column it names, whatever its name: a column literally named
+#'   `age:mal` enters as that column, not the interaction, and a column
+#'   `"age "` beside `age` enters as itself (#449).  For
 #'   single-distribution fits, pass a one-sided formula
-#'   (`~ age + nyha`) or a character vector of names.  For multiphase
-#'   fits, pass a named list of one-sided formulas keyed by phase.
+#'   (`~ age + nyha`) or a character vector of names.  Each name in a
+#'   character `scope` is looked up, not parsed: a name that is exactly a
+#'   column of `data` is that column, otherwise a name that is exactly a
+#'   term label as `terms()` writes it (`` "`_X1`" ``, `"log(age)"`,
+#'   `"age:mal"`) is that term, and any other name is ignored with a
+#'   warning naming it.  The column is looked up first, so when `data` has
+#'   a column literally named `age:mal`, `"age:mal"` puts that column in
+#'   the scope rather than the interaction.  A candidate enters as the
+#'   column or term its name resolved to, so a bare `"_X1"` enters the
+#'   column `_X1` (#449, #441), and the score reads the values of that
+#'   column however the name was written (#438).  For multiphase
+#'   fits, pass a named list of one-sided formulas keyed by phase, naming
+#'   each phase once.  `scope` lists what may enter; a drop considers every
+#'   term in the model except `force_in` and terms frozen by `max_move`
+#'   at an earlier iteration (see the **The frozen set** section).  A
+#'   two-sided formula is an error,
+#'   since its left-hand side would never be a candidate, and so is a
+#'   non-empty `scope` under `direction = "backward"`, which does not read
+#'   it.  An empty scope (`~ 1`, `character()`, or a list of `NULL`s and
+#'   `~ 1`s) is accepted there.
 #' @param data Data frame the base fit was built on.  Required for
-#'   refits.
+#'   refits.  Its rows must be the fit's rows in the same order: the score
+#'   criterion reads each candidate by position, so a sorted or reordered
+#'   frame is refused when the fit stored the frame it was given.  On the
+#'   vector interface, and for any fit with `weights`, every criterion's
+#'   refits pair `data` with vectors stored in the fit's row order, so there
+#'   the frame is checked whatever the `criterion`.  Columns
+#'   added after the fit, such as derived candidates, are allowed.  A
+#'   vector-interface fit made without `data =`, or with a `data` of another
+#'   row count used only to look names up, stores no frame to compare, and
+#'   a `data` holding only columns added after the fit shares none; and
+#'   shared columns with duplicate rows cannot show rows reordered among
+#'   those duplicates.  For
+#'   those the order is checked against a column of `data` holding the fit's
+#'   event times, and refused if they are out of order.  Rows reordered
+#'   within a tie leave that column unchanged, so when the times have ties
+#'   the fit's other per-row inputs (status, interval bounds, weights and
+#'   covariate design columns) are looked for in `data` too, each under the
+#'   column it came from: the column the call named (`status = dead`,
+#'   `status = d$dead`, or the event in `Surv(time, event)`), or a
+#'   covariate's own name.  Rows reordered within a tie are refused.  The order is accepted when the inputs found
+#'   tell every row apart, or when all of them are found: rows that could
+#'   still be swapped are then identical in everything the fit reads, and
+#'   the screen's answer is the same.  With no column of event times, or
+#'   tied times the other inputs cannot resolve, the order cannot be
+#'   checked, and a warning of class `hzr_score_rows_unverified` says so and
+#'   names the inputs to add.  Column names must be unique: every check
+#'   reads `data` by name, so a `data` with duplicated names is refused.
 #' @param direction Search strategy: one of `"both"` (default),
 #'   `"forward"`, or `"backward"`.  Controls whether variables may only
 #'   enter, only leave, or both.  See the **Selection direction and
@@ -115,16 +168,38 @@
 #'   `warning()` if hit.  Default `50`.
 #' @param max_move Per-variable oscillation cap.  When a variable has
 #'   entered + exited more than `max_move` times it is frozen for the
-#'   remainder of the run.  Default `4`.
+#'   remainder of the run, in the state it ends that iteration in.  Default
+#'   `4`.  See the **The frozen set** section.
 #' @param force_in Character vector of variables that must remain in
 #'   the model.  Such variables are still scored and reported in the
-#'   selection trace, but are never dropped.
+#'   selection trace, but are never dropped.  Each name is looked up, not
+#'   parsed, once, when the screen starts: a name that is exactly a column
+#'   of `data` is that column, so the bare `"_X1"` pins the column `_X1`
+#'   although `terms()` labels it `` `_X1` ``, and `"TRUE"` pins a column
+#'   named `TRUE`.  The exception is a column no model formula can hold,
+#'   `"."` or `""`: it can never become a model term, so it cannot be
+#'   pinned, and naming it warns and lists it in `unresolved`.  Otherwise a name that is exactly a term label of the
+#'   model or `scope` is that term, so `` "`_X1`" `` and `"age:mal"` work
+#'   too.  Any other name, `"age "` with a trailing space when there is no
+#'   such column, say, matches nothing and is ignored with a warning naming
+#'   it.  The column is looked up first: when `data` has a column literally
+#'   named `age:mal`, `"age:mal"` resolves to that column and not to the
+#'   interaction.
 #' @param force_out Character vector of variables that may never be
-#'   considered as candidates.
+#'   considered as candidates.  Names are looked up as for `force_in`:
+#'   a column of `data` first, then a term label of the model or `scope`,
+#'   and a warning for a name that is neither.
 #' @param trace Logical; print step-by-step progress to the console.
 #'   Default `TRUE`.
-#' @param ... Passed to the underlying `hazard()` refits (e.g.
-#'   `control = list(n_starts = 3)`).
+#' @param ... Passed to every candidate refit. Only `control` (e.g.
+#'   `control = list(maxit = 500)`) and an `objective` equal to the base
+#'   fit's are accepted. Any other name is an error: a misspelling such as
+#'   `slentyr` would be stored by `hazard()` without being read, and every
+#'   other `hazard()` argument (the response, `weights`, `time_windows`,
+#'   `dist`, `theta`, `phases`, `fit` and so on) is set by the refit itself,
+#'   from the base model and `data`, so that each candidate is compared with
+#'   the model it extends.
+#'   The `print()`, `summary()` and `as.data.frame()` methods ignore `...`.
 #'
 #' @return An object of class `c("hzr_stepwise", "hazard")`, the
 #'   final fit augmented with:
@@ -132,20 +207,77 @@
 #'     \item{\code{steps}}{Data frame with one row per accepted /
 #'       frozen action; see Details.}
 #'     \item{\code{scope}}{Record of the candidate scope, plus
-#'       `force_in`, `force_out`, and the frozen set.}
+#'       `force_in`, `force_out`, and the frozen set.  Four fields answer
+#'       four different questions about the pins, and none substitutes for
+#'       another: `force_in` and `force_out` are the names **as given**,
+#'       including any that pinned nothing; `force_in_resolved` and
+#'       `force_out_resolved` are what those names **resolved to**, as a
+#'       column or term label, so a bare `"_X1"` appears there as
+#'       `` "`_X1`" ``; `unresolved` is which of them resolved to nothing;
+#'       and `frozen` is what the loop held in that the caller never named.
+#'       The resolved fields carry the resolved names only: the frozen set
+#'       is **not** merged into them, because `frozen` already records it
+#'       and merging would list variables nobody asked for (#451).  Resolving
+#'       is not applying: a name that resolves to a variable the model does
+#'       not contain is recorded here and still pins nothing, because
+#'       `force_in` only keeps a variable that is already in.  The resolved
+#'       fields are **not** aligned element for element with the as-given
+#'       ones, which stay longer by every name that resolved to nothing.
+#'       A variable in `frozen` is in the final model if it was in the model
+#'       when it was frozen, and out of it otherwise; see the **The frozen
+#'       set** section.
+#'       `unresolved` is a list with elements `force_in`, `force_out` and
+#'       `scope`, each the names that could not be used and were therefore
+#'       ignored (`character()` when none were). That is usually a name
+#'       matching neither a column of `data` nor a term label; for `force_in`
+#'       and `force_out` it also covers a name that IS a column but which no
+#'       model formula can hold, such as `"."` or `""`, since such a column
+#'       can never become a model term and so can never be pinned.
+#'       The trace, and so `print()` and `summary()`, carries a
+#'       line for each non-empty one, and a screen whose character `scope`
+#'       was emptied this way says so where it stops.  `candidates`,
+#'       `force_in` and `force_out` here are the arguments as given, so a
+#'       character `candidates` still lists the names that were ignored,
+#'       as `force_in` and `force_out` do; read `unresolved` for which
+#'       those were (#451).}
 #'     \item{\code{criteria}}{Named list of the threshold / direction
-#'       settings actually applied, plus, under `criterion = "score"`,
-#'       `n_uncomputable_scores` (how many candidate scores were `NA`),
-#'       `uncomputable_reasons` (a named integer vector of *why*) and
-#'       `stopped_uncomputable`. Read `uncomputable_reasons` before treating
+#'       settings actually applied, plus
+#'       `n_uncomputable_scores` (how many candidate scores were `NA`,
+#'       counted once per step: an entry the score test could not score
+#'       under `criterion = "score"`; an entry under `criterion = "wald"`, or
+#'       a removal under any criterion, whose Wald statistic could not be
+#'       computed for want of a variance, `wald_no_variance`; or an entry
+#'       under `criterion = "aic"` whose fit had no finite objective,
+#'       `nonfinite`, or was fitted on different rows from the current model
+#'       because the candidate is missing on some, `rows_differ`; or an entry
+#'       under `criterion = "aic"` or `"wald"`, or rescued by the Wald
+#'       fallback under `"score"`, whose refit ended below the current
+#'       model's log-likelihood, which it contains, so that the refit cannot
+#'       have converged, `loglik_below_base`),
+#'       `uncomputable_reasons` (a named integer vector of *why*),
+#'       `wald_untested_removals` and `wald_untested_entries` (the
+#'       `"var"` / `"var@phase"` tokens of variables kept in, or left out,
+#'       on a step whose Wald test for them could not be computed; a
+#'       variable tested, or refused as `loglik_below_base`, at a later step
+#'       is not listed.  Entries are listed under `criterion = "wald"` only: under `"score"` an entry no test
+#'       could reach is reported by its reason, such as
+#'       `fallback_no_variance`) and
+#'       `stopped_uncomputable` (`TRUE` when the last iteration had
+#'       candidates for entry or for removal and could test none of them).
+#'       Read `uncomputable_reasons` before treating
 #'       an unscored candidate as a bad one: `information_indefinite` marks
 #'       candidates whose effect is too large for the score test's
 #'       approximation at zero, which are typically the strongest variables
 #'       on offer rather than degenerate ones. Candidates with that cause,
-#'       or with `coefficient_diverging`, are refit and tested by Wald
-#'       automatically, counted in `n_wald_fallbacks`. A candidate still
+#'       or with `coefficient_diverging`, `information_nonpositive` or
+#'       `nuisance_singular`, are refit and tested by Wald
+#'       automatically, counted in `n_wald_fallbacks`. `nuisance_singular`
+#'       is a fault of the score test at the current model, whose
+#'       information matrix could not be formed or inverted, so it applies
+#'       to every candidate at that step and each of them is refitted. A
+#'       candidate still
 #'       reaches `uncomputable_reasons` when that refit fails, or when its
-#'       cause is any other, which no refit can rescue. Read
+#'       cause is any other, for which no refit is attempted. Read
 #'       `uncomputable_reasons` for which one it was in any given run.  For
 #'       every criterion it also carries
 #'       `refit_failures` (the `"var"` / `"var@phase"` tokens of candidate
@@ -169,13 +301,45 @@
 #'     \item{\code{final_call}}{The call that produced this result.}
 #'   }
 #'
+#' @section The frozen set:
+#'
+#' A variable that has moved (entered or left) more than `max_move` times
+#' is frozen: it is held in the state it is in, in the model or out of it,
+#' for the rest of the run, and listed in `$scope$frozen`.
+#'
+#' The freeze takes effect at the end of the iteration in which the variable
+#' reached the cap.  A two-way iteration (`direction = "both"`) makes a
+#' forward step and then a backward step, so a variable that reaches the
+#' cap by entering and is dropped by the same iteration's backward step is
+#' frozen **out**.  Its `"frozen"` row in `$steps` follows the `"drop"`.  A
+#' variable is therefore in the final model exactly when it was in the model
+#' when it was frozen, and `$scope$frozen` agrees with the final model.
+#'
+#' Earlier versions froze such a variable as it entered and then dropped it
+#' anyway, so `$scope$frozen` could name a variable the final model did not
+#' contain (#580).
+#'
+#' This is not PROC HAZARD's MOVE rule.  PROC HAZARD makes one move per
+#' step, a removal before any entry; it counts a variable's exits (and,
+#' under `NOSTEPWISE`, its entries too), separately for each phase; and a
+#' variable at its limit can neither leave nor enter.  Outside `NOSTEPWISE`
+#' it therefore freezes a variable only as it leaves.  `max_move` counts
+#' entries and exits alike, by name across phases, which is why the SAS
+#' translator records `MOVE=` rather than mapping it.  Adopting PROC
+#' HAZARD's rule would change which variables are selected, and is deferred;
+#' see \url{https://github.com/ehrlinger/TemporalHazard/issues/378} and
+#' \url{https://github.com/ehrlinger/TemporalHazard/issues/379}.
+#'
 #' @details
 #' The `steps` data frame has columns:
 #'
 #' \describe{
 #'   \item{\code{step_num}}{Integer sequence starting at 1.}
 #'   \item{\code{action}}{`"enter"`, `"drop"`, or `"frozen"`.}
-#'   \item{\code{variable}}{Variable affected.}
+#'   \item{\code{variable}}{The term entered, dropped or frozen, as the
+#'     model's `terms()` label: a non-syntactic column `_X1` is recorded as
+#'     `` `_X1` `` on every row, whether the scope named it `"_X1"`,
+#'     `` "`_X1`" `` or in a formula.}
 #'   \item{\code{phase}}{Phase name (multiphase) or `NA_character_`.}
 #'   \item{\code{criterion}}{The criterion actually applied to this step:
 #'     `"score"`, `"wald"`, or `"aic"`.  Under `criterion = "score"` the drop
@@ -199,7 +363,25 @@
 #'   \item{\code{p_value}, \code{delta_aic}}{Always populated when
 #'     computable, regardless of the active criterion.}
 #'   \item{\code{logLik}, \code{aic}, \code{n_coef}}{Goodness-of-fit
-#'     diagnostics of the model *after* this step.}
+#'     diagnostics of the model *after* this step. Under
+#'     `objective = "sas"`, on a step whose model reads an interval-censored
+#'     row (one of positive weight, not dropped by a phase design), `logLik`
+#'     holds PROC HAZARD's objective, not a log-likelihood, and `aic` is
+#'     computed from it. A step can change which rows are read (see
+#'     `n_rows`), so on a step that starts or stops reading such rows
+#'     `delta_logLik` is the difference of two different quantities. The
+#'     trace's final line labels the final model's value, and
+#'     `criterion = "aic"` warns once (class `hzr_stepwise_sas_objective`)
+#'     as soon as a step's model reads such a row.}
+#'   \item{\code{n_rows}}{Number of rows in the fit's data after this step
+#'     (rows given weight 0 are counted).  A multiphase fit drops every row
+#'     where a variable in the model is missing, so entering a variable with
+#'     missing values shrinks the sample every later step is tested on, and
+#'     dropping it grows the sample back.  A step that changes the rows of
+#'     positive weight raises a warning of class `hzr_stepwise_sample_changed` naming the
+#'     step, the variable and the row counts before and after.  Which
+#'     variables enter is not changed by this: compare `n_rows` across steps
+#'     to see how many rows each test rested on.}
 #' }
 #'
 #' @examples
@@ -237,10 +419,88 @@ hzr_stepwise <- function(fit,
   if (!inherits(fit, "hazard")) {
     stop("`fit` must be a `hazard` object.", call. = FALSE)
   }
+  # An AIC screen on a SAS objective selects on a penalised quantity that is
+  # not an AIC (#544): said once, as soon as the model in hand reads an
+  # interval row -- at entry, or after a step that restores such rows
+  # (record_step() below) -- rather than only in the trace's last line.
+  sas_aic_warned <- FALSE
+  warn_sas_aic <- function(model) {
+    if (sas_aic_warned || !identical(criterion, "aic") ||
+          !.hzr_objective_not_loglik(model)) {
+      return(invisible(FALSE))
+    }
+    sas_aic_warned <<- TRUE
+    warning(structure(
+      class = c("hzr_stepwise_sas_objective", "warning", "condition"),
+      list(message = paste0(
+        "criterion = \"aic\" on an objective = \"sas\" model that reads ",
+        "interval-censored rows: each entry is decided on ",
+        "-2 * (SAS objective) + 2k, which is not an AIC, and each removal on ",
+        "a Wald statistic from the SAS objective's curvature. $steps$logLik ",
+        "and $steps$aic hold the SAS objective and that quantity, not a ",
+        "log-likelihood and an AIC."
+      ), call = NULL)
+    ))
+    invisible(TRUE)
+  }
+  warn_sas_aic(fit)
+  extra_args <- .hzr_check_forwarded_dots(list(...), "hzr_stepwise",
+                                          own = names(formals(hzr_stepwise)),
+                                          fit = fit)
+  extra_args <- .hzr_validate_control_once(extra_args, fit)
   if (missing(data) || !is.data.frame(data)) {
     stop("`data` must be a data frame (typically the frame used for the base fit).",
          call. = FALSE)
   }
+  # hazard() drops rows at time 0 before fitting (#374). The data frame a
+  # caller passes here is usually the one given to hazard(), so it still has
+  # them; drop the same rows, by position, only when it provably IS that
+  # frame: the rows left must equal the fit's stored frame AND the rows
+  # dropped must equal the ones it dropped. Any other frame is left alone,
+  # and the alignment checks downstream report it. Only the fit's own
+  # columns are compared, and all must be present: a candidate derived after
+  # the fit is an extra column, not a different frame (#487).
+  dropped <- fit$data$dropped_time_zero_rows
+  # By position, since a column named "" cannot be selected by name (#470).
+  kept_cols <- match(names(fit$data$frame), names(data))
+  if (length(dropped) && is.data.frame(fit$data$frame) &&
+      is.data.frame(fit$data$dropped_time_zero_frame) &&
+      !anyNA(kept_cols) &&
+      nrow(data) == length(fit$data$time) + length(dropped)) {
+    same <- isTRUE(all.equal(data[-dropped, kept_cols, drop = FALSE],
+                             fit$data$frame, check.attributes = FALSE)) &&
+      isTRUE(all.equal(data[dropped, kept_cols, drop = FALSE],
+                       fit$data$dropped_time_zero_frame,
+                       check.attributes = FALSE))
+    if (same) data <- data[-dropped, , drop = FALSE]
+  }
+  # A frame with exactly the fit's rows plus the ones it dropped, that could
+  # not be confirmed as the fit's (a vector-interface fit stores no frame, or
+  # the dropped rows differ), is most likely the data before the drop. What
+  # follows fails on a row count -- every refit of a vector-interface fit,
+  # once per candidate, or the row-order check of a formula fit -- and says
+  # only that (#484). Name the drop once, here.
+  if (length(dropped) &&
+      nrow(data) == length(fit$data$time) + length(dropped)) {
+    warning("`data` has ", nrow(data), " rows: the fit's ",
+            length(fit$data$time), " plus the ", length(dropped),
+            " it dropped at time 0 (rows ",
+            paste(utils::head(dropped, 10L), collapse = ", "),
+            if (length(dropped) > 10L) ", ..." else "", " of the data it ",
+            "was given). It could not be confirmed to be the fit's data, so ",
+            "those rows were not dropped from it, and candidate refits will ",
+            "not line up. Drop them from `data` first.", call. = FALSE)
+  }
+  .hzr_refuse_unhonoured_scope(scope, direction)
+  # Candidates are read from `data` by position: by the score test, and by
+  # every refit that pairs `data` with vectors stored on the fit (the vector
+  # interface's response, or `weights`). For those fits `data` is compared
+  # with the stored frame here, for every criterion; where there is no frame to
+  # compare with, check what can be checked, and say so when nothing can:
+  # once, here, rather than per candidate (#487).
+  .hzr_check_data_row_order(fit, data,
+                            score = criterion == "score" &&
+                              direction != "backward")
 
   # Every accepted step goes through .hzr_refit_with_scope(), so a base fit
   # it cannot refit makes the entire screen a no-op.  Left to fail
@@ -310,10 +570,131 @@ hzr_stepwise <- function(fit,
          call. = FALSE)
   }
 
+  # Resolve every user-supplied name ONCE, by lookup, and compare only the
+  # results from here on (#437, #442). A name is a column of `data`, else a
+  # term label of the model or `scope`; a name that is neither is warned
+  # about and ignored, never matched by a guess. The user's own values are
+  # kept for the result's `$scope` record.
+  scope_given <- scope
+  unresolved <- list(force_in = character(), force_out = character(),
+                     scope = character())
+  scope_labels <- if (inherits(scope, "formula")) {
+    .hzr_formula_rhs_terms(scope)
+  } else if (is.list(scope)) {
+    unlist(lapply(Filter(function(s) inherits(s, "formula"), scope),
+                  .hzr_formula_rhs_terms), use.names = FALSE)
+  }
+  if (is.character(scope) && !identical(fit$spec$dist, "multiphase")) {
+    # An offset is refused before it can be resolved: `terms()` gives it no
+    # label, so resolution would only warn about it and drop it.
+    scope_f <- tryCatch(stats::reformulate(scope), error = function(e) NULL)
+    if (!is.null(scope_f)) .hzr_refuse_offset(scope_f, "`scope`")
+    resolved_scope <- .hzr_resolve_names(scope, data, arg = "`scope`",
+                                         self_label = TRUE)
+    scope <- resolved_scope$spelling
+    scope_labels <- resolved_scope$id
+    unresolved$scope <- resolved_scope$unresolved
+  }
+  # A column no formula can name is never offered. Say so once, here, for
+  # the scopes that would offer it: the default, and a character scope that
+  # names it (#449).
+  unnameable <- if (is.null(scope)) {
+    stored <- .hzr_stored_formula(fit)
+    lhs <- if (is.null(stored) || length(stored) < 3L) character() else
+      all.vars(stored[[2L]])
+    cols <- setdiff(names(data), lhs)
+    cols[.hzr_is_label_placeholder(.hzr_column_label(cols))]
+  } else if (is.character(scope) && length(scope_labels)) {
+    scope[.hzr_is_label_placeholder(scope_labels)]
+  }
+  if (length(unnameable)) {
+    warning("Column(s) ",
+            paste(encodeString(unnameable, quote = "\""), collapse = ", "),
+            " of `data` cannot be a stepwise candidate: a model formula cannot ",
+            "name them. Rename them to offer them.", call. = FALSE)
+  }
+  known_labels <- unique(c(unlist(.hzr_scope_current_vars(fit),
+                                  use.names = FALSE),
+                           scope_labels))
+  resolved_in  <- .hzr_resolve_names(force_in, data, known_labels,
+                                     arg = "`force_in`")
+  resolved_out <- .hzr_resolve_names(force_out, data, known_labels,
+                                     arg = "`force_out`")
+  # A PIN NAMING AN UNNAMEABLE COLUMN IS NOT RESOLVED. `.hzr_column_label()`
+  # gives "." and "" the placeholder `<column ".">` because `terms()` cannot
+  # label them, and that is not NA -- so `.hzr_resolve_names()` reported such
+  # a pin as a hit, it reached `force_in_id`, and nothing warned. The pin was
+  # always inert, since no formula can name the column and the placeholder
+  # can never equal a term label; what was wrong is that every signal said it
+  # had resolved, and #451 publishes the value as `$scope$force_in_resolved`,
+  # documented as a column or term label (#463).
+  #
+  # Handled HERE rather than in `.hzr_resolve_names()` deliberately. The
+  # `scope` path at :459 DEPENDS on the placeholder surviving: the
+  # `unnameable` block above reads it out of `scope_labels` to say
+  # "Column(s) "." of `data` cannot be a stepwise candidate", which is
+  # accurate. Making the resolver drop placeholders emptied `scope_labels`,
+  # silenced that message, and replaced it with "neither a column of `data`
+  # nor a term label" -- FALSE, because it is a column. One warning either
+  # way, so a warnings-count check reads clean (stream C, #463 review).
+  pin_unnameable <- function(res, x) {
+    if (!length(res$id)) return(res)
+    ph <- .hzr_is_label_placeholder(res$id)
+    if (!any(ph)) return(res)
+    # Mirrors `.hzr_resolve_names()`'s return shape: same three elements, in
+    # the same order, with `spelling` and `id` filtered by the SAME mask so
+    # their index alignment survives.
+    #
+    # `unresolved` is taken from the user's own `x`, not by appending, so it
+    # keeps the order they wrote and any repeat. That is exact because the
+    # resolver is a function of the string alone: every copy of a string
+    # resolves the same way, so membership picks out precisely the dropped
+    # positions. `c(res$unresolved, ...)` put these pins last, and union()
+    # or unique() would have dropped a repeated one (#465 review).
+    drop <- c(res$unresolved, res$spelling[ph])
+    list(spelling = res$spelling[!ph], id = res$id[!ph],
+         unresolved = x[x %in% drop])
+  }
+  warn_unnameable_pin <- function(res, arg) {
+    ph <- if (length(res$id)) .hzr_is_label_placeholder(res$id) else logical(0)
+    if (!any(ph)) return(invisible(NULL))
+    # "Rename the column" only makes sense when the user named a column. The
+    # placeholder text itself also reaches here, because `known` in
+    # `.hzr_resolve_names()` contains every column's label including the
+    # placeholders -- and there is no column called `<column ".">` to rename.
+    named_a_column <- res$spelling[ph] %in% names(data)
+    advice <- if (all(named_a_column)) {
+      paste0(" Rename ", if (sum(ph) == 1L) "that column" else "those columns",
+             " to use ", arg, ".")
+    } else {
+      ""
+    }
+    warning(arg, " names ",
+            paste(encodeString(res$spelling[ph], quote = "\""),
+                  collapse = ", "),
+            ", which no model formula can name, so ",
+            if (sum(ph) == 1L) "it cannot" else "they cannot",
+            " be pinned; ",
+            if (sum(ph) == 1L) "it is" else "they are", " ignored.",
+            advice, call. = FALSE)
+    invisible(NULL)
+  }
+  warn_unnameable_pin(resolved_in,  "`force_in`")
+  warn_unnameable_pin(resolved_out, "`force_out`")
+  resolved_in  <- pin_unnameable(resolved_in,  as.character(force_in))
+  resolved_out <- pin_unnameable(resolved_out, as.character(force_out))
+
+  force_in_id  <- resolved_in$id
+  force_out_id <- resolved_out$id
+  unresolved$force_in  <- resolved_in$unresolved
+  unresolved$force_out <- resolved_out$unresolved
+  # A character scope whose every name was unresolved offers nothing; the
+  # stop line must say why rather than claim nothing met the threshold.
+  scope_emptied <- is.character(scope_given) && length(scope_given) > 0L &&
+    length(scope) == 0L
+
   ts_start <- Sys.time()
   call <- match.call()
-
-  extra_args <- list(...)
 
   steps     <- list()
   trace_msg <- character()
@@ -341,6 +722,15 @@ hzr_stepwise <- function(fit,
     )
   }
   emit(header)
+  # The warning is lost to suppressWarnings() and to a saved object, so
+  # the names ignored are also recorded in the trace and on the result.
+  for (arg in names(unresolved)) {
+    if (length(unresolved[[arg]]) > 0L) {
+      emit(sprintf("(unresolved `%s`, ignored: %s)", arg,
+                   paste(encodeString(unresolved[[arg]], quote = "\""),
+                         collapse = ", ")))
+    }
+  }
   emit("")
 
   # Move counter: per-variable tally of entries + exits.  Use a named
@@ -357,6 +747,12 @@ hzr_stepwise <- function(fit,
   # comparison, which nothing was doing: the objective was written at every
   # step and read at none.
   prev_objective <- current$fit$objective %||% NA_real_
+  # The rows the working model was fitted on. A multiphase refit drops every
+  # row where a variable in the model is missing, so entering such a variable
+  # shrinks the sample every later step is tested on, and dropping it grows
+  # the sample back. Nothing said so (#519); each step now records its row
+  # count and warns when the rows changed.
+  prev_rows <- .hzr_fit_row_mask(current)
   n_nonmonotone_entries <- 0L
   stopped_by_max_steps <- FALSE
   # Candidates whose score statistic could not be computed, summed over
@@ -366,7 +762,27 @@ hzr_stepwise <- function(fit,
   n_uncomputable_scores <- 0L
   uncomputable_reasons  <- stats::setNames(integer(0), character(0))
   n_wald_fallbacks      <- 0L
+  # Variables whose Wald test for entry or removal could not be computed
+  # (#389), by "var" / "var@phase" token: an untested removal stays in the
+  # model and an untested entry stays out, each as if it had been tested.
+  wald_untested_entries  <- character()
+  wald_untested_removals <- character()
+  # A variable's latest step decides: one untested at step 1 and tested at
+  # step 3 was tested.
+  wald_tokens <- function(scores, keep) {
+    scores <- scores[keep, , drop = FALSE]
+    # By resolved identity, which is how a drop names the variable too: an
+    # entry spelled `_X1` and a removal of `` `_X1` `` are one variable
+    # (#441). A drop's `variable` already is its label.
+    paste0(scores$id %||% scores$variable,
+           ifelse(is.na(scores$phase), "", paste0("@", scores$phase)))
+  }
+  update_untested <- function(set, scores, untested) {
+    setdiff(union(set, wald_tokens(scores, untested)),
+            wald_tokens(scores, !is.na(scores$score)))
+  }
   stopped_uncomputable  <- FALSE
+  stopped_untestable    <- character()
   # Candidates whose REFIT failed, summed over steps.  The per-candidate
   # warning already fires inside the step, but nothing recorded it on the
   # result, so a screen that could not fit any candidate returned the same
@@ -382,6 +798,34 @@ hzr_stepwise <- function(fit,
   # Wald and must be labelled as such.
   record_step <- function(action, out, crit = criterion) {
     step_no <<- step_no + 1L
+    warn_sas_aic(current)
+    rows <- .hzr_fit_row_mask(current)
+    rows_before <- sum(prev_rows)
+    # A row of weight 0 adds nothing to the likelihood, so dropping it does
+    # not change the sample a test rests on: compare only positive-weight rows.
+    # A weight vector that does not line up with the rows compares them all.
+    w <- current$data$weights
+    counts <- if (length(w) == length(rows)) !(!is.na(w) & w <= 0) else TRUE
+    used_before <- prev_rows & counts
+    used_after  <- rows & counts
+    rows_changed <- !identical(used_after, used_before)
+    if (rows_changed) {
+      direction_txt <- if (sum(used_after) < sum(used_before)) {
+        "later steps are tested on fewer rows than earlier ones"
+      } else if (sum(used_after) > sum(used_before)) {
+        "later steps are tested on rows that earlier tests did not use"
+      } else {
+        "later steps are tested on different rows from earlier ones"
+      }
+      warning(warningCondition(paste0(
+        "Stepwise step ", step_no, " (", action, " ", out$variable,
+        ") changed the rows the model is fitted on, from ", rows_before,
+        " to ", sum(rows), ". A multiphase fit drops every row where a ",
+        "variable in the model is missing, so ", direction_txt, ". ",
+        "See `$steps$n_rows`."
+      ), class = "hzr_stepwise_sample_changed"))
+    }
+    prev_rows <<- rows
     row <- data.frame(
       step_num  = step_no,
       action    = action,
@@ -398,6 +842,7 @@ hzr_stepwise <- function(fit,
       delta_logLik = (current$fit$objective %||% NA_real_) - prev_objective,
       aic       = .hzr_aic(current),
       n_coef    = length(current$fit$theta),
+      n_rows    = sum(rows),
       stringsAsFactors = FALSE
     )
     prev_objective <<- current$fit$objective %||% NA_real_
@@ -419,6 +864,10 @@ hzr_stepwise <- function(fit,
       "Step %d: %-6s %s%s   (%s)",
       step_no, toupper(action), out$variable, phase_txt, score_fmt
     ))
+    if (rows_changed) {
+      emit(sprintf("        (rows fitted changed: %d -> %d)",
+                   rows_before, sum(rows)))
+    }
   }
 
   record_freeze <- function(var, phase_hint = NA_character_) {
@@ -439,6 +888,7 @@ hzr_stepwise <- function(fit,
       delta_logLik = 0,   # freezing changes no parameter
       aic       = .hzr_aic(current),
       n_coef    = length(current$fit$theta),
+      n_rows    = sum(prev_rows),   # nor any row
       stringsAsFactors = FALSE
     )
     steps[[length(steps) + 1L]] <<- row
@@ -448,13 +898,31 @@ hzr_stepwise <- function(fit,
     ))
   }
 
+  # A move that reaches max_move is queued, and the freeze takes effect at
+  # the end of the iteration (apply_freezes()). The iteration's protected
+  # sets are fixed before its forward step, so a variable frozen the moment
+  # it entered could still be dropped by the backward step that followed:
+  # the trace read FROZEN then DROP, and `$scope$frozen` named a variable the
+  # final model did not contain (#580). Frozen after the backward step, a
+  # variable is frozen where it ends the iteration -- out, if it was
+  # dropped. PROC HAZARD, outside NOSTEPWISE, freezes a variable only on
+  # its exit: it makes one move per step, removal first (stepw.c:126-144),
+  # counts deletions (hazrd4.c:361-377), and gates both directions on the
+  # count (swvarx.c:158-159, swvari.c:160).
   bump_move <- function(var) {
     move_counts[[var]] <<- (move_counts[[var]] %||% 0L) + 1L
-    if (move_counts[[var]] > max_move && !var %in% frozen) {
+    if (move_counts[[var]] > max_move && !var %in% c(frozen, pending_freeze)) {
+      pending_freeze <<- c(pending_freeze, var)
+    }
+  }
+  apply_freezes <- function() {
+    for (var in pending_freeze) {
       frozen <<- c(frozen, var)
       record_freeze(var)
     }
+    pending_freeze <<- character()
   }
+  pending_freeze <- character()
 
   # Main loop
   repeat {
@@ -471,10 +939,13 @@ hzr_stepwise <- function(fit,
     # iteration did, and a failure three steps back is not why it ended.
     iter_refit_failures <- character()
     iter_refit_reasons  <- character()
-    iter_uncomputable   <- FALSE
+    # Which half of this iteration had candidates and could test none:
+    # "entry", "removal" or both.  Decided per iteration, so a two-way
+    # screen that recovers at a later iteration is not reported as stopped.
+    iter_untestable     <- character()
 
-    effective_force_out <- unique(c(force_out, frozen))
-    effective_force_in  <- unique(c(force_in,  frozen))
+    effective_force_out <- unique(c(force_out_id, frozen))
+    effective_force_in  <- unique(c(force_in_id,  frozen))
 
     if (direction %in% c("forward", "both")) {
       fwd <- do.call(.hzr_stepwise_forward_step, c(list(
@@ -493,8 +964,26 @@ hzr_stepwise <- function(fit,
         uncomputable_reasons, fwd$uncomputable_reasons
       )
       if (identical(fwd$stop_reason, "scores_uncomputable")) {
-        stopped_uncomputable <- TRUE
-        iter_uncomputable    <- TRUE
+        iter_untestable <- c(iter_untestable, "entry")
+      }
+      if (criterion == "wald" && nrow(fwd$all_scores) > 0L) {
+        # A failed refit is reported as a refit failure, not as untested.
+        # Its row is found by the spelling the failure token carries, and
+        # removed by identity, as the other tokens are keyed (#441).
+        sc <- fwd$all_scores
+        failed <- paste0(sc$variable, ifelse(is.na(sc$phase), "",
+                                             paste0("@", sc$phase))) %in%
+          (fwd$refit_failures %||% character())
+        # A refit that ended below its base is reported by its own reason
+        # and warning, not as an entry left untested for want of a variance
+        # (#538). Removed as a failed refit is, so this step's outcome also
+        # clears a variance failure recorded at an earlier step: the latest
+        # step decides.
+        below <- (sc$reason %||% rep(NA_character_, nrow(sc))) %in%
+          "loglik_below_base"
+        wald_untested_entries <- setdiff(update_untested(
+          wald_untested_entries, sc, is.na(sc$score)
+        ), wald_tokens(sc, failed | below))
       }
       iter_refit_failures <- c(iter_refit_failures,
                                fwd$refit_failures %||% character())
@@ -525,8 +1014,12 @@ hzr_stepwise <- function(fit,
                   "See `$steps$delta_logLik`.", call. = FALSE)
         }
         current <- fwd$fit
-        record_step("enter", fwd)
-        bump_move(fwd$variable)
+        # Recorded under the model's term label, as a drop is, so one
+        # variable has one name in `$steps` whatever the scope wrote (#449).
+        record_step("enter", utils::modifyList(fwd, list(variable = fwd$id)))
+        # Counted by the term the model gained, the candidate's identity,
+        # which is what a drop names (#449).
+        bump_move(fwd$id)
         add_happened <- TRUE
       }
     }
@@ -540,6 +1033,23 @@ hzr_stepwise <- function(fit,
         force_in  = effective_force_in
       ), extra_args))
 
+      # A removal whose Wald p-value is NA was not tested, and it stays in
+      # the model as if it met `slstay` (#389).  Counted with the forward
+      # step's unscored entries.
+      n_uncomputable_scores <- n_uncomputable_scores +
+        (bwd$n_uncomputable %||% 0L)
+      uncomputable_reasons <- .hzr_merge_reasons(
+        uncomputable_reasons, bwd$uncomputable_reasons
+      )
+      if (nrow(bwd$all_scores) > 0L) {
+        wald_untested_removals <- update_untested(
+          wald_untested_removals, bwd$all_scores,
+          !bwd$all_scores$force_in & is.na(bwd$all_scores$score)
+        )
+      }
+      if (identical(bwd$stop_reason, "scores_uncomputable")) {
+        iter_untestable <- c(iter_untestable, "removal")
+      }
       iter_refit_failures <- c(iter_refit_failures,
                                bwd$refit_failures %||% character())
       iter_refit_reasons <- c(iter_refit_reasons,
@@ -552,6 +1062,7 @@ hzr_stepwise <- function(fit,
         drop_happened <- TRUE
       }
     }
+    apply_freezes()
 
     refit_failures <- c(refit_failures, iter_refit_failures)
     refit_failure_reasons <- c(refit_failure_reasons, iter_refit_reasons)
@@ -561,6 +1072,10 @@ hzr_stepwise <- function(fit,
                           if (step_no == 1L) "" else "s")
       # "no further action" is a claim that candidates were tested and none
       # was good enough.  Say that only when it is true.
+      if (length(iter_untestable) > 0L) {
+        stopped_uncomputable <- TRUE
+        stopped_untestable   <- iter_untestable
+      }
       if (length(iter_refit_failures) > 0L) {
         stopped_refit_failed <- TRUE
         emit(sprintf(
@@ -571,9 +1086,18 @@ hzr_stepwise <- function(fit,
           if (length(iter_refit_failures) == 1L) "" else "s",
           paste(iter_refit_failures, collapse = ", ")
         ))
-      } else if (iter_uncomputable) {
+      } else if (length(iter_untestable) > 0L) {
+        # Name the half: in a two-way screen the other half may have tested
+        # its candidates and rejected them.
         emit(sprintf(
-          "(stopped after %s: no candidate score could be COMPUTED -- none was tested)",
+          paste0("(stopped after %s: no candidate score could be COMPUTED ",
+                 "for %s -- none was tested)"),
+          step_txt, paste(iter_untestable, collapse = " or ")
+        ))
+      } else if (scope_emptied && step_no == 0L) {
+        emit(sprintf(
+          paste0("(stopped after %s: the character `scope` resolved to ",
+                 "no candidate -- every name in it was unresolved)"),
           step_txt
         ))
       } else {
@@ -586,7 +1110,15 @@ hzr_stepwise <- function(fit,
   elapsed <- difftime(Sys.time(), ts_start, units = "secs")
 
   emit("")
-  emit(sprintf("Final model: %d covariate%s, logLik = %.2f, AIC = %.2f",
+  emit(sprintf(if (.hzr_objective_not_loglik(current)) {
+                 # Not a log-likelihood under objective = "sas" with
+                 # interval-censored rows (#544, #556).
+                 paste0("Final model: %d covariate%s, SAS objective = %.2f, ",
+                        "AIC from it = %.2f (objective = \"sas\"; not a ",
+                        "log-likelihood)")
+               } else {
+                 "Final model: %d covariate%s, logLik = %.2f, AIC = %.2f"
+               },
                max(0L, length(current$fit$theta) -
                      .hzr_stepwise_shape_count(current)),
                if (length(current$fit$theta) -
@@ -602,7 +1134,7 @@ hzr_stepwise <- function(fit,
       stat = numeric(), stat_type = character(), df = integer(),
       p_value = numeric(), delta_aic = numeric(),
       logLik = numeric(), delta_logLik = numeric(),
-      aic = numeric(), n_coef = integer(),
+      aic = numeric(), n_coef = integer(), n_rows = integer(),
       stringsAsFactors = FALSE
     )
   } else {
@@ -612,10 +1144,19 @@ hzr_stepwise <- function(fit,
   result <- current
   result$steps      <- steps_df
   result$scope      <- list(
-    candidates = scope,
+    candidates = scope_given,
     force_in   = force_in,
     force_out  = force_out,
-    frozen     = frozen
+    # The RESOLVED identities, recorded beside the names as given, so a pin
+    # that resolved to nothing is visible as absent here rather than only in
+    # `$scope$unresolved` (#451). These are the resolved names ONLY: the
+    # internal effective set also carries `frozen`, which `$scope$frozen`
+    # already records, and merging the two would list variables the caller
+    # never named.
+    force_in_resolved  = force_in_id,
+    force_out_resolved = force_out_id,
+    frozen     = frozen,
+    unresolved = unresolved
   )
   result$criteria   <- list(
     direction = direction,
@@ -629,6 +1170,8 @@ hzr_stepwise <- function(fit,
     uncomputable_reasons  = uncomputable_reasons,
     n_wald_fallbacks      = n_wald_fallbacks,
     stopped_uncomputable  = stopped_uncomputable,
+    wald_untested_removals = wald_untested_removals,
+    wald_untested_entries  = wald_untested_entries,
     n_refit_failures      = length(refit_failures),
     refit_failures        = refit_failures,
     refit_failure_reasons = refit_failure_reasons,
@@ -640,16 +1183,23 @@ hzr_stepwise <- function(fit,
   # below on information_indefinite alone would go silent the moment the
   # rescue's own failure was labelled separately -- quieter, for a case that
   # needs to be louder.
-  untested_codes <- c("information_indefinite", "fallback_no_variance")
+  # Every reason the score criterion refits for is one of these: a row still
+  # carrying it was refitted and the refit failed. The set is read from
+  # .hzr_score_fallback_reasons, not written out, so a reason added there
+  # cannot leave its failed rescue unreported here (#570).
+  untested_codes <- c(.hzr_score_fallback_reasons, "fallback_no_variance")
   n_indefinite <- sum(unname(uncomputable_reasons[untested_codes]),
                       na.rm = TRUE)
 
+
   if (stopped_uncomputable) {
-    warning("Stepwise selection stopped because the score statistic ",
-            "could not be computed for any remaining candidate (",
+    warning("Stepwise selection stopped because no remaining candidate ",
+            "could be tested for ", paste(stopped_untestable, collapse = " or "),
+            ": its score statistic, or its Wald statistic for want of a ",
+            "variance, could not be computed (",
             n_uncomputable_scores, " candidate score(s) were NA across the ",
-            "run). This is not the same as no candidate meeting `slentry`: ",
-            "the screen stopped without being able to test them.",
+            "run). This is not the same as no candidate meeting `slentry` ",
+            "or `slstay`: the screen stopped without being able to test them.",
             .hzr_format_reasons(uncomputable_reasons), call. = FALSE)
   } else if (n_indefinite > 0L) {
     # The run finished normally, so the branch above stays quiet -- but a
@@ -662,16 +1212,39 @@ hzr_stepwise <- function(fit,
             "statistic could not be computed for them, and under ",
             "`criterion = \"score\"` they are then refit and Wald-tested ",
             "automatically -- so reaching this means that rescue did not ",
-            "produce a test either: it errored or did not converge ",
-            "(`information_indefinite`, listed in ",
-            "`$criteria$refit_failures`), or it converged but yielded no ",
+            "produce a test either: it errored or did not converge (the ",
+            "candidate keeps the score's reason, such as ",
+            "`information_indefinite` or `nuisance_singular`, and is listed ",
+            "in `$criteria$refit_failures`), or it converged but yielded no ",
             "usable variance to test with (`fallback_no_variance`, which ",
-            "leaves `refit_failures` empty). Such candidates are typically ",
-            "STRONG -- that is what drives the score's information ",
+            "leaves `refit_failures` empty). Such candidates are often ",
+            "STRONG -- a large effect is what drives the score's information ",
             "indefinite -- so the selected set may omit them. Re-running ",
             "with `criterion = \"wald\"` runs the same refit and fails the ",
             "same way. See `$criteria$uncomputable_reasons` for which ",
             "mechanism applied.", call. = FALSE)
+  }
+  # Each of these variables was decided with no test at all, which reads
+  # exactly like a test it failed (#389).  A half the stop warning above
+  # already reports is left out here.
+  warn_removals <- if ("removal" %in% stopped_untestable) character() else
+    wald_untested_removals
+  warn_entries <- if ("entry" %in% stopped_untestable) character() else
+    wald_untested_entries
+  if (length(c(warn_removals, warn_entries)) > 0L) {
+    warning("Stepwise selection decided ",
+            length(c(warn_removals, warn_entries)),
+            " variable(s) without a Wald test",
+            if (length(warn_removals)) {
+              paste0("; kept in the model with its removal untested: ",
+                     paste(warn_removals, collapse = ", "))
+            },
+            if (length(warn_entries)) {
+              paste0("; left out with its entry untested: ",
+                     paste(warn_entries, collapse = ", "))
+            },
+            ". Cause: ", .hzr_score_reason_text("wald_no_variance"),
+            ". See `$criteria$uncomputable_reasons`.", call. = FALSE)
   }
   # A completed run keeps the tally but says nothing about it, and a collision
   # is a naming mistake the user can fix, not a property of the data. The
@@ -683,6 +1256,26 @@ hzr_stepwise <- function(fit,
             "score(s) without testing them: ",
             .hzr_score_reason_text("duplicate_column"), ". See ",
             "`$criteria$uncomputable_reasons`.", call. = FALSE)
+  }
+  # A refused AIC entry reads like a candidate that did not lower the AIC, and
+  # it is not one: it was never compared (#488).
+  n_rows_differ <- sum(uncomputable_reasons[names(uncomputable_reasons) ==
+                                              "rows_differ"])
+  if (!stopped_uncomputable && n_rows_differ > 0L) {
+    warning("Stepwise selection declined ", n_rows_differ, " candidate ",
+            "entr", if (n_rows_differ == 1L) "y" else "ies", " without ",
+            "testing them: ", .hzr_score_reason_text("rows_differ"), ". See ",
+            "`$criteria$uncomputable_reasons`.", call. = FALSE)
+  }
+  # A refit that ended below its base was rejected on a dAIC it never earned:
+  # the same silent "tested and missed" as a refused entry (#490).
+  n_below_base <- sum(uncomputable_reasons[names(uncomputable_reasons) ==
+                                             "loglik_below_base"])
+  if (!stopped_uncomputable && n_below_base > 0L) {
+    warning("Stepwise selection declined ", n_below_base, " candidate ",
+            "entr", if (n_below_base == 1L) "y" else "ies", " without ",
+            "testing them: ", .hzr_score_reason_text("loglik_below_base"),
+            ". See `$criteria$uncomputable_reasons`.", call. = FALSE)
   }
   if (stopped_refit_failed) {
     warning("Stepwise selection stopped after ", nrow(steps_df),
@@ -704,10 +1297,131 @@ hzr_stepwise <- function(fit,
   result
 }
 
+# Validate a forwarded `control` ONCE, here, and forward what survives (#410).
+# Since #376 an element the fit does not read draws a warning from hazard(),
+# and both entry points hand `control` to every candidate refit: one warning
+# became six in a three-step screen, and three in a select-mode bootstrap,
+# one per candidate refit of the up-front screen (the replicate screens run
+# muffled, so that count did not grow with n_boot). The result never
+# changed; the harm is that past 50 warnings R prints only "There were 50 or
+# more warnings", so the repeats can bury the ill-conditioned-Hessian and
+# gradient-test warnings that say a fit is not trustworthy.
+# .hzr_validate_control() warns and RETURNS the cleaned list, and it is
+# idempotent, so passing that on leaves the refits nothing to warn about.
+.hzr_validate_control_once <- function(extra_args, fit) {
+  if (!"control" %in% names(extra_args)) return(extra_args)
+  extra_args$control <- .hzr_validate_control(extra_args$control,
+                                              fit$spec$dist)
+  extra_args
+}
+
+# Check the `...` of hzr_stepwise() / hzr_bootstrap() against what a
+# candidate refit may take from it, and return it with abbreviations spelled
+# out (#386). Both forward `...` to every refit, and hazard()'s own `...` is
+# legacy pass-through that stores any name unread, so a misspelled `slentyr`
+# for `slentry` was silently dropped and the screen ran at the default.
+# Only `control`, and an `objective` equal to the base fit's, may pass. Every
+# other hazard() argument describes the model the candidates are compared
+# with, so the refit takes it from the base fit: a forwarded one was ignored
+# (time_lower on a formula refit), collided with the refit's own (dist,
+# failing every candidate), or changed the estimand of the candidates alone
+# (weights, time_windows), so score and AIC differences compared two models
+# fitted to different likelihoods. An abbreviation R would match to `control`
+# or `objective` is kept, since hazard() used to apply it by partial
+# matching. `extra` names the caller consumes itself (hzr_bootstrap()'s
+# `trace`).
+.hzr_check_forwarded_dots <- function(dots, caller, own, fit,
+                                      extra = character()) {
+  if (!length(dots)) return(dots)
+  nms <- names(dots) %||% rep("", length(dots))
+  if (any(!nzchar(nms))) {
+    stop(caller, "(): `...` holds an unnamed argument. Everything in `...` ",
+         "is forwarded by name to the hazard() refits, so name it.",
+         call. = FALSE)
+  }
+  forwardable <- c("control", "objective")
+  hz <- setdiff(names(formals(hazard)), "...")
+  tick <- function(x) paste0("`", x, "`", collapse = ", ")
+  full <- nms
+  unknown <- from_base <- character()
+  candidates <- c(extra, hz)
+  for (i in seq_along(nms)) {
+    m <- pmatch(nms[i], candidates)
+    if (is.na(m)) {
+      prefixed <- candidates[startsWith(candidates, nms[i])]
+      if (length(prefixed) > 1L) {
+        stop(caller, "(): `", nms[i], "` abbreviates more than one ",
+             "argument it could be passed to (", tick(prefixed), "). ",
+             "Spell it out.", call. = FALSE)
+      }
+      unknown <- c(unknown, nms[i])
+    } else if (candidates[m] %in% extra) {
+      full[i] <- candidates[m]
+    } else if (candidates[m] %in% forwardable) {
+      full[i] <- candidates[m]
+    } else {
+      from_base <- c(from_base, nms[i])
+    }
+  }
+  if (length(unknown)) {
+    known <- unique(c(setdiff(own, "..."), forwardable, extra))
+    hint <- vapply(unknown, function(nm) {
+      dist <- utils::adist(nm, known)[1L, ]
+      if (min(dist) > 2L) return("")
+      paste0(" Did you mean `", known[which.min(dist)], "`",
+             if (length(unknown) > 1L) paste0(" for `", nm, "`") else "", "?")
+    }, character(1))
+    stop(caller, "(): ", tick(unknown),
+         if (length(unknown) > 1L) " are not arguments" else
+           " is not an argument",
+         " of ", caller, "() or of hazard(). Everything in `...` is forwarded ",
+         "to the hazard() refits, and hazard() stores a name it does not ",
+         "declare without reading it, so it would have had no effect.",
+         paste(hint, collapse = ""), call. = FALSE)
+  }
+  if (length(from_base)) {
+    stop(caller, "(): ", tick(from_base), " cannot be passed through ",
+         "`...`. Every candidate refit sets these itself, from the base ",
+         "model and `data`, so that each candidate is compared with the ",
+         "model it would extend. ",
+         "Of hazard()'s arguments, `...` forwards only `control` and an ",
+         "`objective` equal to the base fit's. To change anything else, refit ",
+         "the base model and screen from that.", call. = FALSE)
+  }
+  if (anyDuplicated(full)) {
+    dup <- unique(full[duplicated(full)])
+    stop(caller, "(): ", tick(dup), " is given more than once in `...`, ",
+         "counting abbreviations.", call. = FALSE)
+  }
+  names(dots) <- full
+  if ("control" %in% full && !is.list(dots$control)) {
+    stop(caller, "(): `control` must be a list, as hazard() requires; ",
+         "every candidate refit would have failed on it.", call. = FALSE)
+  }
+  # A refit may not change the estimand; refuse here rather than once per
+  # candidate, where hzr_bootstrap() would tally it as a failed replicate.
+  # match.arg() first, as hazard() does, so "lik" is "likelihood".
+  if ("objective" %in% full) {
+    fit_objective <- .hzr_fit_objective(fit)
+    objective <- tryCatch(
+      match.arg(dots$objective, eval(formals(hazard)$objective)),
+      error = function(e) dots$objective
+    )
+    if (!identical(objective, fit_objective)) {
+      stop(caller, "(): `objective = ", deparse1(dots$objective),
+           "` differs from the base fit's objective = \"", fit_objective,
+           "\", and a candidate refit cannot change the estimand. Refit the ",
+           "base model under that objective and screen from there.",
+           call. = FALSE)
+    }
+    dots$objective <- objective
+  }
+  dots
+}
+
 
 #' @rdname hzr_stepwise
 #' @param x An `hzr_stepwise` object.
-#' @param ... Unused.
 #' @return `print.hzr_stepwise` returns `x` invisibly.
 #' @export
 print.hzr_stepwise <- function(x, ...) {
@@ -799,7 +1513,7 @@ stepwise_trace <- function(fit) {
     }, integer(1L)))
     length(fit$fit$theta) - total_betas
   } else {
-    .hzr_shape_parameter_count(fit$spec$dist,
-                                control = fit$spec$control)
+    # Without control$shape_param_count, which the likelihood ignores (#489).
+    .hzr_shape_parameter_count(fit$spec$dist)
   }
 }

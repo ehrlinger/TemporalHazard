@@ -9,7 +9,7 @@
 \arguments{
 \item{type}{Prediction type (see \code{.hzr_predict_with_se}).}
 
-\item{theta}{MLE parameter vector \code{c(mu, nu, beta_1, ...)}.}
+\item{theta}{MLE parameter vector \code{c(log(mu), nu, beta_1, ...)} (#566).}
 
 \item{time}{Prediction times (may be NULL for \code{hazard} / \code{linear_predictor}).}
 
@@ -18,7 +18,7 @@
 \item{p}{Length of theta.}
 }
 \value{
-Numeric n x p Jacobian.
+Numeric n x p Jacobian, with respect to \code{log(mu)}, \code{nu} and beta.
 }
 \description{
 Jacobian of Weibull predictions with respect to theta

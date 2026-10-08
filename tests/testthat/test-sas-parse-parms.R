@@ -89,14 +89,75 @@ test_that("a non-numeric phase-statement value is untranslated, not guessed", {
   expect_true("NOBS=NUM" %in% got$untranslated$construct)
 })
 
-test_that("a phase '/ options' tail is untranslated, not parsed", {
+test_that("phase covariate options attach to their own variable (#342)", {
+  # SAS's grammar puts `/ options` on each covariate, and a comma returns to
+  # the next one (hazard_y.y phasevaropt; hazard_l.l <PHOP>\\,). The parser
+  # used to cut the whole list at the first "/", dropping every later
+  # covariate from the model.
   ops <- c("MUE=0.2", "THALF=1", "NU=1")
-  got <- .hzr_parse_parms(ops, covars = list(early = "AGE=1.2 / EXCLUDE=(SEX)"))
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE, MAL/I, OPMOS"))
   expect_equal(
     got$phases,
-    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1, formula = ~AGE)))
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1,
+                         formula = ~AGE + MAL + OPMOS)))
   )
-  expect_true(any(grepl("phase options", got$untranslated$reason, fixed = TRUE)))
+  expect_false(any(grepl("deferred", got$untranslated$reason)))
+
+  # /S and /I leave the variable in the model; /E, alone or spelled out,
+  # leaves it out (setstat.c, no SELECTION), along with its starting value.
+  got <- .hzr_parse_parms(ops, covars = list(
+    early = "AGE=1.5/E, MAL=0.5 / S, OPMOS=2/INCLUDE, SEX=3 / EXCLUDE"
+  ))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1,
+                         formula = ~MAL + OPMOS)))
+  )
+  expect_equal(unname(tail(eval(got$theta), 2L)), c(0.5, 2))
+
+  # Per-variable MOVE= and ORDER= go to $untranslated under that variable's
+  # name; the variable stays in. (With no /E, /I or /S there is no semerr.)
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE/MOVE=2 ORDER = 1, MAL"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1,
+                         formula = ~AGE + MAL)))
+  )
+  u <- got$untranslated
+  expect_true(all(c("AGE/MOVE=2", "AGE/ORDER=1") %in% u$construct))
+  expect_length(got$rejected, 0L)
+
+  # Text SAS's lexer rejects makes PROC HAZARD stop the whole job
+  # (hazard_l.l:176 sets yysynerr; initprz.c:75-77 exits "SYNTAX"). It used
+  # to be recorded while the job still fitted, without the variable: a fit
+  # for a job the reference never runs (#340). Each is now a rejection.
+  for (item in c("MAL / FOO", "AGE/E/I", "/S", "Y/", "AGE/EI", "AGE/MOVE",
+                 "AGE/ORDER=X")) {
+    got <- .hzr_parse_parms(ops, covars = list(early = paste0(item, ", Z")))
+    expect_length(got$rejected, 1L)
+    expect_match(got$rejected, "syntax error", info = item)
+  }
+
+  # A repeated covariate is ONE parameter: setconc.c maps every occurrence to
+  # the same slot and setstat.c runs for each, so the last occurrence sets
+  # its start value and options, and an omitted value resets it to 0. Two
+  # entries used to go into theta, shifting every later starting value.
+  got <- .hzr_parse_parms(c(ops, "MUC=0.01"), covars = list(
+    early = c("AGE=0.1, MAL", "AGE=0.2, OPMOS/E", "OPMOS")
+  ))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1,
+                         formula = ~AGE + MAL + OPMOS),
+               hzr_phase("constant")))
+  )
+  expect_equal(unname(eval(got$theta)),
+               c(log(0.2), log(1), 1, 1, 0.2, 0, 0, log(0.01)))
+  got <- .hzr_parse_parms(ops, covars = list(early = c("AGE=0.3, MAL", "AGE/E")))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1, formula = ~MAL)))
+  )
 })
 
 test_that("phase covariate starting values map into theta, in covariate order", {
@@ -216,24 +277,183 @@ test_that("WEIBULL alongside FIXALPHA fixes alpha and only alpha", {
   )
 })
 
-test_that("a MUL with no late shape operand is recorded, not dropped", {
-  # PARMS names a late phase by giving it a scale. Building the phase only
-  # when a *shape* operand appeared meant MUL could vanish with the phase --
-  # a one-phase R model against SAS's two, reported as fully translated. The
-  # starting values SAS would default to here (stmtprc.c: tau = 2*Tmax/3,
-  # gamma = 1, alpha = 1, eta = 2) are not this parser's defaults, so the MU
-  # is recorded as untranslated rather than guessed at.
-  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUL=0.05", "WEIBULL"))
+test_that("a MUL with no late shape operand builds the phase on SAS's defaults (#345)", {
+  # PARMS names a late phase by giving it a scale; PROC HAZARD runs it on the
+  # shape defaults stmtprc.c:34-37 sets (gamma 1, alpha 1, eta 2), with TAU
+  # started at 0.75*Tmax by readobs.c:153-154 before SETG3 runs. gamma, alpha and
+  # eta are data-free, so the phase is mirrored; only the TAU start depends on
+  # the data, and that is recorded exactly as for a written phase with no TAU.
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUL=0.05",
+                            "WEIBULL"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1),
+               hzr_phase("g3", tau = 1, gamma = 1, alpha = 1, eta = 2)))
+  )
+  expect_equal(
+    got$theta,
+    quote(c(log(0.2), log(1), 1, 1, log(0.05), log(1), 1, 1, 2))
+  )
   expect_equal(nrow(got$untranslated), 1L)
-  expect_equal(got$untranslated$construct, "MUL=0.05")
-  expect_match(got$untranslated$reason, "no late phase")
+  expect_equal(got$untranslated$construct, "TAU (unspecified)")
+  expect_match(got$untranslated$reason, "0.75*Tmax", fixed = TRUE)
 })
 
-test_that("a MUE with no early shape operand is recorded, not dropped", {
+test_that("an MU whose shape operands could not be read is not built on defaults (#365 review)", {
+  # A macro operand is the unreadable case: SAS expands `&H` before PROC
+  # HAZARD reads the statement, so whether a shape was written cannot be told
+  # here, and building the orphan phase on SAS's defaults would fit a
+  # different model. (Operands written with spaces around `=` used to be the
+  # example; they are joined before parsing now, #421.)
+  for (cs in list(list(ops = c("MUE=0.2", "THALF=&H", "FIXNU"), mu = "MUE=0.2"),
+                  list(ops = c("MUL=0.1", "GAMMA=&G"), mu = "MUL=0.1"))) {
+    got <- .hzr_parse_parms(cs$ops)
+    expect_false(isTRUE(got$has_phases), info = cs$mu)
+    row <- got$untranslated$reason[got$untranslated$construct == cs$mu]
+    expect_length(row, 1L)
+    expect_match(row, "could not be read", fixed = TRUE, info = cs$mu)
+    expect_match(row, "not built", fixed = TRUE, info = cs$mu)
+  }
+  # A fully readable orphan still builds (the #345 case).
+  expect_true(.hzr_parse_parms(c("MUE=0.2", "FIXNU"))$has_phases)
+})
+
+test_that("a PARMS statement SAS's lexer rejects never builds an orphan on defaults (#365 review 3)", {
+  # R's as.numeric() reads 1E-3, 2. and +0.2; the lexer's NUMBER
+  # (hazard_l.l:33-38) does not, so PROC HAZARD stops with a syntax error.
+  # An orphan MU read that way built a whole phase with no row.
+  # The operand the lexer rejects, stated per case rather than recomputed.
+  for (cs in list(list(ops = "MUE=1E-3", bad = "MUE=1E-3"),
+                  list(ops = "MUE=2.", bad = "MUE=2."),
+                  list(ops = "MUE=+0.2", bad = "MUE=+0.2"),
+                  list(ops = c("MUL=0.1", "MUE=5E-2"), bad = "MUE=5E-2"),
+                  list(ops = c("MUE=0.2", "THALF=1E-1"), bad = "THALF=1E-1"))) {
+    ops <- cs$ops
+    bad <- cs$bad
+    info <- paste(ops, collapse = " ")
+    got <- .hzr_parse_parms(ops)
+    expect_false(isTRUE(got$has_phases), info = info)
+    row <- got$untranslated$reason[got$untranslated$construct %in% bad]
+    expect_length(row, length(bad))
+    expect_true(all(grepl("hazard_l.l:33-38", row, fixed = TRUE)), info = info)
+    expect_true(all(grepl("does not run", row, fixed = TRUE)), info = info)
+  }
+  # Numbers the lexer does read are still read.
+  for (v in c(".5", "1.5E-3", "-0.5", "5")) {
+    expect_identical(.hzr_parse_parms(c("MUE=0.2", paste0("THALF=", v)))$has_phases,
+                     TRUE, info = v)
+  }
+  # A bare MU or shape keyword needs `= NUMBER` (hazard_y.y:137-147).
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF"))
+  expect_false(isTRUE(got$has_phases))
+  row <- got$untranslated$reason[got$untranslated$construct == "THALF"]
+  expect_match(row, "hazard_y.y:137-147", fixed = TRUE)
+  expect_match(row, "does not run", fixed = TRUE)
+  # A spaced operand is joined and read, in each spacing (#421): the phase
+  # builds on the written value, with no row.
+  for (ops in list(c("MUE=0.2", "THALF", "=0.3"), c("MUE=0.2", "THALF=", "0.3"),
+                   c("MUE=0.2", "THALF", "=", "0.3"))) {
+    info <- paste(ops, collapse = " ")
+    got <- .hzr_parse_parms(ops)
+    expect_true(isTRUE(got$has_phases), info = info)
+    expect_match(deparse(got$phases)[1L], "t_half = 0.3", fixed = TRUE, info = info)
+    expect_equal(nrow(got$untranslated), 0L, info = info)
+  }
+  got <- .hzr_parse_parms(c("MUE=0.2", "MUC=0.01", "0.3"))
+  row <- got$untranslated$reason[got$untranslated$construct == "0.3"]
+  expect_match(row, "does not run", fixed = TRUE)
+  expect_no_match(row, "spaces around", fixed = TRUE)
+})
+
+test_that("a joined operand PROC HAZARD would still reject is a syntax error (#365 review 4, #421)", {
+  # Joined (#421), each of these is an operand PROC HAZARD rejects, so it says
+  # the job does not run rather than claiming acceptance.
+  for (ops in list(c("MUE=0.2", "THALF=0.5", "NU", "=", "ABC"),
+                   c("MUE=0.2", "THALF=0.5", "NU=", "1E-3"),
+                   c("MUE=0.2", "THALF=0.5", "FIXNU", "=", "1"))) {
+    info <- paste(ops, collapse = " ")
+    got <- .hzr_parse_parms(ops)
+    rows <- got$untranslated$reason[!got$untranslated$construct %in%
+                                      c("MUE=0.2", "THALF=0.5")]
+    expect_gt(length(rows), 0L)
+    expect_true(all(grepl("does not run", rows, fixed = TRUE)), info = info)
+    expect_false(any(grepl("PROC HAZARD accepts", rows, fixed = TRUE)), info = info)
+  }
+  # A dangling `=` with no keyword before it cannot join, and is not accepted.
+  got <- .hzr_parse_parms(c("=", "0.3", "MUE=0.2", "THALF=0.5"))
+  rows <- got$untranslated$reason[!got$untranslated$construct %in%
+                                    c("MUE=0.2", "THALF=0.5")]
+  expect_gt(length(rows), 0L)
+  expect_false(any(grepl("PROC HAZARD accepts", rows, fixed = TRUE)))
+  # Control: a spaced operand SAS runs is read, with no row.
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=0.5", "NU", "=", "-1.5"))
+  expect_equal(nrow(got$untranslated), 0L)
+  expect_match(deparse(got$phases)[1L], "nu = -1.5", fixed = TRUE)
+})
+
+test_that("a TAU the statement did not let this parser read is not called unspecified (#365 review 4)", {
+  got <- .hzr_parse_parms(c("MUL=0.1", "GAMMA=1", "TAU=&T", "FIXTAU"))
+  row <- got$untranslated$reason[got$untranslated$construct == "TAU (unspecified)"]
+  expect_length(row, 1L)
+  expect_match(row, "was not read", fixed = TRUE)
+  expect_no_match(row, "applied to an unspecified TAU", fixed = TRUE)
+})
+
+test_that("an orphan MU keys scope, force_in and the listwise guard like its written defaults (#345)", {
+  # The phase list was built on the MU alone while the scope/force_in keys and
+  # the modelled-variable list still required a shape operand. With SELECTION,
+  # an orphan MUE's constant-phase candidate was screened into phase_1 (the
+  # EARLY phase), the early candidate was never offered, and a /I variable
+  # left force_in: a different screen, silently (r-reviewer on #365). Without
+  # SELECTION, a modelled covariate was returned as listwise-only. The
+  # property: an orphan MU parses exactly as its defaults written out.
+  cases <- list(
+    list(orphan = c("MUE=0.2", "MUC=0.01"),
+         written = c("MUE=0.2", "THALF=1", "NU=2", "M=1", "MUC=0.01"),
+         covars = list(early = "AGE, NYHA/I", constant = "SEX")),
+    list(orphan = c("MUC=0.01", "MUL=0.1"),
+         written = c("MUC=0.01", "MUL=0.1", "GAMMA=1", "ALPHA=1", "ETA=2"),
+         covars = list(constant = "SEX", late = "AGE, NYHA/I")))
+  for (cs in cases) {
+    for (sel in c(FALSE, TRUE)) {
+      info <- paste(paste(cs$orphan, collapse = " "), "selection =", sel)
+      o <- .hzr_parse_parms(cs$orphan, covars = cs$covars, selection = sel)
+      w <- .hzr_parse_parms(cs$written, covars = cs$covars, selection = sel)
+      expect_identical(o$phases, w$phases, info = info)
+      expect_identical(o$selection, w$selection, info = info)
+      expect_identical(o$listwise_only, w$listwise_only, info = info)
+    }
+  }
+  # And the screen reaches the right phase: the early candidate is offered to
+  # phase_1, the constant one to phase_2, and /I is forced in.
+  sel <- .hzr_parse_parms(c("MUE=0.2", "MUC=0.01"),
+                          covars = list(early = "AGE, NYHA/I", constant = "SEX"),
+                          selection = TRUE)$selection
+  expect_identical(sel$scope, list(phase_1 = "AGE", phase_2 = "SEX"))
+  expect_identical(sel$force_in, "NYHA")
+})
+
+test_that("a MUE with no early shape operand builds the phase on SAS's defaults (#345)", {
+  # stmtprc.c:31-33: tHalf 1, nu 2, m 1, all data-free (setg1.c:343-349
+  # substitutes 1 only for a non-positive tHalf), so this is an exact mirror.
   got <- .hzr_parse_parms(c("MUE=0.2", "MUL=0.05", "TAU=2", "GAMMA=1.5"))
-  expect_equal(nrow(got$untranslated), 1L)
-  expect_equal(got$untranslated$construct, "MUE=0.2")
-  expect_match(got$untranslated$reason, "no early phase")
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("cdf", t_half = 1, nu = 2, m = 1),
+               hzr_phase("g3", tau = 2, gamma = 1.5, alpha = 1, eta = 2)))
+  )
+  expect_equal(nrow(got$untranslated), 0L)
+})
+
+test_that("an orphan MUL with FIXGE2 and FIXGAE2 takes SETG3_ignore_tau() on the defaults (#345)", {
+  # The default ETA is 2, so setg3.c:397-399 keeps gamma 1, eta 2.
+  got <- .hzr_parse_parms(c("MUL=0.2", "FIXGE2", "FIXGAE2"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 1, alpha = 1, eta = 2,
+                         fixed = c("tau", "gamma", "alpha", "eta"))))
+  )
+  expect_equal(nrow(got$untranslated), 0L)
 })
 
 test_that("alpha = 1 fixed with GAMMA and ETA both free fixes ETA, as SAS does", {
@@ -260,14 +480,11 @@ test_that("alpha = 1 fixed with GAMMA and ETA both free fixes ETA, as SAS does",
 })
 
 test_that("fixing ETA at alpha = 1 is what makes GAMMA estimable", {
-  # Two-sided, because "the standard error is finite" alone could come from
-  # anything: fit the SAME phase with ETA left free and show the ridge. At
-  # alpha = 1, tau = 1 only gamma * eta is identified, so the free fit must
-  # reach the same log-likelihood and the same product, and its gamma must
-  # be undetermined: a standard error at least 100 times the fixed fit's
-  # (about 0.02), or none at all. On an exactly flat ridge the Hessian is
-  # singular in theory, so which of the two comes out is numerical noise:
-  # 7.5 where plain BFGS stopped, none 4e-6 away after the polish.
+  # At alpha = 1, tau = 1 only gamma * eta is identified. The translator fixes
+  # ETA as SETG3 does, and since #415 hazard() does the same for a phase that
+  # leaves both free: the "free" fit is held to the fixed one, with a record
+  # saying so. Before #415 it walked the ridge (gamma's standard error 7.5,
+  # or none, against about 0.02).
   skip_on_cran()
   got <- .hzr_parse_parms(c("MUL=0.01", "TAU=1", "ALPHA=1", "GAMMA=2",
                             "ETA=3", "FIXALPHA"))
@@ -284,17 +501,15 @@ test_that("fixing ETA at alpha = 1 is what makes GAMMA estimable", {
     v <- stats::vcov(f)
     if (is.matrix(v)) sqrt(diag(v))[["phase_1.gamma"]] else NA_real_
   }
-  product <- function(f) {
-    f$fit$theta[["phase_1.gamma"]] * f$fit$theta[["phase_1.eta"]]
-  }
   fixed <- fit_one(eval(got$phases))
   free <- fit_one(list(hzr_phase("g3", tau = 1, gamma = 2, alpha = 1,
                                  eta = 3, fixed = c("tau", "alpha"))))
   expect_true(is.finite(se_gamma(fixed)))
-  expect_true(!is.finite(se_gamma(free)) ||
-                se_gamma(free) > 100 * se_gamma(fixed))
-  expect_lt(abs(free$fit$objective - fixed$fit$objective), 1e-4)
-  expect_lt(abs(product(free) / product(fixed) - 1), 1e-3)
+  mech <- vapply(free$fit$boundary, function(r) r$mechanism, character(1))
+  expect_true("g3_alpha_one" %in% mech)
+  expect_equal(unname(coef(free)), unname(coef(fixed)), tolerance = 1e-6)
+  expect_equal(se_gamma(free), se_gamma(fixed), tolerance = 1e-4)
+  expect_lt(abs(free$fit$objective - fixed$fit$objective), 1e-8)
 })
 
 test_that("alpha = 1 fixed with GAMMA fixed is not recorded", {
@@ -623,6 +838,108 @@ test_that("the verify_ge_2 row does not fire above the boundary or on WEIBULL", 
   expect_equal(nrow(weib$untranslated), 0L)
 })
 
+test_that("FIXGE2/FIXGAE2 without WEIBULL report SETG3's measured start (#472)", {
+  # Without WEIBULL a constraint flag sends SETG3_all_gt_0() down the g_two
+  # (FIXGE2) or ga_two (FIXGAE2) branch of SETG3_verify_ge_2() and
+  # SETG3_alpha_fixup(), which the general trace does not model: it said
+  # gamma = 1.5 under FIXGE2, where PROC HAZARD leaves gamma at 1. Every
+  # expected value below is the "Used" column of the PROC HAZARD binary's
+  # "Initial Parameter Values" listing on avc data (hazard pin dad7978), one
+  # cell per branch and one each side of the branch boundary.
+  late <- c("MUE=0.2", "THALF=1", "MUL=0.1")
+  start_row <- function(extra, flag) {
+    got <- .hzr_parse_parms(c(late, extra, flag))
+    u <- got$untranslated
+    # The job stays loud: the flag's own row is always first.
+    expect_equal(u$construct[1], flag)
+    expect_match(u$reason[1], paste0("^", flag, " is not translated"))
+    u[grepl("optimizes from", u$reason), , drop = FALSE]
+  }
+  expect_start <- function(extra, flag, construct, values) {
+    r <- start_row(extra, flag)
+    expect_equal(r$construct, construct)
+    expect_match(r$reason, paste0("SETG3() optimizes from ", values, ","),
+                 fixed = TRUE)
+  }
+
+  # FIXGE2 -- gamma: kept when gamma*eta = 2, else 2/eta; alpha: kept when
+  # gamma*eta/alpha > 2, else gamma*eta/3. Binary: 1->1, 1->0.6666667.
+  expect_start(NULL, "FIXGE2", "gamma=1 alpha=1 eta=2",
+               "gamma = 1, alpha = 0.666667, eta = 2")
+  # Second start point, other gamma branch. Binary: 1->0.6666667 on both.
+  expect_start("ETA=3", "FIXGE2", "gamma=1 alpha=1 eta=3",
+               "gamma = 0.666667, alpha = 0.666667, eta = 3")
+  # Alpha just below the boundary is kept. Binary: 2->1, 0.9->0.9.
+  expect_start(c("GAMMA=2", "ALPHA=0.9"), "FIXGE2", "gamma=2 alpha=0.9 eta=2",
+               "gamma = 1, alpha = 0.9, eta = 2")
+  # gamma*eta below 2 moves gamma the same way. Binary: 0.5->1, 1->0.6666667.
+  expect_start("GAMMA=0.5", "FIXGE2", "gamma=0.5 alpha=1 eta=2",
+               "gamma = 1, alpha = 0.666667, eta = 2")
+  # Nothing moves, so no start row. Binary: 1->1, 0.5->0.5, 2->2.
+  expect_equal(nrow(start_row("ALPHA=0.5", "FIXGE2")), 0L)
+
+  # FIXGAE2 -- gamma: 3/eta when gamma*eta <= 2, else kept; alpha:
+  # gamma*eta/2 unless already equal. Binary: 1->1.5, 1->1.5.
+  expect_start(NULL, "FIXGAE2", "gamma=1 alpha=1 eta=2",
+               "gamma = 1.5, alpha = 1.5, eta = 2")
+  # Second start point, other gamma branch. Binary: 2->2, 1->2.
+  expect_start("GAMMA=2", "FIXGAE2", "gamma=2 alpha=1 eta=2",
+               "gamma = 2, alpha = 2, eta = 2")
+  # gamma*eta = 2.25, just above the boundary. Binary: 1.5->1.5, 1->1.125.
+  expect_start(c("GAMMA=1.5", "ETA=1.5"), "FIXGAE2",
+               "gamma=1.5 alpha=1 eta=1.5",
+               "gamma = 1.5, alpha = 1.125, eta = 1.5")
+  # gamma*eta = 2 at eta = 4. Binary: 0.5->0.75, 1->1.5.
+  expect_start(c("GAMMA=0.5", "ETA=4"), "FIXGAE2", "gamma=0.5 alpha=1 eta=4",
+               "gamma = 0.75, alpha = 1.5, eta = 4")
+  # gamma moves, and the moved gamma*eta/alpha is exactly 2, so alpha is
+  # kept, and the row must say so. Binary: 1->1.5, 1.5->1.5 (no change mark).
+  expect_start("ALPHA=1.5", "FIXGAE2", "gamma=1 alpha=1.5 eta=2",
+               "gamma = 1.5, alpha = 1.5, eta = 2")
+  # (Assigned first: expect_match() evaluates its object twice.)
+  kept <- start_row("ALPHA=1.5", "FIXGAE2")
+  expect_match(kept$reason, "so alpha stays at 1.5 (setg3.c:818)",
+               fixed = TRUE)
+  # SAS also holds one shape fixed; the listing's "Estimated?" column reads
+  # No for ETA under FIXGE2 and for ALPHA under FIXGAE2.
+  ge2 <- start_row(NULL, "FIXGE2")
+  expect_match(ge2$reason, "holds ETA fixed", fixed = TRUE)
+  gae2 <- start_row(NULL, "FIXGAE2")
+  expect_match(gae2$reason, "holds ALPHA fixed", fixed = TRUE)
+  # Already gamma*eta/alpha = 2: nothing moves. Binary: 2->2, 2->2.
+  expect_equal(nrow(start_row(c("GAMMA=2", "ALPHA=2"), "FIXGAE2")), 0L)
+
+  # Outside the measured domain (a fixed shape) no start is claimed.
+  expect_equal(nrow(start_row(c("GAMMA=2", "FIXGAMMA"), "FIXGE2")), 0L)
+  # Nor for a non-positive shape: SAS takes SETG3_gamma_le_0() there, not
+  # SETG3_all_gt_0(), so this rule does not apply.
+  expect_equal(nrow(start_row("GAMMA=0", "FIXGE2")), 0L)
+  # A fixed ALPHA especially: PROC HAZARD REFUSES this job ("Fixed parameter
+  # violates model constraints", SETG31040 at setg3.c:845-847, measured on
+  # the binary), so a start row here would describe a fit SAS never runs.
+  expect_equal(nrow(start_row(c("ALPHA=1.2", "FIXALPHA"), "FIXGE2")), 0L)
+
+  # Known positive: the same shape with no flag still records the 1.5 row,
+  # so the absence above is the guard, not a trace that stopped firing.
+  plain <- .hzr_parse_parms(late)
+  expect_equal(plain$untranslated$construct,
+               c("gamma=1 alpha=1 eta=2", "TAU (unspecified)"))
+  expect_match(plain$untranslated$reason[1],
+               "^SETG3\\(\\) optimizes from gamma = 1\\.5, not")
+
+  # WEIBULL controls are unchanged: the constraint maps onto hzr_phase() and
+  # only the TAU row is recorded.
+  ge2w <- .hzr_parse_parms(c(late, "FIXGE2", "WEIBULL"))
+  expect_equal(ge2w$untranslated$construct, "TAU (unspecified)")
+  expect_equal(ge2w$phases[[3]], quote(hzr_phase(
+    "g3", tau = 1, gamma = 1, alpha = 1, eta = 2, constraint = "eta_gamma")))
+  gae2w <- .hzr_parse_parms(c(late, "FIXGAE2", "WEIBULL"))
+  expect_equal(gae2w$untranslated$construct, "TAU (unspecified)")
+  expect_equal(gae2w$phases[[3]], quote(hzr_phase(
+    "g3", tau = 1, gamma = 1, alpha = 1, eta = 2,
+    constraint = "alpha_gamma_eta")))
+})
+
 test_that("the product SETG3_verify_ge_2 reads survives the ignore_tau swap", {
   # setg3.c:403-421 moves the exponent between GAMMA and ETA but preserves
   # their PRODUCT, which is all `gte` reads -- so the boundary test is the same
@@ -670,13 +987,47 @@ test_that("the TAU guard does not fire without a positive MUL", {
   expect_false(any(grepl("Tmax", got$untranslated$reason, fixed = TRUE)))
 })
 
-test_that("a MUL with no late shape operand records the MU, not TAU as well", {
-  # The whole phase is missing and the MUL row already says so; a second row
-  # about that phase's TAU would be noise on $untranslated, which is how a
-  # caller decides whether a translation can be trusted.
+test_that("a MUL with no late shape operand records what a written phase would (#345)", {
+  # Built on SAS's defaults, the phase gets exactly the rows the same values
+  # written out would: the data-dependent TAU start, and, without WEIBULL, the
+  # SETG3 start rewrite that is recorded rather than mirrored. Nothing about a
+  # missing shape operand.
   got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUL=0.05"))
-  expect_equal(nrow(got$untranslated), 1L)
-  expect_match(got$untranslated$reason, "no late phase")
+  written <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "NU=1", "MUL=0.05",
+                                "GAMMA=1", "ALPHA=1", "ETA=2"))
+  expect_equal(got$phases, written$phases)
+  expect_equal(got$untranslated$reason, written$untranslated$reason)
+  expect_equal(sum(grepl("0.75*Tmax", got$untranslated$reason, fixed = TRUE)),
+               1L)
+})
+
+test_that("the TAU row says a different start can mean different estimates", {
+  # The multiphase likelihood is multimodal, so starting TAU elsewhere is not
+  # only a different path: the fit can converge to a different optimum. The
+  # row, which is also the emitted document's callout, has to say so.
+  got <- .hzr_parse_parms(c("MUL=0.05", "GAMMA=2", "ETA=1", "WEIBULL"))
+  tau_row <- got$untranslated$reason[grepl("0.75*Tmax",
+                                           got$untranslated$reason,
+                                           fixed = TRUE)]
+  expect_length(tau_row, 1L)
+  expect_match(tau_row, "estimates, not only the path to them, may differ",
+               fixed = TRUE)
+})
+
+test_that("FIXTAU on an unwritten TAU is recorded as a different model", {
+  # readobs.c:153-154 sets the unwritten TAU to 0.75*Tmax and FIXTAU holds it
+  # there, so PROC HAZARD fits a fixed data-dependent TAU. The emitted phase
+  # fixes tau = 1: a different model, not a different start.
+  for (ops in list(c("MUL=0.2", "FIXTAU"),
+                   c("MUL=0.2", "GAMMA=1", "FIXTAU", "WEIBULL"))) {
+    got <- .hzr_parse_parms(ops)
+    tau_row <- got$untranslated$reason[grepl("0.75*Tmax",
+                                             got$untranslated$reason,
+                                             fixed = TRUE)]
+    expect_length(tau_row, 1L)
+    expect_match(tau_row, "fixes TAU at 0.75*Tmax", fixed = TRUE)
+    expect_match(tau_row, "a different model", fixed = TRUE)
+  }
 })
 
 # ---------------------------------------------------------------------------
@@ -1076,12 +1427,13 @@ test_that("no active MU at all is recorded as the refusal PROC HAZARD raises", {
   expect_true(any(grepl("modterm.c", got$untranslated$reason, fixed = TRUE)))
 
   # The paired case that must NOT be refused: MUE is positive, so PROC HAZARD
-  # does select phase 1 and does run the job -- this parser declines to
-  # translate it for a different reason (no shape operand), and saying
-  # "no phase selected" there would be a false positive.
+  # does select phase 1 and runs it on its early defaults, as this parser now
+  # does too (#345); saying "no phase selected" there would be a false
+  # positive.
   ok <- .hzr_parse_parms(c("MUE=0.2"))
   expect_false(any(grepl("modterm.c", ok$untranslated$reason, fixed = TRUE)))
-  expect_equal(ok$untranslated$construct, "MUE=0.2")
+  expect_true(ok$has_phases)
+  expect_equal(nrow(ok$untranslated), 0L)
 })
 
 test_that("a job with no PARMS operands at all is refused, not defaulted", {
@@ -1103,19 +1455,18 @@ test_that("a job with no PARMS operands at all is refused, not defaulted", {
 
 test_that("operands this parser cannot read are recorded but never refused", {
   # `refused` drives a stop() in place of the fit, so it is a claim about what
-  # PROC HAZARD does and is sound only when the whole statement was understood.
-  # .hzr_parse_hazard() splits on " ", so `PARMS MUE = 0.2` arrives as separate
-  # "MUE", "=", "0.2" operands and nothing parses -- while HAZARD's lexer drops
-  # whitespace unconditionally (hazard_l.l:32, rule at :50) and RUNS that job
-  # with an active early phase. Refusing it would stop a job the reference
-  # accepts, so the gate must key on comprehension, not on has_phases.
-  spaced <- .hzr_parse_parms(c("MUE", "=", "0.2", "THALF", "=", "1"))
-  expect_false(spaced$has_phases)
-  expect_false(spaced$refused)
-  expect_false(any(grepl("modterm.c", spaced$untranslated$reason, fixed = TRUE)))
-  # Not refusing is not the same as declaring it fine -- the operands are still
-  # reported, so this cannot pass by the parser having silently accepted them.
-  expect_true("MUE" %in% spaced$untranslated$construct)
+  # PROC HAZARD does and is sound only when the whole statement was
+  # understood. A macro operand is expanded by SAS before PROC HAZARD reads
+  # the statement, so this parser cannot tell what the job says; refusing it
+  # would claim a verdict it does not have. (Operands written with spaces
+  # around `=` used to be this case; they are joined and read now, #421.)
+  unread <- .hzr_parse_parms(c("MUE=&M", "THALF=1"))
+  expect_false(unread$has_phases)
+  expect_false(unread$refused)
+  expect_false(any(grepl("modterm.c", unread$untranslated$reason, fixed = TRUE)))
+  # Not refusing is not the same as declaring it fine -- the operand is still
+  # reported, so this cannot pass by the parser having silently accepted it.
+  expect_true("MUE=&M" %in% unread$untranslated$construct)
 
   # The paired readable case, so the assertions above cannot pass merely
   # because nothing ever refuses: MUE=0 is understood AND selects no phase.
@@ -1197,7 +1548,9 @@ test_that("FIX tokens of a phase that is not built are recorded", {
 test_that("FIXGAE2 on a WEIBULL late phase derives alpha", {
   got <- .hzr_parse_parms(c("MUL=5.64297E-05", "TAU=14", "ALPHA=2", "GAMMA=22",
                             "ETA=0.18", "FIXGAE2", "WEIBULL"))
-  expect_equal(nrow(got$untranslated), 0L)
+  # One row: the ALPHA the job wrote is not the one either program uses, as
+  # PROC HAZARD's own listing reports through hzr_parm_changed() (#359).
+  expect_equal(got$untranslated$construct, "ALPHA=2 -> 1.98")
   expect_equal(
     got$phases,
     quote(list(hzr_phase("g3", tau = 14, gamma = 22, alpha = 1.98, eta = 0.18,
@@ -1211,7 +1564,7 @@ test_that("FIXGAE2 on a WEIBULL late phase derives alpha", {
 test_that("FIXGE2 with gamma and eta free derives eta, moving gamma onto 2/eta", {
   got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
                             "FIXGE2", "WEIBULL"))
-  expect_equal(nrow(got$untranslated), 0L)
+  expect_equal(got$untranslated$construct, "GAMMA=4 -> 8")
   expect_equal(
     got$phases,
     quote(list(hzr_phase("g3", tau = 1, gamma = 8, alpha = 1, eta = 0.25,
@@ -1222,7 +1575,7 @@ test_that("FIXGE2 with gamma and eta free derives eta, moving gamma onto 2/eta",
 test_that("FIXGE2 with one of gamma, eta fixed fixes both on the constraint", {
   got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
                             "FIXGAMMA", "FIXGE2", "WEIBULL"))
-  expect_equal(nrow(got$untranslated), 0L)
+  expect_equal(got$untranslated$construct, "ETA=0.25 -> 0.5")
   expect_equal(
     got$phases,
     quote(list(hzr_phase("g3", tau = 1, gamma = 4, alpha = 1, eta = 0.5,
@@ -1254,7 +1607,7 @@ test_that("FIXGAE2 against a fixed alpha off the constraint is a refusal", {
 test_that("FIXGAE2 with gamma and eta both fixed only moves alpha's start", {
   got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
                             "FIXGAMMA", "FIXETA", "FIXGAE2", "WEIBULL"))
-  expect_equal(nrow(got$untranslated), 0L)
+  expect_equal(got$untranslated$construct, "ALPHA=1 -> 0.5")
   expect_equal(
     got$phases,
     quote(list(hzr_phase("g3", tau = 1, gamma = 4, alpha = 0.5, eta = 0.25,
@@ -1268,12 +1621,6 @@ test_that("constraint flags outside the traced branch stay recorded", {
                                    "FIXGAE2"))
   expect_true("FIXGAE2" %in% no_weibull$untranslated$construct)
   expect_false(grepl("constraint", deparse1(no_weibull$phases), fixed = TRUE))
-
-  # Both flags: SETG3_ignore_tau(), one row per flag.
-  both <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5",
-                             "FIXGAE2", "FIXGE2", "WEIBULL"))
-  expect_equal(both$untranslated$construct, c("FIXGE2", "FIXGAE2"))
-  expect_false(grepl("constraint", deparse1(both$phases), fixed = TRUE))
 })
 
 test_that("SETG3_weibull() refusals are judged before a constraint moves a shape", {
@@ -1320,4 +1667,532 @@ test_that("the constraint is tested exactly, as the C tests it", {
                             "ETA=0.666666666666667", "FIXGAMMA", "FIXETA",
                             "FIXGE2", "WEIBULL"))
   expect_match(got$untranslated$reason, "(SETG3990)", fixed = TRUE)
+})
+
+# ---------------------------------------------------------------------------
+# SETG3_ignore_tau() under FIXGE2 / FIXGAE2 (#328 item 3, #329 review)
+# ---------------------------------------------------------------------------
+# setg3.c:312-314 takes SETG3_ignore_tau() when both flags are set, or when
+# ALPHA is fixed at 1. With either flag, :377-400 then fixes TAU at 1 and
+# ALPHA at 1 (SETG3940 when ALPHA is fixed at anything else) and fixes GAMMA
+# and ETA at 2 and 1 -- or 1 and 2 when the job wrote ETA = 2. At alpha = 1
+# the likelihood sees only (t/tau)^(gamma*eta), so all four are exact.
+
+all_four <- c("tau", "gamma", "alpha", "eta")
+
+test_that("FIXGE2 with ALPHA fixed at 1 mirrors SETG3_ignore_tau()", {
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                            "ALPHA=1", "FIXALPHA", "FIXGE2", "WEIBULL"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 2, alpha = 1, eta = 1,
+                         fixed = c("tau", "gamma", "alpha", "eta"))))
+  )
+  expect_equal(eval(got$theta)[2:5], c(log(1), 2, 1, 1))
+  # The emitted call builds: every shape fixed, only mu left to estimate.
+  late <- eval(got$phases)[[1]]
+  expect_setequal(late$fixed, all_four)
+  # The job wrote GAMMA = 4, ETA = 0.25, which neither program runs; say so.
+  expect_equal(nrow(got$untranslated), 1L)
+  expect_match(got$untranslated$reason, "SETG3_ignore_tau()", fixed = TRUE)
+  expect_false(any(grepl("gamma*eta", got$untranslated$construct,
+                         fixed = TRUE)))
+})
+
+test_that("SETG3_ignore_tau() keeps ETA = 2 when the job wrote it", {
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=1", "ETA=2",
+                            "ALPHA=1", "FIXALPHA", "FIXGAE2"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 1, alpha = 1, eta = 2,
+                         fixed = c("tau", "gamma", "alpha", "eta"))))
+  )
+  # Written exactly as SAS runs it: nothing to record.
+  expect_equal(nrow(got$untranslated), 0L)
+})
+
+test_that("both flags force ALPHA to 1 and fix every shape", {
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=3", "GAMMA=4", "ETA=0.5",
+                            "ALPHA=2", "FIXGAE2", "FIXGE2", "WEIBULL"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 2, alpha = 1, eta = 1,
+                         fixed = c("tau", "gamma", "alpha", "eta"))))
+  )
+  expect_true(any(grepl("SETG3_ignore_tau()", got$untranslated$reason,
+                        fixed = TRUE)))
+  expect_false(any(got$untranslated$construct %in% c("FIXGE2", "FIXGAE2") &
+                     grepl("not translated", got$untranslated$reason)))
+})
+
+test_that("both flags with ALPHA fixed away from 1 is PROC HAZARD's SETG3940", {
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5",
+                            "ALPHA=3", "FIXALPHA", "FIXGAE2", "FIXGE2",
+                            "WEIBULL"))
+  expect_match(got$untranslated$reason, "(SETG3940)", fixed = TRUE)
+
+  # One row: the refusal. PROC HAZARD stops there, so no trace of a later
+  # branch belongs beside it. Without WEIBULL and with TAU unwritten, the
+  # no-flag trace would otherwise add a moved-shape row and a TAU-default row.
+  bare <- .hzr_parse_parms(c("MUL=0.2", "ALPHA=0", "FIXALPHA", "FIXGE2",
+                             "FIXGAE2"))
+  expect_equal(nrow(bare$untranslated), 1L)
+  expect_match(bare$untranslated$reason, "(SETG3940)", fixed = TRUE)
+  # Assert the phase each case actually emits, not the absence of one string:
+  # neither object contains that string whatever the code does, so an
+  # expect_false() on it could not fail. A refused job keeps the operands as
+  # written, with only the job's own FIXALPHA, and is never the mirrored
+  # all-fixed phase.
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 4, alpha = 3, eta = 0.5,
+                         fixed = "alpha")))
+  )
+  expect_equal(
+    bare$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 1, alpha = 0, eta = 2,
+                         fixed = "alpha")))
+  )
+
+})
+
+test_that("FIXGAE2 with ALPHA fixed on the constraint and one shape free derives ALPHA", {
+  # hzd_late_t2p.c:90-94: a non-estimated ALPHA under FIXGAE2 is recomputed
+  # as GAMMA*ETA/2 from theta at every step, so it is derived, not held
+  # (#329 review, inline comment 4038970968: not a defect).
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                            "ALPHA=0.5", "FIXALPHA", "FIXETA", "FIXGAE2",
+                            "WEIBULL"))
+  expect_equal(nrow(got$untranslated), 0L)
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 4, alpha = 0.5, eta = 0.25,
+                         fixed = "eta", constraint = "alpha_gamma_eta")))
+  )
+})
+
+test_that("a shape that is not finite after SETG3's rewrites is recorded (#329 review)", {
+  # hzr_phase() now refuses these, so a translation that reads clean over one
+  # would emit a call that cannot be built. An operand that is infinite as
+  # WRITTEN but replaced by a rewrite is deliberately not flagged: PROC
+  # HAZARD reads it the same way (hazard_l.l:53) and applies the same
+  # rewrite, so the emitted model is the one it fits (#346 review).
+  # Spelled as the lexer's NUMBER spells them (hazard_l.l:33-38 needs a "."
+  # before an exponent): `1e400` is not a number to PROC HAZARD, whose job
+  # then does not run, while `1.0E400` lexes and sscanf() reads it as Inf.
+  cases <- list(
+    written = c("MUL=0.2", "TAU=1", "GAMMA=1.0E400", "ETA=0.5", "WEIBULL"),
+    written_tau = c("MUL=0.2", "TAU=1.0E400", "GAMMA=2", "ETA=0.5", "WEIBULL"),
+    ge2_rewrite = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=1.0E-320", "FIXGE2",
+                    "WEIBULL"),
+    gae2_start = c("MUL=0.2", "TAU=1", "GAMMA=1.0E300", "ETA=1.0E300", "FIXGAE2",
+                   "WEIBULL")
+  )
+  for (nm in names(cases)) {
+    got <- .hzr_parse_parms(cases[[nm]])
+    expect_true(any(grepl("not a finite number", got$untranslated$reason,
+                          fixed = TRUE)), label = nm)
+  }
+  # Finite extremes are not flagged.
+  ok <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=1.0E300", "ETA=1.0E-300",
+                           "FIXGAE2", "WEIBULL"))
+  expect_true(ok$has_phases)
+  expect_false(any(grepl("not a finite number", ok$untranslated$reason,
+                         fixed = TRUE)))
+})
+
+# ---------------------------------------------------------------------------
+# Rows that say the consequence, not the parse state (#345 review)
+# ---------------------------------------------------------------------------
+
+test_that("FIXMNU1 with an early phase says the constraint is not applied", {
+  # hazard_y.y:153 makes FIXMNU1 a real PARMS option, and hzd_early_t2p.c:65-77
+  # then derives M = 1/NU (or NU = 1/M) at every step. The translation does
+  # not apply it, so the early phase it emits is a different model.
+  for (ops in list(c("MUE=0.2", "FIXMNU1"),
+                   c("MUE=0.2", "THALF=1", "NU=2", "M=0.5", "FIXMNU1"))) {
+    got <- .hzr_parse_parms(ops)
+    row <- got$untranslated$reason[got$untranslated$construct == "FIXMNU1"]
+    expect_length(row, 1L)
+    expect_match(row, "not applied", fixed = TRUE)
+    expect_match(row, "different model", fixed = TRUE)
+    expect_false(grepl("no phase target", row, fixed = TRUE))
+  }
+  # With no early phase there is genuinely nothing for it to act on.
+  none <- .hzr_parse_parms(c("MUL=0.2", "GAMMA=2", "FIXMNU1"))
+  expect_match(none$untranslated$reason[none$untranslated$construct ==
+                                           "FIXMNU1"],
+               "no phase target", fixed = TRUE)
+})
+
+test_that("a macro reference is not called a syntax error (#365 review)", {
+  # SAS resolves `&EXTRA` before PROC HAZARD reads the statement, so the
+  # grammar table cannot say what it becomes, or that the job does not run.
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "&EXTRA"))
+  row <- got$untranslated$reason[got$untranslated$construct == "&EXTRA"]
+  expect_length(row, 1L)
+  expect_match(row, "^unresolved PARMS keyword")
+  expect_match(row, "macro reference", fixed = TRUE)
+  expect_no_match(row, "does not run", fixed = TRUE)
+  # A keyword the lexer rejects still says it.
+  got <- .hzr_parse_parms(c("MUE=0.2", "THALF=1", "FIXG1"))
+  expect_match(got$untranslated$reason, "does not run", fixed = TRUE)
+  # A spaced operand with a macro in its key or value cannot be judged until
+  # SAS expands it: `%let KEY=THALF; PARMS MUE=0.2 &KEY = 0.3;` is a valid
+  # THALF = 0.3, and `THALF = &VAL` may be too (Codex on #365 at 85ffd1ba).
+  # Its pieces must claim neither acceptance nor rejection, and the orphan
+  # must still not be built on defaults.
+  for (ops in list(c("MUE=0.2", "&KEY", "=", "0.3"),
+                   c("MUE=0.2", "THALF", "=", "&VAL"),
+                   c("MUE=0.2", "&KEY=", "0.3"),
+                   c("MUE=0.2", "&KEY", "=0.3"),
+                   c("MUE=0.2", "THALF", "=", "&V", "NU", "=", "1"))) {
+    # Joined (#421), each of these is one operand carrying a macro. The
+    # phase is not built on defaults in any of them: an unread operand may
+    # be the one that sets a shape.
+    info <- paste(ops, collapse = " ")
+    got <- .hzr_parse_parms(ops)
+    # Either no phase is built, or one is built while an operand went unread:
+    # both stop, neither claims a syntax error.
+    expect_true(!isTRUE(got$has_phases) || length(got$not_mirrored) > 0L,
+                info = info)
+    rows <- got$untranslated$reason[got$untranslated$construct != "MUE=0.2"]
+    expect_gt(length(rows), 0L)
+    expect_false(any(grepl("syntax error", rows, fixed = TRUE)), info = info)
+    expect_false(any(grepl("does not run", rows, fixed = TRUE)), info = info)
+    # Only the macro operand's pieces: the last case also carries a valid
+    # spaced `NU = 1`, which rightly keeps its "accepts" reason.
+    macro_rows <- rows[grepl("&", got$untranslated$construct[
+      got$untranslated$construct != "MUE=0.2"], fixed = TRUE)]
+    expect_false(any(grepl("PROC HAZARD accepts", macro_rows, fixed = TRUE)),
+                 info = info)
+    expect_true(any(grepl("macro reference", rows, fixed = TRUE)), info = info)
+  }
+})
+
+test_that("a keyword outside PROC HAZARD's grammar says the job does not run", {
+  # FIXG1 and FIXG3 are not PARMS options: HZRstr.fixg1/fixg3 are internal
+  # flags shape.c:36-41 sets when every shape is fixed. The lexer has no such
+  # token, so PROC HAZARD rejects the job; the row has to say so, and keeps
+  # its "unresolved PARMS keyword" prefix for callers that grep it.
+  for (ops in list(c("MUE=0.2", "THALF=1", "FIXG1"),
+                   c("MUL=0.2", "GAMMA=2", "FIXG3"),
+                   c("MUE=0.2", "THALF=1", "BOGUS=3"))) {
+    got <- .hzr_parse_parms(ops)
+    row <- got$untranslated$reason[grepl("unresolved PARMS keyword",
+                                         got$untranslated$reason,
+                                         fixed = TRUE)]
+    expect_length(row, 1L)
+    expect_match(row, "does not run", fixed = TRUE)
+  }
+})
+
+test_that("glued phase options are a syntax error; spaced ones follow precedence (#340)", {
+  ops <- c("MUE=0.2", "THALF=1", "NU=1")
+  # hazard_l.l:176's word rule matches `EI` whole, beating `E` on flex's
+  # longest match, so `/EI` is unexpected text and SAS stops the job.
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE/EI, Y"))
+  expect_match(got$rejected, "hazard_l.l:176", fixed = TRUE)
+  # `/E I` lexes as EXCLUDE then INCLUDE (whitespace is skipped,
+  # hazard_l.l:50); several options may follow one "/" (hazard_y.y:224-225),
+  # and EXCLUDE takes precedence (przconc.c:35-39): AGE is excluded.
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE/E I, Y"))
+  expect_length(got$rejected, 0L)
+  expect_equal(got$phases,
+               quote(list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1, formula = ~Y))))
+  # The long forms lex as the keywords: equal length, and the earlier rule wins.
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE/EXCLUDE, Y"))
+  expect_length(got$rejected, 0L)
+})
+
+test_that("ORDER= with /E, /I or /S is rejected, as przconc.c rejects it (#340)", {
+  ops <- c("MUE=0.2", "THALF=1", "NU=1")
+  for (flag in c("E", "I", "S")) {
+    got <- .hzr_parse_parms(ops, covars = list(early = paste0("AGE/", flag, " ORDER=2, Y")))
+    expect_length(got$rejected, 1L)
+    expect_match(got$rejected, "przconc.c:45-53", fixed = TRUE, info = flag)
+    expect_match(got$rejected, "mutually exclusive", info = flag)
+  }
+  # ORDER= alone sets no semerr.
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE/ORDER=2, Y"))
+  expect_length(got$rejected, 0L)
+})
+
+test_that("each syntax-error form names its own source, not a shared one (#340)", {
+  ops <- c("MUE=0.2", "THALF=1", "NU=1")
+  # Stated per string before running: the source that rejects it.
+  cases <- c(
+    "AGE/EI"      = "hazard_l.l:176",   # word rule matches EI whole
+    "MAL / FOO"   = "hazard_l.l:176",   # FOO is no option keyword
+    "AGE/ORDER=X" = "hazard_l.l:176",   # X after = is unexpected text
+    "AGE/E/I"     = "hazard_l.l:178",   # no "/" rule in the option state
+    "/S"          = "hazard_y.y:210",   # an option before any variable
+    "Y/"          = "hazard_y.y:220-225", # "/" with no option after it
+    "AGE/MOVE"    = "hazard_y.y:228-232", # MOVE needs = NUMBER
+    "AGE/MOVE="   = "hazard_y.y:228-232", # "=" lexes; the NUMBER is missing
+    "AGE/E=2"     = "hazard_y.y:228-232", # E takes no value
+    # A value R reads as a number but the lexer does not (hazard_l.l:33-38
+    # has no Inf, no exponent without a decimal point, no trailing ".").
+    "AGE/MOVE=INF" = "hazard_l.l:176",  # no name rule after "/": a word
+    "AGE/MOVE=1E5" = "hazard_l.l:176",  # longest match: word beats NUMBER "1"
+    "AGE/ORDER=5." = "hazard_l.l:176",
+    "AGE/MOVE=+5"  = "hazard_l.l:178",  # "+" has no rule at all
+    "AGE/MOVE=I"   = "hazard_y.y:228-232", # I lexes as INCLUDE, not NUMBER
+    # The same after a phase variable, where a name lexes whole as NAME.
+    "AGE=INF"      = "hazard_y.y:216-218", # NAME where NUMBER belongs
+    "AGE=abc"      = "hazard_y.y:216-218",
+    "AGE=1E5"      = "hazard_l.l:176",
+    "AGE=0x1A"     = "hazard_l.l:176",
+    "AGE=+5"       = "hazard_l.l:178",
+    "AGE="         = "hazard_y.y:216-218") # "=" lexes; the NUMBER is missing
+  for (item in names(cases)) {
+    got <- .hzr_parse_parms(ops, covars = list(early = paste0(item, ", Z")))
+    expect_length(got$rejected, 1L)
+    expect_match(got$rejected, cases[[item]], fixed = TRUE, info = item)
+    expect_match(got$rejected, "initprz.c:75-77", fixed = TRUE, info = item)
+  }
+  # And forms SAS accepts are not rejected: long forms beat the word rule on
+  # equal length by coming first; several flags may follow one "/".
+  for (item in c("AGE/EXCLUDE", "AGE/START", "AGE/ORDER=2", "AGE/MOVE = 3",
+                 "AGE/E I", "AGE/S MOVE=2", "AGE=-0.5", "AGE=.5",
+                 "AGE=1.5E-3", "AGE=5")) {
+    got <- .hzr_parse_parms(ops, covars = list(early = paste0(item, ", Z")))
+    expect_length(got$rejected, 0L)
+  }
+})
+
+# ---------------------------------------------------------------------------
+# A refusal leaves the parser as more than prose (#359)
+# ---------------------------------------------------------------------------
+
+test_that("the constraint block adds exactly three reachable refusal codes", {
+  # The exhaustive search above pins the nine codes the .hzr_setg3_notes()
+  # trace can raise. The FIXGE2/FIXGAE2 block raises three more itself, which
+  # that search cannot see because it calls the trace directly and the trace
+  # takes both flags as FALSE. Enumerated here so the reachable set is a list
+  # of inputs rather than a count: twelve in total, every one tested.
+  by_site <- list(
+    # constraint block, alpha = 0 under FIXGAE2 (g3flag 3, not the trace's 4)
+    "(SETG3980)" = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25", "ALPHA=0",
+                     "FIXALPHA", "FIXGAE2", "WEIBULL"),
+    # constraint block, FIXGE2 with both shapes fixed off the product
+    "(SETG3990)" = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25", "FIXGAMMA",
+                     "FIXETA", "FIXGE2", "WEIBULL"),
+    # constraint block, FIXGAE2 with ALPHA fixed off the constraint
+    "(SETG31000)" = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25", "ALPHA=3",
+                      "FIXALPHA", "FIXGAE2", "WEIBULL"),
+    # SETG3_ignore_tau under both flags, ALPHA fixed away from 1
+    "(SETG3940)" = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5", "ALPHA=3",
+                     "FIXALPHA", "FIXGAE2", "FIXGE2", "WEIBULL")
+  )
+  for (code in names(by_site)) {
+    got <- .hzr_parse_parms(by_site[[code]])
+    expect_match(got$refusal_reason, code, fixed = TRUE, label = code)
+  }
+
+  # SETG31010 is the non-WEIBULL twin of SETG3990 (setg3.c:884-889). The
+  # non-WEIBULL constraint path is not modelled here, so no refusal is
+  # claimed for it; under U1 the job stops as one the translation cannot
+  # decide (a hand derivation of that path went wrong both ways in review).
+  non_weibull <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                                    "FIXGAMMA", "FIXETA", "FIXGE2"))
+  expect_true(is.na(non_weibull$refusal_reason))
+  expect_true(any(grepl("cannot tell whether PROC HAZARD refuses",
+                        non_weibull$not_mirrored, fixed = TRUE)))
+})
+
+test_that("a constraint flag without WEIBULL is recorded, not refused, unless SETG3 refuses it deterministically", {
+  # The .hzr_setg3_notes() trace takes both constraint flags as FALSE, so on
+  # the non-WEIBULL constraint path it answers about a job SAS does not run.
+  # PROC HAZARD FITS both of these; before the containment they came back as
+  # SETG31020 and SETG31040 and the translated document opened with stop(),
+  # which is the signature defect pointing the other way -- a refusal that
+  # looks like PROC HAZARD's and is not.
+  for (ops in list(
+    c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5", "FIXGAMMA", "FIXETA",
+      "FIXGE2"),
+    c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=1", "ALPHA=2", "FIXALPHA",
+      "FIXGAE2")
+  )) {
+    got <- .hzr_parse_parms(ops)
+    expect_true(is.na(got$refusal_reason),
+                label = paste(ops, collapse = " "))
+    # The note survives the containment, and it says what is true. Dropping
+    # only the stop() would leave the row asserting "PROC HAZARD refuses this
+    # job" about a job PROC HAZARD fits -- a quieter version of the same
+    # wrong answer.
+    row <- got$untranslated$reason[grepl("^GAMMA=", got$untranslated$construct)]
+    expect_length(row, 1L)
+    expect_match(row, "does not trace", fixed = TRUE)
+    expect_false(grepl("PROC HAZARD refuses this job", row, fixed = TRUE))
+    expect_false(is.null(got$phases))
+  }
+
+  # The same shapes WITH WEIBULL stay refused -- the containment is keyed on
+  # the untraced path, not on the flags alone.
+  weibull <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                                "FIXGAMMA", "FIXETA", "FIXGE2", "WEIBULL"))
+  expect_false(is.na(weibull$refusal_reason))
+})
+
+test_that("every SETG3 refusal is carried out of the parser", {
+  # `refused` is documented as modterm.c's ERROR 1001 ("no phase selected"),
+  # so the SETG3 codes travel in their own field rather than widening it.
+  codes <- list(
+    SETG3960 = c("MUL=0.2", "TAU=1", "GAMMA=0", "ETA=0.25", "FIXGE2",
+                 "WEIBULL"),
+    SETG3980 = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25", "ALPHA=0",
+                 "WEIBULL"),
+    SETG31020 = c("MUL=0.2", "TAU=1", "GAMMA=1", "ETA=1", "FIXGAMMA",
+                  "FIXETA"),
+    SETG3940 = c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5", "ALPHA=3",
+                 "FIXALPHA", "FIXGAE2", "FIXGE2", "WEIBULL")
+  )
+  for (code in names(codes)) {
+    got <- .hzr_parse_parms(codes[[code]])
+    expect_match(got$refusal_reason, code, fixed = TRUE, label = code)
+    # The row stays too: the document still lists what was wrong.
+    expect_true(any(grepl(code, got$untranslated$reason, fixed = TRUE)),
+                label = code)
+    # ERROR 1001 is a different refusal and must not be claimed here.
+    expect_false(got$refused, label = code)
+  }
+  ok <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.25",
+                           "WEIBULL"))
+  expect_true(is.na(ok$refusal_reason))
+})
+
+test_that("the constraint block's own rewrite is recorded, as the trace's are", {
+  # setg3.c:449-467 moves GAMMA to 2/ETA when the product is not 2, and calls
+  # hzr_parm_changed(HZ_GAMMA), so PROC HAZARD tells its reader. The emitted
+  # phase is right; what was missing is the record. The SETG3-notes trace
+  # covers its own rewrites, but not the constraint block #329 added.
+  got <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=3", "ETA=0.5", "FIXGE2",
+                            "WEIBULL"))
+  expect_equal(
+    got$phases,
+    quote(list(hzr_phase("g3", tau = 1, gamma = 4, alpha = 1, eta = 0.5,
+                         constraint = "eta_gamma")))
+  )
+  row <- got$untranslated$reason[grepl("GAMMA", got$untranslated$construct,
+                                       fixed = TRUE)]
+  expect_length(row, 1L)
+  expect_match(row, "FIXGE2", fixed = TRUE)
+  # The whole move, not the digits: the reason carries "setg3.c:449-467", so
+  # a bare "3" and a bare "4" both match the citation and cannot fail.
+  expect_match(row, "GAMMA=3 -> 4", fixed = TRUE)
+
+  # A job already on the constraint has nothing to record.
+  on <- .hzr_parse_parms(c("MUL=0.2", "TAU=1", "GAMMA=4", "ETA=0.5", "FIXGE2",
+                           "WEIBULL"))
+  expect_equal(nrow(on$untranslated), 0L)
+})
+
+test_that("an ABSENT PARMS value cites the grammar, not the lexer (#433 review)", {
+  # `THALF=` with nothing after it is the GRAMMAR refusing the operand --
+  # `THALF '=' NUMBER` (hazard_y.y:139) has no form without a NUMBER -- not
+  # the lexer refusing a value it cannot read. The old message cited
+  # hazard_l.l and printed the absent value, giving "PARMS value  for THALF"
+  # with two spaces. Same distinction check_number() already draws on the
+  # PROC line.
+  got <- .hzr_parse_parms(c("MUE=0.1", "NU=1", "M=1", "THALF="))
+  row <- got$untranslated$reason[got$untranslated$construct == "THALF="]
+  expect_length(row, 1L)
+  expect_match(row, "hazard_y.y", fixed = TRUE)
+  expect_no_match(row, "hazard_l.l:33-38", fixed = TRUE)
+  expect_no_match(row, "value  for", fixed = TRUE)   # the blank
+  # KNOWN NEGATIVE: a value that IS present but unreadable still cites the
+  # lexer, so the fix has not simply swapped every citation.
+  got2 <- .hzr_parse_parms(c("MUE=0.1", "NU=1", "M=1", "THALF=ABC"))
+  row2 <- got2$untranslated$reason[got2$untranslated$construct == "THALF=ABC"]
+  expect_length(row2, 1L)
+  expect_match(row2, "hazard_l.l", fixed = TRUE)
+})
+
+# --- #411: a SAS name may begin with an underscore, an R symbol may not ---
+
+test_that("a covariate whose name begins with `_` builds a formula, not a parse error", {
+  # PROC HAZARD's lexer reads a name as [_A-Z][_A-Z0-9]* (hazard_l.l:39), so
+  # `_X1` is a legal covariate. Pasting it into str2lang() produced R's own
+  # parser error ("unexpected symbol") and the whole job stopped. Building the
+  # formula from SYMBOLS cannot fail that way, and deparse() backquotes the
+  # name so the emitted document re-parses.
+  ops <- c("MUE=0.2", "THALF=1", "NU=1", "M=1")
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE, _X1"))
+  expect_length(got$rejected, 0L)
+  txt <- paste(deparse(got$phases), collapse = " ")
+  expect_match(txt, "`_X1`", fixed = TRUE)
+  # The emitted text must re-parse to the SAME call, not merely look right.
+  expect_identical(str2lang(paste(deparse(got$phases), collapse = "\n")),
+                   got$phases)
+})
+
+test_that("an underscore name survives the round trip in every position", {
+  ops <- c("MUE=0.2", "THALF=1", "NU=1", "M=1")
+  # The reserved words are IN the SAS grammar too: hazard_l.l:39 is
+  # ([_A-Z][_A-Z0-9]*), which matches NA, TRUE, FALSE and NULL. On the pasted
+  # path `~AGE + NA` parsed as a logical literal rather than a variable.
+  for (covars in c("_X1", "_X1, AGE", "AGE, _X1", "_A, _B",
+                   "AGE, NA", "AGE, TRUE", "AGE, FALSE", "AGE, NULL")) {
+    got <- .hzr_parse_parms(ops, covars = list(early = covars))
+    expect_identical(str2lang(paste(deparse(got$phases), collapse = "\n")),
+                     got$phases, info = covars)
+  }
+  # Control: an ordinary name is unchanged and gains no backquotes.
+  got <- .hzr_parse_parms(ops, covars = list(early = "AGE, SEX"))
+  expect_false(grepl("`", paste(deparse(got$phases), collapse = " "), fixed = TRUE))
+})
+
+test_that("a spaced operand PROC HAZARD would still reject is not said to be accepted (#365 review 4)", {
+  # Restored from the merge-base after the U1 work deleted it. The property
+  # it pins is still live and still worth pinning: joining an operand across
+  # spaces must not turn a job SAS REJECTS into one described as accepted.
+  # Only the control changed. Under the old piece-by-piece joiner a valid
+  # spaced operand produced "piece" rows saying PROC HAZARD accepts it; the
+  # normalised tokeniser simply reads it, so it now produces NO rows, which
+  # is the better answer and the reason the original control no longer fits.
+  for (ops in list(c("MUE=0.2", "THALF=0.5", "NU", "=", "ABC"),
+                   c("MUE=0.2", "THALF=0.5", "NU=", "1E-3"),
+                   c("=", "0.3", "MUE=0.2", "THALF=0.5"),
+                   c("MUE=0.2", "THALF=0.5", "FIXNU", "=", "1"))) {
+    info <- paste(ops, collapse = " ")
+    got <- .hzr_parse_parms(.hzr_sas_join_spaced(ops))
+    rows <- got$untranslated$reason[!got$untranslated$construct %in%
+                                      c("MUE=0.2", "THALF=0.5")]
+    expect_gt(length(rows), 0L)
+    expect_false(any(grepl("PROC HAZARD accepts", rows, fixed = TRUE)),
+                 info = info)
+    expect_true(all(grepl("does not run", rows, fixed = TRUE)), info = info)
+  }
+  # Control: a spaced operand SAS RUNS is read, with nothing to report.
+  ok <- .hzr_parse_parms(.hzr_sas_join_spaced(
+    c("MUE=0.2", "THALF=0.5", "NU", "=", "-1.5")))
+  expect_identical(NROW(ok$untranslated), 0L)
+})
+
+test_that("SETG1 records the refusal it reaches first: DELTA, THALF, M and NU (#424)", {
+  # setg1.c returns on each refusal in turn (:310-328, :343-346, then the
+  # M and NU cases), so a job carrying several names the first of them.
+  first <- function(ops) .hzr_parse_parms(ops)$refusal_reason
+  expect_match(first(c("MUE=0.2", "DELTA=2", "FIXDELTA", "THALF=-1",
+                       "FIXTHALF", "M=-1", "NU=-1", "FIXM", "FIXNU")),
+               "(SETG1901)", fixed = TRUE)
+  expect_match(first(c("MUE=0.2", "THALF=-1", "FIXTHALF", "M=-1", "NU=-1",
+                       "FIXM", "FIXNU")), "(SETG1910)", fixed = TRUE)
+  expect_match(first(c("MUE=0.2", "THALF=1", "M=-1", "NU=-1", "FIXM",
+                       "FIXNU")), "(SETG1940)", fixed = TRUE)
+  # SETG1 runs only for an active early phase (shape.c:19-21).
+  late_only <- .hzr_parse_parms(c("MUL=0.2", "THALF=-1", "FIXTHALF"))
+  expect_true(is.na(late_only$refusal_reason))
+  # A refusal is the job's only verdict: no no-result reason beside it.
+  p <- .hzr_parse_parms(c("MUE=0.2", "M=1", "NU=0", "FIXM", "FIXNU"))
+  expect_match(p$refusal_reason, "(SETG1960)", fixed = TRUE)
+  expect_true(is.na(p$no_result_reason))
+  p <- .hzr_parse_parms(c("MUE=0.2", "M=1", "NU=0"))
+  expect_true(is.na(p$refusal_reason))
+  expect_match(p$no_result_reason, "may not fit this job", fixed = TRUE)
+  expect_identical(p$no_result_kind, "may_not_fit")
+  p <- .hzr_parse_parms(c("MUE=0.2", "M=0", "NU=0", "FIXNU"))
+  expect_match(p$no_result_reason, "produced no result", fixed = TRUE)
+  expect_identical(p$no_result_kind, "no_result")
 })

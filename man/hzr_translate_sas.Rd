@@ -23,8 +23,9 @@ directory) to name an already-converted fit directly, e.g.
 An \code{hzr_sas_job} object, invisibly. \verb{$calls} holds the emitted
 calls keyed by chunk label, \verb{$grid} the last prediction grid seen and
 \verb{$inhaz} the first unresolved \verb{INHAZ=} (not all of each, when a job has
-several), \verb{$untranslated} the recorded gaps and \verb{$coverage} the token
-counts.
+several), \verb{$untranslated} the recorded gaps, \verb{$coverage} the token
+counts, and \verb{$notes} any callout attached to a chunk by label, emitted
+immediately above that chunk in the rendered document.
 }
 \description{
 Reads a SAS program containing \verb{PROC HAZARD} and/or \verb{PROC HAZPRED} blocks and
@@ -42,6 +43,24 @@ and rendered as visible callouts, never dropped. A \verb{PROC HAZPRED} job whose
 \verb{INHAZ=} fitted model cannot be located emits a \code{stop()}, so the document
 fails to render rather than reporting over a model it did not load.
 
+A phase-statement variable that \verb{PROC HAZARD} cannot read as a name, such
+as \code{AGE*SEX}, \code{LOG(AGE)} or \verb{B SEX}, is left out of the model. (\code{LOG()}
+is read as \code{LOG}, as \verb{PROC HAZARD} reads it: its lexer treats \verb{)} as
+whitespace and \code{(} as a change of state, \code{hazard_l.l:32} and \verb{:56}.) A phase
+variable must be a NAME, \verb{[_A-Z][_A-Z0-9]*} (\code{hazard_l.l:39};
+\code{phasevar : NAME}, \code{hazard_y.y:213}), so \verb{PROC HAZARD} rejects such a job
+at parse. The document raises a \code{warning()} above the fit, and the operand
+is recorded in \verb{$untranslated}.
+
+Two more syntax errors take the same route. A value on a \verb{PROC HAZARD}
+option that takes none, such as \code{NOCOV=1} (\code{hazard_y.y:65-76}), is
+ignored in the fit. A \code{TIME}, \code{EVENT}, \code{RCENSOR}, \code{LCENSOR} or \code{WEIGHT}
+statement with more than one operand, which takes exactly one name
+(\code{hazard_y.y:106-127}), is fitted on the first. Both are warned about
+above the fit and recorded in \verb{$untranslated}. \code{TIME} or \code{EVENT} with no
+operand, and no other statement supplying the variable, leaves nothing to
+fit, so that job's fit chunk is a \code{stop()}.
+
 A job may contain more than one \verb{PROC HAZARD} and/or \verb{PROC HAZPRED} block.
 Every block is preserved: the first of a kind keeps the bare chunk name
 (\code{fit}, \code{pred}, \code{pred_haz}), later ones get \code{fit_2}, \code{fit_3}, \code{pred_2}, and
@@ -58,15 +77,43 @@ resolves and the job holds more than one local fit, which fit a
 back to referencing \code{fit} and the ambiguity is recorded in
 \code{untranslated}, never guessed at silently.
 }
+\section{What the emitted document needs to run}{
+
+Base R at the version this package declares in \code{DESCRIPTION} (\code{Depends}),
+plus TemporalHazard itself. The emitted chunks never reach into this
+package's internals, so the document renders in your session, and in a
+colleague's, without anything further installed, with one exception. A
+translated \code{SELECTION} screen on a multiphase job with interval-censored
+rows (an \code{ICENSOR} job; \code{LCENSOR} is left truncation and does not need
+it) needs the suggested package \pkg{numDeriv}. Without it a screen that
+tests an entry stops and says so. A screen that completes but cannot test
+a removal (a \code{BACKWARD} screen, whose base has no usable variance) is
+caught by the emitted check, which warns and names the variables.
+}
+
 \section{Experimental}{
 
 The emitted document renders: the \code{hazard()} chunk binds its fit to a name
 and passes \code{fit = TRUE}, so the \code{predict()} chunks have something to
-predict from. Two SAS constructs are refused outright rather than
-mistranslated, each emitting a \code{stop()} in place of the fit: a \code{SELECTION}
-statement requesting a stepwise screen (#152, #160), and \code{LCENSOR}
+predict from. A \code{SELECTION} statement is translated into an
+\code{hzr_stepwise()} call carrying the job's own candidates, per-variable
+flags and thresholds (#160); the screen is real, and may select a
+different model than \verb{PROC HAZARD} did, which the emitted document says
+in a callout above the chunk. \code{SELECTION} options with no faithful
+translation are refused outright rather than mistranslated, emitting a
+\code{stop()} in place of the fit: \code{FAST}, \code{MAXVARS}, \code{RESTRICT}, a
+per-variable \verb{MOVE=} or \verb{ORDER=}, and a variable held by
+\verb{/I} in one phase but movable in another. So is \code{LCENSOR}
 combined with \code{ICENSOR}, which one \code{time_lower} argument cannot express
-(#155). Prediction grids the parser cannot resolve are refused whole, and
+(#155). A job with \code{ICENSOR} is fitted with \code{objective = "sas"}, the
+interval term \verb{PROC HAZARD} accumulates, so it reproduces \verb{PROC HAZARD}'s
+estimates; the value it reports is then \verb{PROC HAZARD}'s objective, not a
+log-likelihood, and a callout above the chunk says so (#543). Degenerate
+intervals are resolved as \verb{PROC HAZARD} does before its fit: a lower bound
+equal to the time makes the row an exact event, and one that is missing,
+negative or after the time drops the row from the fit (not from your data
+frame); the status chunk warns with both counts. Prediction
+grids the parser cannot resolve are refused whole, and
 the \code{predict()} chunks that would have read such a grid become a \code{stop()}
 naming it, rather than a \code{predict(newdata = )} over a name no chunk
 builds. An unresolved \verb{INHAZ=} stops the render on purpose.

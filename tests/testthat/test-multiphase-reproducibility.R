@@ -31,8 +31,8 @@ mp_repro_fit <- function(d, ...) {
 test_that("two identical unseeded multiphase fits return identical theta", {
   d <- mp_repro_data()
 
-  a <- mp_repro_fit(d, control = list(condition = 14))
-  b <- mp_repro_fit(d, control = list(condition = 14))
+  a <- mp_repro_fit(d)
+  b <- mp_repro_fit(d)
 
   expect_identical(a$fit$theta, b$fit$theta)
   expect_identical(a$fit$objective, b$fit$objective)
@@ -43,7 +43,7 @@ test_that("a multiphase fit leaves the caller's RNG stream untouched", {
 
   set.seed(99)
   before <- .Random.seed
-  invisible(mp_repro_fit(d, control = list(condition = 14)))
+  invisible(mp_repro_fit(d))
 
   expect_identical(.Random.seed, before)
 })
@@ -51,9 +51,9 @@ test_that("a multiphase fit leaves the caller's RNG stream untouched", {
 test_that("interleaved RNG use does not change the multiphase fit", {
   d <- mp_repro_data()
 
-  a <- mp_repro_fit(d, control = list(condition = 14))
+  a <- mp_repro_fit(d)
   invisible(stats::rnorm(17))          # move the ambient stream
-  b <- mp_repro_fit(d, control = list(condition = 14))
+  b <- mp_repro_fit(d)
 
   expect_identical(a$fit$theta, b$fit$theta)
 })
@@ -65,9 +65,9 @@ test_that("interleaved RNG use does not change the multiphase fit", {
 test_that("the same start_seed reproduces a fit and a different one may not", {
   d <- mp_repro_data()
 
-  a  <- mp_repro_fit(d, control = list(condition = 14, start_seed = 7L))
-  a2 <- mp_repro_fit(d, control = list(condition = 14, start_seed = 7L))
-  b  <- mp_repro_fit(d, control = list(condition = 14, start_seed = 8L))
+  a  <- mp_repro_fit(d, control = list(start_seed = 7L))
+  a2 <- mp_repro_fit(d, control = list(start_seed = 7L))
+  b  <- mp_repro_fit(d, control = list(start_seed = 8L))
 
   expect_identical(a$fit$theta, a2$fit$theta)
   # A different ensemble must actually be a different ensemble.  The optimum it
@@ -113,8 +113,8 @@ test_that("a negative start_seed is accepted and reproducible", {
   # seed space for no reason.
   d <- mp_repro_data()
 
-  a <- mp_repro_fit(d, control = list(condition = 14, start_seed = -7L))
-  b <- mp_repro_fit(d, control = list(condition = 14, start_seed = -7L))
+  a <- mp_repro_fit(d, control = list(start_seed = -7L))
+  b <- mp_repro_fit(d, control = list(start_seed = -7L))
 
   expect_identical(a$fit$theta, b$fit$theta)
   expect_false(identical(
@@ -285,6 +285,11 @@ test_that("starts records every start and marks the one that won", {
   # Exactly one winner. Cross-check its objective against the separately
   # plumbed fit$fit$objective -- comparing it to max(starts$objective) instead
   # would be a tautology, since `best` is assigned by that same comparison.
+  # The two are equal only where no Conservation of Events adjustment moved
+  # the conserved scale after the optimizer finished. Where one did, the
+  # reported objective is the likelihood of the returned estimates while this
+  # column keeps the optimizer's own value, and they differ by the size of the
+  # adjustment (#362); test-coe-objective-consistency.R pins that case.
   expect_identical(sum(starts$best), 1L)
   expect_equal(starts$objective[starts$best], fit$fit$objective)
 })

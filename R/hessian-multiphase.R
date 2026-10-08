@@ -224,8 +224,6 @@ NULL
 #'   unique pairs from \code{\{log\_tau, gamma, alpha, eta\}}.
 #' @noRd
 .hzr_g3_phase_second_derivatives <- function(time, tau, gamma, alpha, eta) {
-  h <- .hzr_h2
-
   eval_at <- function(tau_p, gam_p, alp_p, eta_p) {
     # Guard against non-positive G3 parameters
     if (tau_p <= 0 || gam_p <= 0 || eta_p <= 0) return(NULL)
@@ -256,15 +254,26 @@ NULL
     return(setNames(replicate(length(nms), zeros, simplify = FALSE), nms))
   }
 
+  # Each shape is stepped in proportion to itself (#332). A fixed step of
+  # h ~ 1.2e-4 moves gamma = 220 by 5e-7 of itself, where rounding swamps a
+  # second difference, and moves eta = 0.009 or alpha = 0.02 by about 1%,
+  # where truncation does. log_tau is already on a log scale. alpha may be
+  # 0 (the exponential limit), which keeps the additive step.
+  h <- .hzr_h2
+  h_t <- h
+  h_g <- h * gamma
+  h_a <- if (alpha > 0) h * alpha else h
+  h_e <- h * eta
+
   # Perturbed values: log_tau, gamma, alpha, eta steps
-  tau_p <- tau * exp(h)
-  tau_m <- tau * exp(-h)
-  gam_p <- gamma + h
-  gam_m <- gamma - h
-  alp_p <- alpha + h
-  alp_m <- alpha - h
-  eta_p <- eta   + h
-  eta_m <- eta   - h
+  tau_p <- tau * exp(h_t)
+  tau_m <- tau * exp(-h_t)
+  gam_p <- gamma + h_g
+  gam_m <- gamma - h_g
+  alp_p <- alpha + h_a
+  alp_m <- alpha - h_a
+  eta_p <- eta   + h_e
+  eta_m <- eta   - h_e
 
   # Fallback to d00 if perturbed eval returns NULL
   safe_eval <- function(tau_v, gam_v, alp_v, eta_v) {
@@ -281,11 +290,9 @@ NULL
   d_Ep <- safe_eval(tau, gamma, alpha, eta_p)
   d_Em <- safe_eval(tau, gamma, alpha, eta_m)
 
-  h2 <- h * h
-
   # Diagonal second differences
-  diag2 <- function(dp, dm, d0, which) {
-    (dp[[which]] - 2 * d0[[which]] + dm[[which]]) / h2
+  diag2 <- function(dp, dm, d0, which, step) {
+    (dp[[which]] - 2 * d0[[which]] + dm[[which]]) / step^2
   }
 
   # tau / gamma
@@ -293,54 +300,54 @@ NULL
   d_TpGm <- safe_eval(tau_p, gam_m, alpha, eta)
   d_TmGp <- safe_eval(tau_m, gam_p, alpha, eta)
   d_TmGm <- safe_eval(tau_m, gam_m, alpha, eta)
-  TG_Phi <- (d_TpGp$Phi - d_TpGm$Phi - d_TmGp$Phi + d_TmGm$Phi) / (4 * h2)
-  TG_phi <- (d_TpGp$phi - d_TpGm$phi - d_TmGp$phi + d_TmGm$phi) / (4 * h2)
+  TG_Phi <- (d_TpGp$Phi - d_TpGm$Phi - d_TmGp$Phi + d_TmGm$Phi) / (4 * h_t * h_g)
+  TG_phi <- (d_TpGp$phi - d_TpGm$phi - d_TmGp$phi + d_TmGm$phi) / (4 * h_t * h_g)
 
   # tau / alpha
   d_TpAp <- safe_eval(tau_p, gamma, alp_p, eta)
   d_TpAm <- safe_eval(tau_p, gamma, alp_m, eta)
   d_TmAp <- safe_eval(tau_m, gamma, alp_p, eta)
   d_TmAm <- safe_eval(tau_m, gamma, alp_m, eta)
-  TA_Phi <- (d_TpAp$Phi - d_TpAm$Phi - d_TmAp$Phi + d_TmAm$Phi) / (4 * h2)
-  TA_phi <- (d_TpAp$phi - d_TpAm$phi - d_TmAp$phi + d_TmAm$phi) / (4 * h2)
+  TA_Phi <- (d_TpAp$Phi - d_TpAm$Phi - d_TmAp$Phi + d_TmAm$Phi) / (4 * h_t * h_a)
+  TA_phi <- (d_TpAp$phi - d_TpAm$phi - d_TmAp$phi + d_TmAm$phi) / (4 * h_t * h_a)
 
   # tau / eta
   d_TpEp <- safe_eval(tau_p, gamma, alpha, eta_p)
   d_TpEm <- safe_eval(tau_p, gamma, alpha, eta_m)
   d_TmEp <- safe_eval(tau_m, gamma, alpha, eta_p)
   d_TmEm <- safe_eval(tau_m, gamma, alpha, eta_m)
-  TE_Phi <- (d_TpEp$Phi - d_TpEm$Phi - d_TmEp$Phi + d_TmEm$Phi) / (4 * h2)
-  TE_phi <- (d_TpEp$phi - d_TpEm$phi - d_TmEp$phi + d_TmEm$phi) / (4 * h2)
+  TE_Phi <- (d_TpEp$Phi - d_TpEm$Phi - d_TmEp$Phi + d_TmEm$Phi) / (4 * h_t * h_e)
+  TE_phi <- (d_TpEp$phi - d_TpEm$phi - d_TmEp$phi + d_TmEm$phi) / (4 * h_t * h_e)
 
   # gamma / alpha
   d_GpAp <- safe_eval(tau, gam_p, alp_p, eta)
   d_GpAm <- safe_eval(tau, gam_p, alp_m, eta)
   d_GmAp <- safe_eval(tau, gam_m, alp_p, eta)
   d_GmAm <- safe_eval(tau, gam_m, alp_m, eta)
-  GA_Phi <- (d_GpAp$Phi - d_GpAm$Phi - d_GmAp$Phi + d_GmAm$Phi) / (4 * h2)
-  GA_phi <- (d_GpAp$phi - d_GpAm$phi - d_GmAp$phi + d_GmAm$phi) / (4 * h2)
+  GA_Phi <- (d_GpAp$Phi - d_GpAm$Phi - d_GmAp$Phi + d_GmAm$Phi) / (4 * h_g * h_a)
+  GA_phi <- (d_GpAp$phi - d_GpAm$phi - d_GmAp$phi + d_GmAm$phi) / (4 * h_g * h_a)
 
   # gamma / eta
   d_GpEp <- safe_eval(tau, gam_p, alpha, eta_p)
   d_GpEm <- safe_eval(tau, gam_p, alpha, eta_m)
   d_GmEp <- safe_eval(tau, gam_m, alpha, eta_p)
   d_GmEm <- safe_eval(tau, gam_m, alpha, eta_m)
-  GE_Phi <- (d_GpEp$Phi - d_GpEm$Phi - d_GmEp$Phi + d_GmEm$Phi) / (4 * h2)
-  GE_phi <- (d_GpEp$phi - d_GpEm$phi - d_GmEp$phi + d_GmEm$phi) / (4 * h2)
+  GE_Phi <- (d_GpEp$Phi - d_GpEm$Phi - d_GmEp$Phi + d_GmEm$Phi) / (4 * h_g * h_e)
+  GE_phi <- (d_GpEp$phi - d_GpEm$phi - d_GmEp$phi + d_GmEm$phi) / (4 * h_g * h_e)
 
   # alpha / eta
   d_ApEp <- safe_eval(tau, gamma, alp_p, eta_p)
   d_ApEm <- safe_eval(tau, gamma, alp_p, eta_m)
   d_AmEp <- safe_eval(tau, gamma, alp_m, eta_p)
   d_AmEm <- safe_eval(tau, gamma, alp_m, eta_m)
-  AE_Phi <- (d_ApEp$Phi - d_ApEm$Phi - d_AmEp$Phi + d_AmEm$Phi) / (4 * h2)
-  AE_phi <- (d_ApEp$phi - d_ApEm$phi - d_AmEp$phi + d_AmEm$phi) / (4 * h2)
+  AE_Phi <- (d_ApEp$Phi - d_ApEm$Phi - d_AmEp$Phi + d_AmEm$Phi) / (4 * h_a * h_e)
+  AE_phi <- (d_ApEp$phi - d_ApEm$phi - d_AmEp$phi + d_AmEm$phi) / (4 * h_a * h_e)
 
   list(
-    d2Phi_dlog_tau2        = diag2(d_Tp, d_Tm, d00, "Phi"),
-    d2Phi_dgamma2          = diag2(d_Gp, d_Gm, d00, "Phi"),
-    d2Phi_dalpha2          = diag2(d_Ap, d_Am, d00, "Phi"),
-    d2Phi_deta2            = diag2(d_Ep, d_Em, d00, "Phi"),
+    d2Phi_dlog_tau2        = diag2(d_Tp, d_Tm, d00, "Phi", h_t),
+    d2Phi_dgamma2          = diag2(d_Gp, d_Gm, d00, "Phi", h_g),
+    d2Phi_dalpha2          = diag2(d_Ap, d_Am, d00, "Phi", h_a),
+    d2Phi_deta2            = diag2(d_Ep, d_Em, d00, "Phi", h_e),
     d2Phi_dlog_tau_dgamma  = TG_Phi,
     d2Phi_dlog_tau_dalpha  = TA_Phi,
     d2Phi_dlog_tau_deta    = TE_Phi,
@@ -348,10 +355,10 @@ NULL
     d2Phi_dgamma_deta      = GE_Phi,
     d2Phi_dalpha_deta      = AE_Phi,
 
-    d2phi_dlog_tau2        = diag2(d_Tp, d_Tm, d00, "phi"),
-    d2phi_dgamma2          = diag2(d_Gp, d_Gm, d00, "phi"),
-    d2phi_dalpha2          = diag2(d_Ap, d_Am, d00, "phi"),
-    d2phi_deta2            = diag2(d_Ep, d_Em, d00, "phi"),
+    d2phi_dlog_tau2        = diag2(d_Tp, d_Tm, d00, "phi", h_t),
+    d2phi_dgamma2          = diag2(d_Gp, d_Gm, d00, "phi", h_g),
+    d2phi_dalpha2          = diag2(d_Ap, d_Am, d00, "phi", h_a),
+    d2phi_deta2            = diag2(d_Ep, d_Em, d00, "phi", h_e),
     d2phi_dlog_tau_dgamma  = TG_phi,
     d2phi_dlog_tau_dalpha  = TA_phi,
     d2phi_dlog_tau_deta    = TE_phi,

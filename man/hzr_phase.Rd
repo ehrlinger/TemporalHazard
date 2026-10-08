@@ -38,23 +38,26 @@ SAS early: \code{THALF}/\code{RHO}.}
 \item{m}{Numeric scalar; initial shape exponent.  Used for \code{"cdf"} and
 \code{"hazard"} phases.  SAS early: \code{M}.}
 
-\item{tau}{Positive scalar; scale parameter for \code{"g3"} phases.
+\item{tau}{Positive finite scalar; scale parameter for \code{"g3"} phases.
 SAS late: \code{TAU}.}
 
-\item{gamma}{Positive scalar; time exponent for \code{"g3"} phases.
+\item{gamma}{Positive finite scalar; time exponent for \code{"g3"} phases.
 SAS late: \code{GAMMA}.}
 
 \item{alpha}{Non-negative scalar; shape parameter for \code{"g3"} phases.
 When \code{alpha > 0}, the generic G3 formula is used; \code{alpha = 0} gives the
 exponential limiting case.  SAS late: \code{ALPHA}.}
 
-\item{eta}{Positive scalar; outer exponent for \code{"g3"} phases.
+\item{eta}{Positive finite scalar; outer exponent for \code{"g3"} phases.
 SAS late: \code{ETA}.}
 
 \item{formula}{Optional one-sided formula (e.g. \code{~ age + nyha}) for
 phase-specific covariates.  It is evaluated in the \code{data} given to
 \code{\link[=hazard]{hazard()}}, so without \code{data} \code{\link[=hazard]{hazard()}} refuses it, unless it builds
 nothing either way: an intercept-only \code{~ 1} with no global \code{x}.
+The phase's scale parameter plays the role of an intercept, so the
+design never has one: removing it (\code{~ 0 + age}, \code{~ age - 1}) is
+ignored with a warning, and builds the design of \code{~ age}.
 When \code{NULL} (default), the phase inherits the global design from
 \code{\link[=hazard]{hazard()}}: the global formula's covariates, or \code{x} on the vector
 interface.}
@@ -77,6 +80,21 @@ the others rather than estimating it:
 \item{\code{"eta_gamma"}}{\eqn{\eta = 2/\gamma}, so that
 \eqn{\gamma\eta = 2}. SAS/C: \code{FIXGE2}.}
 }
+At \code{alpha = 1}, \code{hzr_phase()}'s default, the g3 form is
+\eqn{(t/\tau)^{\gamma\eta}}{(t/tau)^(gamma*eta)} (see \code{\link[=hzr_decompos_g3]{hzr_decompos_g3()}}),
+which depends on
+\eqn{\gamma} and \eqn{\eta} only through their product. So
+\eqn{\gamma} and \eqn{\eta} are not separately identified there: under
+\code{"eta_gamma"} the product is fixed at 2 and \eqn{\gamma} is not
+identified at all, and with both estimated only the product is. With
+\code{alpha} \emph{fixed} at 1, \code{\link[=hazard]{hazard()}} therefore fits the phase as PROC HAZARD
+does: \code{tau} is held at 1 and the product is carried by one parameter
+(under \code{"eta_gamma"}, \eqn{\gamma = 2} and \eqn{\eta = 1} are both held),
+with a warning and a record in \code{fit$fit$boundary}. Under \code{"eta_gamma"} a
+fixed \code{alpha} above 1 is refused, as PROC HAZARD refuses it, and a free
+one started at 1 or above starts at 2/3 instead. A free \code{alpha} that
+comes to rest near 1 can still leave \eqn{\gamma} undetermined; the
+weak-direction warning names it when the Hessian shows it.
 The derived parameter follows the others at every step of the
 optimization, so it is not a free parameter and cannot be named in
 \code{fixed}; \code{"shapes"} leaves it out. Its starting value is computed from the

@@ -18,10 +18,14 @@ The object \code{x} of class \code{c("hzr_deciles", "data.frame")},
 invisibly. The data frame has one row per risk group and columns:
 \code{group} (integer group index, 1 = lowest risk),
 \code{n} (group size),
-\code{events} (observed event count),
-\code{expected} (expected event count from model predictions),
-\code{observed_rate}, \code{expected_rate} (events / n),
-\code{chi_sq} (per-group (O-E)^2/E contribution),
+\code{events} (observed event count; weighted for a weighted fit),
+\code{expected} (expected event count from model predictions, net of
+any entry time, and weighted as \code{events} is),
+\code{observed_rate}, \code{expected_rate} (events / n; per unit of
+case weight for a weighted fit, and \code{NA} for a group whose weights
+sum to 0),
+\code{chi_sq} (per-group (O-E)^2/V contribution, where V is the Poisson
+variance of the weighted count, equal to E for an unweighted fit),
 \code{p_value} (1-df chi-square upper-tail p),
 \code{mean_survival}, \code{mean_cumhaz} (mean predicted values in group).
 An \code{"overall"} attribute contains the omnibus chi-square test

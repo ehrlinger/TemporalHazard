@@ -85,25 +85,30 @@ test_that("a custom grid of the raw exit times still counts every event", {
   fit <- suppressWarnings(hazard(time = d$time, status = d$status,
                                  dist = "weibull", theta = c(0.5, 1),
                                  fit = TRUE))
-  g <- hzr_gof(fit, time_grid = sort(unique(d$time)))
+  expect_no_warning(g <- hzr_gof(fit, time_grid = sort(unique(d$time))))
   expect_equal(attr(g, "summary")$total_observed, sum(d$status))
   # A grid holding the raw 1 + 1e-12 but not the merged time 1: that
   # subject is still found by its raw time. The subject exiting at exactly 1
   # has no grid point and is left out, as documented for custom grids.
   grid <- sort(unique(d$time[d$time != 1]))
-  g <- hzr_gof(fit, time_grid = grid)
+  expect_warning(g <- hzr_gof(fit, time_grid = grid),
+                 paste0("^hzr_gof\\(\\): 1 of ", nrow(d), " subjects"))
   expect_equal(attr(g, "summary")$total_observed, sum(d$status) - 1)
   # A grid holding only the merged time 1 counts both near-tied subjects,
   # once each, where survfit put them; n_event agrees. Matching the custom
   # grid on raw times alone would count 1 of these 2 events.
-  g <- hzr_gof(fit, time_grid = 1)
+  expect_warning(g <- hzr_gof(fit, time_grid = 1),
+                 paste0("^hzr_gof\\(\\): ", nrow(d) - 2, " of ", nrow(d), " subjects"))
   expect_equal(attr(g, "summary")$total_observed, 2)
   expect_equal(g$n_event, 2)
 })
 
 test_that("a subject the default grid cannot place is reported, not dropped silently", {
   # An exit at time 0 in entry-time data is Surv(0, 0), which survfit turns
-  # into NA, so that subject has no Kaplan-Meier time.
+  # into NA, so that subject has no Kaplan-Meier time. Since #374 hazard()
+  # drops it before fitting, as PROC HAZARD does (readt.c:12-14), and says
+  # so: the drop warning is what the user sees, at the fit rather than in
+  # hzr_gof(), which now has every subject it is given on the grid.
   set.seed(2861)
   n <- 60
   stop_t <- stats::rexp(n, 0.4) + 0.1
@@ -111,19 +116,13 @@ test_that("a subject the default grid cannot place is reported, not dropped sile
   stop_t[1] <- 0
   start_t[1] <- 0
   status <- stats::rbinom(n, 1, 0.7)
-  fit <- suppressWarnings(hazard(time = stop_t, status = status,
-                                 time_lower = start_t, dist = "exponential",
-                                 theta = c(log_rate = log(0.3)), fit = TRUE))
-  g <- suppressWarnings(hzr_gof(fit))
-  # Surv() warns about the NA it creates for that row; only hzr_gof()'s own
-  # warning is under test.
   expect_warning(
-    withCallingHandlers(hzr_gof(fit), warning = function(w) {
-      if (grepl("NA created", conditionMessage(w), fixed = TRUE)) {
-        invokeRestart("muffleWarning")
-      }
-    }),
-    "1 of 60 subjects did not match")
+    fit <- hazard(time = stop_t, status = status, time_lower = start_t,
+                  dist = "exponential", theta = c(log_rate = log(0.3)),
+                  fit = TRUE),
+    "^1 row\\(s\\) with time = 0 were dropped", class = "hzr_time_zero_dropped")
+  expect_identical(fit$data$dropped_time_zero, 1L)
+  expect_no_warning(g <- hzr_gof(fit))
   expect_equal(attr(g, "summary")$total_observed, sum(status[-1]))
 })
 
@@ -153,6 +152,6 @@ test_that("a supplied grid a few ulps off the exit times counts them all", {
   exits <- sort(unique(d$int_dead + 1e4))
   grid <- exits * (1 + 2 * .Machine$double.eps)   # about two ulps above
   expect_true(all(grid != exits))
-  expect_equal(attr(hzr_gof(fit, time_grid = grid), "summary")$total_observed,
-               sum(d$dead))
+  expect_no_warning(g <- hzr_gof(fit, time_grid = grid))
+  expect_equal(attr(g, "summary")$total_observed, sum(d$dead))
 })

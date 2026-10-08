@@ -9,6 +9,12 @@
 # saved before the design was stored, or a caller passing design columns),
 # and hzr_deciles() / hzr_gof(), which evaluate at the fitted design, say so.
 
+# This file predicts from models built with fit = FALSE on purpose, so the
+# warning that those numbers come from starting values is switched off for
+# this file only (#398). A file that does not expect the warning sees it as
+# an ordinary leaked warning.
+withr::local_options(TemporalHazard.warn_unfitted_prediction = FALSE)
+
 .dp_avc <- local({
   data(avc, package = "TemporalHazard")
   d <- na.omit(avc)
@@ -740,9 +746,27 @@ test_that("a multiphase fit saved before the design was stored rebuilds it", {
   expect_identical(
     got, unname(predict(m, type = "cumulative_hazard", newdata = nd_mix))
   )
-  # Pinned from main at 4b68020 on the same object (a fitted model: 1e-4),
-  # as design columns (grpyoung 0 then 1: "old" then "young").
-  expect_equal(got, c(0.0140056, 0.320817), tolerance = 1e-4)
+  # Design columns: grpyoung 0 then 1, "old" then "young". The pin until #565
+  # was c(0.0140056, 0.320817), from main at 4b68020: that fit had stopped
+  # at a log-likelihood of -221.494 under Conservation of Events, 8.27 short
+  # of the maximum. The fit now reaches -213.221, which is what an
+  # independent fit without CoE reaches, and the two predict alike.
+  set.seed(1)
+  free <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ age + grp, data = .dp_avc,
+    dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "shapes"),
+      constant = hzr_phase("constant")),
+    fit = TRUE, control = list(conserve = FALSE)))
+  expect_true(m$spec$control$conserve_applied)
+  expect_false(free$spec$control$conserve_applied)
+  expect_equal(m$fit$objective, free$fit$objective, tolerance = 1e-8)
+  expect_equal(
+    got, unname(predict(free, type = "cumulative_hazard", newdata = nd_mix)),
+    tolerance = 1e-5
+  )
+  expect_equal(got, c(0.1878840, 0.2206273), tolerance = 1e-4)
   # Without its data frame (a 1.0.3-era fit) nothing can be rebuilt, and
   # the refusal stands.
   leg$data$frame <- NULL
@@ -792,8 +816,8 @@ test_that("a phase-formula factor with reordered levels codes as the fit did", {
     fit = TRUE))
   th <- pf$fit$theta
   tt <- c(2, 20)
-  base <- predict(pf, newdata = data.frame(time = tt), type = "cumulative_hazard",
-                  decompose = TRUE)
+  base <- predict_baseline(pf, newdata = data.frame(time = tt),
+                           type = "cumulative_hazard", decompose = TRUE)
   # Row 1 is "old" (early: no grp effect), row 2 "young"; the constant
   # phase inherits the global age effect at age 60.
   ref <- base$early * exp(th[["early.grpyoung"]] * c(0, 1)) +
@@ -1042,7 +1066,8 @@ test_that("an extra newdata column cannot mask a phase-formula constant", {
       constant = hzr_phase("constant")),
     fit = TRUE))
   # I(30 > 50) is FALSE, so the answer is the covariate-free baseline.
-  base <- predict(m, newdata = data.frame(time = 2), type = "cumulative_hazard")
+  base <- predict_baseline(m, newdata = data.frame(time = 2),
+                           type = "cumulative_hazard")
   masked <- predict(m, type = "cumulative_hazard",
                     newdata = data.frame(time = 2, age = 30, cutoff = 0))
   expect_equal(unname(masked), unname(base), tolerance = 1e-10)
@@ -1181,12 +1206,14 @@ test_that("the outside-data refusal at one row, duplicate rows, one fit row", {
   truth <- function(x) drop(cbind(x$age > cutoff, x$mal) %*% beta)
   lp <- function(w, x) unname(predict(w, newdata = x, type = "linear_predictor"))
 
-  # One row cannot be shifted, so the row-count backstop refuses.
+  # One row cannot be shifted. The outside variable has the fit's n rows,
+  # not newdata's one, so it is named before model.frame() runs (#409);
+  # this used to reach the row-count backstop, which named no term.
   one <- d[5, ]
   one$zz <- zz[5]
-  backstop <- paste0("has ", n, " rows for 1 row")
-  expect_error(lp(w_zz, one), backstop)
-  expect_error(lp(w_lz, d[5, ]), backstop)
+  expect_error(lp(w_zz, one), "term 'zz' of the model does not give one value")
+  expect_error(lp(w_lz, d[5, ]),
+               "term 'Lz\\$z' of the model does not give one value")
   expect_equal(lp(w_ct, d[5, ]), truth(d[5, ]), tolerance = 1e-12)
 
   # Duplicate rows: a design built from newdata's columns moves with its
@@ -1290,4 +1317,27 @@ test_that("a multiphase global design takes the variable over its column", {
                       newdata = data.frame(time = c(1, 4), grp = "young"))
   expect_gt(max(abs(as_young / as_old - 1)), 0.05)
   expect_equal(both, as_old, tolerance = 1e-12)
+})
+
+test_that("the two documented conservative refusals still stop (#274)", {
+  d <- .dp_avc
+  d$`my age` <- d$age
+  w <- hazard(survival::Surv(int_dead, dead) ~ poly(age, 2) + grp, data = d,
+              dist = "weibull", theta = c(mu = 0.01, nu = 0.5, 0.1, 0.1, 0.7))
+  nd <- as.data.frame(w$data$x[1:2, ], check.names = FALSE)
+  nd$time <- 2
+  nd$age <- d$age[1:2]
+  expect_error(predict(w, newdata = nd, type = "cumulative_hazard"),
+               "gives the formula variable\\(s\\) 'age' but lacks 'grp'")
+  # Without `age` the design columns are used.
+  nd$age <- NULL
+  expect_no_error(predict(w, newdata = nd, type = "cumulative_hazard"))
+
+  w2 <- hazard(survival::Surv(int_dead, dead) ~ `my age` + grp, data = d,
+               dist = "weibull", theta = c(mu = 0.01, nu = 0.5, 0.004, 0.7))
+  nd2 <- data.frame(time = 2, `my age` = 60, grpyoung = 1,
+                    check.names = FALSE)
+  nd2[["`my age`"]] <- 60
+  expect_error(predict(w2, newdata = nd2, type = "cumulative_hazard"),
+               "gives the formula variable\\(s\\) 'my age' but lacks 'grp'")
 })

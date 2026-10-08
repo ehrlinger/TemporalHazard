@@ -1,3 +1,9 @@
+# This file predicts from models built with fit = FALSE on purpose, so the
+# warning that those numbers come from starting values is switched off for
+# this file only (#398). A file that does not expect the warning sees it as
+# an ordinary leaked warning.
+withr::local_options(TemporalHazard.warn_unfitted_prediction = FALSE)
+
 test_that("predict() supports survival type", {
   # Create a simple fitted model
   time <- c(1, 2, 3, 4, 5)
@@ -237,10 +243,14 @@ test_that("covariate effects on survival are correct", {
   time <- c(1, 2, 3)
   status <- c(1, 0, 1)
 
+  # The model carries the covariate its beta belongs to. It was built with
+  # x = NULL, a 3-entry theta for a 2-parameter model, which hazard() now
+  # refuses (#375); predict() had applied the stray beta to a newdata column
+  # the model never had.
   fit <- hazard(
     time = time,
     status = status,
-    x = NULL,
+    x = matrix(c(0, 1, 0), ncol = 1, dimnames = list(NULL, "X1")),
     theta = c(mu = 0.5, nu = 1.2, beta = 0.5),  # 3 parameters
     dist = "weibull",
     fit = FALSE
@@ -261,4 +271,8 @@ test_that("covariate effects on survival are correct", {
   # So with positive covariate, survival should be lower
   expect_true(is.numeric(surv_x1))
   expect_true(surv_x1 > 0 && surv_x1 < 1)
+  # What the comments above describe: a positive covariate lowers survival.
+  surv_x0 <- predict(fit, newdata = data.frame(time = t_eval, X1 = 0),
+                     type = "survival")
+  expect_lt(surv_x1, surv_x0)
 })

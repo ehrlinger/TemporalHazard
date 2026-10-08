@@ -109,12 +109,11 @@ test_that("a drop that does remove a column still happens", {
   expect_length(step$refit_failures, 0L)
 })
 
-test_that("the single-distribution path keeps its refit-failure report", {
-  # The guard is multiphase-only by construction. Here the warm start is
-  # `theta_old[-drop_idx]`, one element shorter than the design a no-op drop
-  # would need, so the refit fails to conform first and #302's reason is what
-  # the caller sees -- naming a linear-algebra symptom, not the cause. Tracked
-  # as a follow-up; the message is pinned so a change to it is not silent.
+test_that("the single-distribution path refuses the same drop for the same reason (#323)", {
+  # The single-distribution refit warm-starts from `theta_old[-drop_idx]`, one
+  # element shorter than a no-op drop's design, so it used to fail to conform
+  # first and report "non-conformable arguments": a linear-algebra symptom,
+  # not the cause. The reduced design is now decided before the refit.
   d <- nod_data()
   fit <- hazard(survival::Surv(time, status) ~ z + z:f, data = d,
                 dist = "weibull", theta = c(0.5, 1, 0, 0), fit = TRUE)
@@ -122,9 +121,103 @@ test_that("the single-distribution path keeps its refit-failure report", {
   expect_warning(
     step <- .hzr_stepwise_backward_step(fit, data = d, criterion = "wald",
                                         slstay = 0.2),
-    "post-drop refit failed for z"
+    "Stepwise backward: dropping z removes no column", fixed = TRUE
   )
   expect_false(step$accepted)
   expect_identical(step$refit_failures, "z")
-  expect_match(step$refit_failure_reasons[["z"]], "non-conformable")
+
+  mp_step <- suppressWarnings(
+    .hzr_stepwise_backward_step(nod_multi(d), data = d, criterion = "wald",
+                                slstay = 0.2)
+  )
+  expect_identical(unname(step$refit_failure_reasons[["z"]]),
+                   unname(mp_step$refit_failure_reasons[["z@constant"]]))
+})
+
+test_that("a single-distribution drop that does remove a column still happens", {
+  d <- nod_data()
+  d$w <- stats::rnorm(nrow(d))
+  fit <- hazard(survival::Surv(time, status) ~ z + w, data = d,
+                dist = "weibull", theta = c(0.5, 1, 0, 0), fit = TRUE)
+  step <- .hzr_stepwise_backward_step(fit, data = d, criterion = "wald",
+                                      slstay = 0.2)
+  expect_true(step$accepted)
+  expect_identical(step$variable, "w")
+  expect_identical(colnames(step$fit$data$x), "z")
+  expect_length(step$refit_failures, 0L)
+})
+
+test_that("a design the pre-check cannot build is left to the refit to report (#323)", {
+  # A one-level `f` cannot be coded, so neither design builds. The pre-check
+  # must not abort the step; the refit fails loudly with its own reason.
+  d <- nod_data()
+  fit <- hazard(survival::Surv(time, status) ~ z + z:f, data = d,
+                dist = "weibull", theta = c(0.5, 1, 0, 0), fit = TRUE)
+  d1 <- d
+  d1$f <- factor(rep("a", nrow(d1)))
+  step <- NULL
+  expect_warning(
+    step <- .hzr_stepwise_backward_step(fit, data = d1, criterion = "wald",
+                                        slstay = 0.2),
+    "post-drop refit failed for z", fixed = TRUE
+  )
+  expect_false(step$accepted)
+  expect_identical(step$refit_failures, "z")
+})
+
+test_that("the refusal names the reduced design, not a refit that never ran (#343)", {
+  # On the single-distribution path the design is built before any refit, so
+  # "the refit's design" described something that did not exist. Both paths
+  # share one string, so the multiphase refusal reads the same way.
+  d <- nod_data()
+  fit <- hazard(survival::Surv(time, status) ~ z + z:f, data = d,
+                dist = "weibull", theta = c(0.5, 1, 0, 0), fit = TRUE)
+  step <- suppressWarnings(
+    .hzr_stepwise_backward_step(fit, data = d, criterion = "wald",
+                                slstay = 0.2)
+  )
+  reason <- step$refit_failure_reasons[["z"]]
+  expect_match(reason, "the reduced design (", fixed = TRUE)
+  expect_no_match(reason, "refit's design", fixed = TRUE)
+})
+
+test_that("the drop pre-check adds no parse warnings of its own (#343)", {
+  # The pre-check parses the current and the reduced formula before the refit
+  # parses the reduced one again. Each .hzr_parse_formula() evaluates the
+  # right-hand side twice (model.matrix, then model.frame), so the pre-check
+  # doubled a parse-time warning: 8 per step on main at 2ea325da, against 4
+  # before the pre-check existed (e8edeae7). 4 is the Wald scoring's parse
+  # plus the refit's; the pre-check must add none.
+  # `w` drives the hazard and `z` is noise, so `z` is the drop and the
+  # warning term survives into the refit.
+  set.seed(11)
+  d <- data.frame(z = stats::rnorm(400), w = stats::rnorm(400))
+  d$time <- stats::rexp(400) * exp(-0.8 * d$w)
+  d$status <- 1L
+  warn_id <- function(x) {
+    warning("parse-time warning", call. = FALSE)
+    x
+  }
+  fit <- suppressWarnings(
+    hazard(survival::Surv(time, status) ~ z + I(warn_id(w)), data = d,
+           dist = "weibull", theta = c(0.5, 1, 0, 0), fit = TRUE)
+  )
+  n_warn <- 0L
+  step <- withCallingHandlers(
+    .hzr_stepwise_backward_step(fit, data = d, criterion = "wald",
+                                slstay = 0.1),
+    warning = function(w) {
+      if (identical(conditionMessage(w), "parse-time warning")) {
+        n_warn <<- n_warn + 1L
+      }
+      invokeRestart("muffleWarning")
+    }
+  )
+  # `z` drops and the warning term survives into the refit, so the refit's
+  # own parse still warns. The count is the assertion that matters: these two
+  # expectations would also pass with the pre-check deleted, which the
+  # shared-reason tests above catch instead.
+  expect_true(step$accepted)
+  expect_identical(step$variable, "z")
+  expect_equal(n_warn, 4L)
 })

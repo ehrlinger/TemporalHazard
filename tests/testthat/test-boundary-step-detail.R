@@ -1,0 +1,208 @@
+# Unit tests for .hzr_phase_step_detail() (#448).  `g_fn` is injected, so the
+# synthetic cases pin the logic; the last two run the REAL decomposition, so a
+# shared wrong assumption between test and implementation cannot hide.
+
+test_that("a phase that rises inside one observation gap is reported", {
+  tt <- c(1, 2, 3, 4)
+  # numerically 0 up to t = 2, numerically 1 from t = 3: the whole rise sits
+  # between two adjacent observed times.
+  step <- function(x) ifelse(x < 2.5, 0, 1)
+  out <- .hzr_phase_step_detail(tt, t_half = 2.5, nu = 1e-16, g_fn = step)
+  expect_type(out, "list")
+  expect_identical(out$parameter, "nu")
+  expect_match(out$detail, "step at this data's resolution", fixed = TRUE)
+  expect_match(out$detail, "1e-16", fixed = TRUE)   # the magnitude is carried
+})
+
+test_that("a smooth phase is NOT reported", {
+  tt <- seq(0.5, 5, by = 0.5)
+  smooth <- function(x) pnorm(x, mean = 2.5, sd = 1)
+  expect_null(.hzr_phase_step_detail(tt, t_half = 2.5, nu = 1.4, g_fn = smooth))
+})
+
+test_that("degenerate inputs decline rather than guess", {
+  step <- function(x) ifelse(x < 2.5, 0, 1)
+  expect_null(.hzr_phase_step_detail(c(1), 2.5, 1e-16, step))        # one time
+  expect_null(.hzr_phase_step_detail(c(1, 1, 1), 2.5, 1e-16, step))  # one distinct
+  expect_null(.hzr_phase_step_detail(c(1, 2), NA_real_, 1e-16, step))
+  expect_null(.hzr_phase_step_detail(c(1, 2), 2.5, NA_real_, step))
+  expect_null(.hzr_phase_step_detail(c(1, 2), 2.5, 1e-16, g_fn = "not a fn"))
+  # a g_fn that errors must decline, not propagate
+  expect_null(.hzr_phase_step_detail(c(1, 2), 2.5, 1e-16,
+                                     function(x) stop("boom")))
+})
+
+test_that("the REAL decomposition at #448's fitted nu is reported", {
+  # #448's fit: nu = -1.43915e-16, t_half = 0.0657098, m = 1.
+  th <- 0.0657098
+  nu <- -1.43915e-16
+  gfn <- function(x) hzr_decompos(x, t_half = th, nu = nu, m = 1)$G
+  tt <- c(th * 0.5, th * 2, th * 4)
+  out <- .hzr_phase_step_detail(tt, t_half = th, nu = nu, g_fn = gfn)
+  expect_type(out, "list")
+  expect_match(out$detail, "unidentified", fixed = TRUE)
+})
+
+test_that("the REAL decomposition at a healthy nu is NOT reported", {
+  th <- 0.0657098
+  gfn <- function(x) hzr_decompos(x, t_half = th, nu = 1.4, m = 1)$G
+  tt <- c(th * 0.5, th * 2, th * 4)
+  # the census measured |nu| >= 0.8175 on every healthy suite fit
+  expect_null(.hzr_phase_step_detail(tt, t_half = th, nu = 1.4, g_fn = gfn))
+})
+
+test_that("interval bounds count as observed times", {
+  step <- function(x) ifelse(x < 0.15, 0, 1)
+  # `time` alone has only ONE positive value, so the old signature declined.
+  # The interval bounds bracket the rise, so the phase IS a step at this
+  # data's resolution and must be reported.
+  expect_null(.hzr_phase_step_detail(c(5), t_half = 0.15, nu = 1e-16,
+                                     g_fn = step))
+  out <- .hzr_phase_step_detail(c(5), t_half = 0.15, nu = 1e-16, g_fn = step,
+                                time_lower = c(0.1), time_upper = c(0.2))
+  expect_type(out, "list")
+  expect_match(out$detail, "0.1", fixed = TRUE)
+})
+
+test_that("a tie sitting exactly ON the step is still reported (#448's own case)", {
+  # The real #448 fit has an observed time AT t_half, where G = 0.5, so the
+  # rise splits across two gaps.  An earlier criterion asking one adjacent
+  # pair to bracket the whole rise declined here -- on the very fit the issue
+  # reports.  The tie is the mechanism, not an edge case.
+  th <- 0.06570977
+  ut <- c(0.05475814, th, 0.07118558, 0.08213721)
+  gfn <- function(x) hzr_decompos(x, t_half = th, nu = -1.439154e-16, m = 1)$G
+  expect_equal(gfn(th), 0.5, tolerance = 1e-8)   # the midpoint is real
+  out <- .hzr_phase_step_detail(ut, t_half = th, nu = -1.439154e-16, g_fn = gfn)
+  expect_type(out, "list")
+  expect_identical(out$parameter, "nu")
+})
+
+test_that("two or more times inside the transition means the data DOES resolve it", {
+  ut <- seq(0.5, 5, by = 0.5)
+  smooth <- function(x) pnorm(x, mean = 2.5, sd = 1)
+  expect_null(.hzr_phase_step_detail(ut, t_half = 2.5, nu = 1.4, g_fn = smooth))
+})
+
+# The two guards below are CO-SUFFICIENT on an ordinary smooth phase: the span
+# test and the inside-count test each reject it alone, so mutating either one
+# in isolation survives. These two cases separate them -- each needs exactly
+# one guard, so each mutation now has a test that can only be killed by it.
+
+test_that("a phase already saturated across all observed times is NOT a step", {
+  # G is pinned near 1 everywhere: nothing inside the transition (count 0, so
+  # the count guard passes it) but it never reaches 0, so it does not SPAN.
+  # A phase that finished before the first observation is not a step WITHIN
+  # the data. Only the span guard rejects this.
+  ut <- c(1, 2, 3)
+  sat <- function(x) rep(1 - 1e-12, length(x))
+  expect_null(.hzr_phase_step_detail(ut, t_half = 0.001, nu = 1e-16,
+                                     g_fn = sat))
+})
+
+test_that("a rise the data DOES resolve is not a step, even though it spans", {
+  # Spans 0 to 1, so the span guard passes it, but TWO observed times fall
+  # inside the transition, so the data resolves the rise. Only the
+  # inside-count guard rejects this.
+  ut <- c(1, 2, 3, 4)
+  resolved <- function(x) c(1e-12, 0.3, 0.7, 1 - 1e-12)[match(x, c(1, 2, 3, 4))]
+  expect_null(.hzr_phase_step_detail(ut, t_half = 2.5, nu = 0.5,
+                                     g_fn = resolved))
+})
+
+test_that("the detail allows the one observed time sitting on t_half", {
+  # #448's own shape: an observed time lands on t_half, where G is 0.5, so the
+  # two times named bracket the rise but are NOT adjacent observations.
+  tt <- c(1, 2, 2.5, 3, 4)
+  step <- function(x) ifelse(x < 2.5, 0, ifelse(x > 2.5, 1, 0.5))
+  out <- .hzr_phase_step_detail(tt, t_half = 2.5, nu = 1e-16, g_fn = step)
+  expect_type(out, "list")
+  expect_match(out$detail, "between the observed times 2 and 3", fixed = TRUE)
+  expect_match(out$detail, "at most one observed time inside", fixed = TRUE)
+  expect_false(grepl("adjacent", out$detail, fixed = TRUE))
+})
+
+test_that("each boundary mechanism keeps its own lead-in and class", {
+  recs <- list(list(mechanism = "phase_discontinuity", detail = "a."),
+               list(mechanism = "unbounded_phase", detail = "b."))
+  msg <- .hzr_boundary_message(recs)
+  expect_match(msg, "^phase collapsed to a step: a\\.")
+  expect_match(msg, "fitted outside the observed support: b.", fixed = TRUE)
+  expect_false(startsWith(msg, "fitted outside"))
+  cond <- .hzr_boundary_condition(recs)
+  # The unbounded record is second, and is still catchable by its own class.
+  expect_s3_class(cond, "hzr_unbounded_phase")
+  expect_s3_class(cond, "hzr_phase_discontinuity")
+  expect_s3_class(cond, "hzr_boundary")
+  expect_identical(tryCatch(warning(cond), hzr_unbounded_phase = function(e) "caught"),
+                   "caught")
+})
+
+test_that("a step placed on the first observed time is reported via the origin", {
+  # N4 (1.2.12 release review): G is 0.82 at the first observed time and 1 at
+  # every later one, so no observed time lies below the rise. A cdf phase has
+  # G(0) = 0, so the origin is the point below it.
+  tt <- c(1, 2, 3, 4)
+  step <- function(x) ifelse(x < 1, 0, ifelse(x == 1, 0.82, 1))
+  expect_null(.hzr_phase_step_detail(tt, t_half = 1, nu = -7e-17,
+                                     g_fn = step))
+  out <- .hzr_phase_step_detail(tt, t_half = 1, nu = -7e-17, g_fn = step,
+                                with_origin = TRUE)
+  expect_type(out, "list")
+  expect_match(out$detail, "between the origin (time 0, where G is 0) and ",
+               fixed = TRUE)
+  expect_match(out$detail, "the observed time 2,", fixed = TRUE)
+  # A phase complete before the first observation is not a step, and is
+  # left to the identifiability check (r-reviewer, #502).
+  done <- function(x) rep(1, length(x))
+  expect_null(.hzr_phase_step_detail(tt, t_half = 1e-6, nu = 0, g_fn = done,
+                                     with_origin = TRUE))
+  # A smooth phase is not reported with the origin either.
+  smooth <- function(x) stats::pnorm(x, mean = 2.5, sd = 1)
+  expect_null(.hzr_phase_step_detail(seq(0.5, 5, by = 0.5), t_half = 2.5,
+                                     nu = 1.4, g_fn = smooth,
+                                     with_origin = TRUE))
+})
+
+test_that("the release review's translated avc job is reported (N4)", {
+  skip_on_cran()
+  job <- tempfile(fileext = ".sas")
+  writeLines(c("PROC HAZARD DATA=avc;", "  TIME int_dead;", "  EVENT dead;",
+               paste("  PARMS MUE=0.2 THALF=0.3 NU=1 M=1 FIXM MUL=0.01 TAU=1",
+                     "GAMMA=3 ALPHA=1 ETA=1 FIXTAU FIXALPHA FIXGAMMA;"),
+               "RUN;"), job)
+  tr <- hzr_translate_sas(job)
+  data(avc, package = "TemporalHazard")
+  AVC <- avc  # nolint: object_name_linter. The job's own data name.
+  names(AVC) <- toupper(names(AVC))
+  classes <- character(0)
+  withCallingHandlers(for (cl in tr$calls) eval(cl), warning = function(w) {
+    classes <<- c(classes, class(w))
+    invokeRestart("muffleWarning")
+  })
+  # The fit warns with the step's own class, not only about its Hessian.
+  expect_true("hzr_phase_discontinuity" %in% classes)
+  t_half <- exp(unname(fit$fit$theta[[2]]))
+  # The premise: the step sits on the first observed time.
+  expect_equal(t_half, min(AVC$INT_DEAD), tolerance = 1e-6)
+  mech <- vapply(fit$fit$boundary, function(r) r$mechanism, character(1))
+  expect_true("phase_discontinuity" %in% mech)
+  rec <- fit$fit$boundary[[which(mech == "phase_discontinuity")]]
+  expect_match(rec$detail, "between the origin (time 0, where G is 0)",
+               fixed = TRUE)
+})
+
+test_that("a hazard-type step straddling the first time is reported (#444 skips it)", {
+  # t_half just above t_min: #444 skips (t_half >= t_min), and without the
+  # origin no observed time lay below the rise.
+  tt <- c(1, 2, 3)
+  rec <- .hzr_phase_step_record("early", "hazard",
+                                c(early.log_t_half = log(1.0005),
+                                  early.nu = 1e-3, early.m = 1), tt)
+  # The real decomposition at those values puts G(t_min) inside the rise.
+  g1 <- hzr_decompos(1, t_half = 1.0005, nu = 1e-3, m = 1)$G
+  expect_gt(g1, .hzr_step_resolution)
+  expect_lt(g1, 1 - .hzr_step_resolution)
+  expect_identical(rec$mechanism, "phase_discontinuity")
+  expect_match(rec$detail, "the origin (time 0", fixed = TRUE)
+})

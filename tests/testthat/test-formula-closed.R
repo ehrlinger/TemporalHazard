@@ -3,6 +3,12 @@
 # safe list; today that refusal is incidental, so a refactor that treats
 # `:::` as `::` would pass it silently.
 
+# This file predicts from models built with fit = FALSE on purpose, so the
+# warning that those numbers come from starting values is switched off for
+# this file only (#398). A file that does not expect the warning sees it as
+# an ordinary leaked warning.
+withr::local_options(TemporalHazard.warn_unfitted_prediction = FALSE)
+
 closed_cases <- list(
   list(f = ~ base:::log(age), closed = FALSE),
   list(f = ~ splines:::ns(age, df = 3), closed = FALSE),
@@ -14,6 +20,18 @@ closed_cases <- list(
   list(f = ~ stats::log(age), closed = FALSE),
   # A namespace or function written as a string, and a qualified name that
   # is not called: the two walkers disagreed on these before the fold.
+  #
+  # Considered for a NEWS entry when the release census raised it, and
+  # deliberately left out (measured on this tree, 2026-09-17). None of the
+  # three is a behaviour change a user can meet on a fit made now:
+  # `base:::log(age)` was refused by both walkers before the fold, as the
+  # tests below pin; `I(base::log)` cannot be fitted at all (hazard() stops
+  # with "Failed to parse formula RHS"); and a fit made by this version
+  # stores its design, so nothing here is consulted. Only a fit saved by
+  # 1.2.10 or earlier, with a phase formula spelled `base::"log"(age)` and
+  # its data kept, changes: predict(newdata = ) refuses to rebuild it and
+  # says so, and its design columns still predict. Plain `base::log(age)`
+  # is unaffected.
   list(f = ~ "base"::log(age), closed = FALSE),
   list(f = ~ base::"log"(age), closed = FALSE),
   list(f = ~ I(base::log), closed = FALSE),

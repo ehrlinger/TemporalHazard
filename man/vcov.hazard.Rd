@@ -23,13 +23,18 @@ optimizer search but the vcov is the full-information matrix at the optimum
 (the CoE solution is the unconstrained MLE). That recomputation requires
 \pkg{numDeriv} and an invertible Hessian; if either is unavailable the fit
 emits a warning and the conserved \code{log_mu} stays \code{NA} (the rest
-of the matrix is unaffected). Returns a scalar \code{NA} only when the
+of the matrix is unaffected). For a Weibull fit whose scale \code{mu}, or
+its variance, cannot be represented, \code{mu}'s row and column are
+\code{NA}, the reason is recorded in the fit's \code{degraded_causes},
+and \code{summary()} shows the variance of \code{log(mu)} instead.
+Returns a scalar \code{NA} only when the
 model has not been fitted or no covariance matrix is available.
 }
 \description{
 Returns the estimated variance-covariance matrix of the fitted coefficients.
 }
 \examples{
+set.seed(1)
 fit <- hazard(time = rexp(30, 0.5), status = rep(1L, 30),
               theta = c(0.3, 1.0), dist = "weibull", fit = TRUE)
 vcov(fit)

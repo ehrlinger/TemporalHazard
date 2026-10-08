@@ -9,7 +9,15 @@ vignette: >
 
 ```{r}
 #| include: false
+# R CMD build installs the package into R_BUILD_TEMPLIB. A build launched
+# through callr (rcmdcheck, devtools) passes Quarto's R session a profile
+# that resets .libPaths() without it, and every chunk skipped (#276).
+templib <- Sys.getenv("R_BUILD_TEMPLIB")
+if (dir.exists(templib)) .libPaths(c(templib, .libPaths()))
 has_pkg <- requireNamespace("TemporalHazard", quietly = TRUE)
+# On CI a package that cannot load must fail the build, not skip every
+# chunk and pass over nothing (#276). loadNamespace() says why it failed.
+if (nzchar(Sys.getenv("CI"))) loadNamespace("TemporalHazard")
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
@@ -80,19 +88,25 @@ convergence check.
 PROC HAZARD DATA=AVCS NOCOV NOCOR CONDITION=14;
 ```
 
-Maps to `hazard()` `control` list:
+`DATA=` becomes `hazard()`'s `data` argument. None of the three options
+has a `control` equivalent. `NOCOV` and `NOCOR` only suppress printed
+output, and `hazard()` prints nothing until you ask for it with
+`summary()` or `vcov()`. `CONDITION=` sets a tolerance that `hazard()`
+does not take: it reports the Hessian's conditioning through `rcond`
+instead. So the statement translates to:
 
 ```{r}
 #| eval: false
-fit <- hazard(
-  ...,
-  control = list(
-    nocov      = TRUE,   # suppress covariance output
-    nocor      = TRUE,   # suppress correlation output
-    condition  = 14      # CONDITION= switch
-  )
-)
+fit <- hazard(..., data = avcs)
 ```
+
+The `control` settings a fit reads are `maxit` and `reltol` for
+every model, plus `n_starts`, `conserve`, `phase_share_tol` and
+`start_seed` for a multiphase one. If you pass `nocov`, `nocor` or
+`condition` anyway, `hazard()` warns that the option does nothing and fits
+the model unchanged. A name that nothing reads, such as a misspelling,
+draws the same warning, so a mistyped setting cannot silently leave the
+default in force.
 
 Additional `PROC HAZARD` options with no direct R equivalent yet are passed
 through `...` as named arguments and stored in `fit$legacy_args`.
@@ -188,7 +202,8 @@ fit <- hazard(
 > `THALF` go in as logs; `NU` and `M` go in as written. A fixed parameter is
 > declared on the phase that owns it, so `FIXM` is `fixed = "m"` inside the
 > early `hzr_phase()`. `hazard()` does not read a `control$fix` entry: a fix
-> written there leaves `M` free, and nothing warns you.
+> written there leaves `M` free, and `hazard()` warns that it never reads
+> `control$fix`.
 
 ---
 
@@ -392,10 +407,14 @@ statement:
   becomes `fixed = "m"` on the early phase.
 - `EARLY` and `CONSTANT` become the `formula` of the matching
   `hzr_phase()`.
-- `CONDITION=14`, `CONSERVE` and `QUASI` go into `control` as
-  `condition = 14`, `conserve = TRUE` and `method = "bfgs"`. BFGS is the
-  default optimizer, so the last one records the mapping and changes
-  nothing.
+- `CONSERVE` goes into `control` as `conserve = TRUE`. `CONDITION=14`
+  and `QUASI` have no `hazard()` equivalent, so nothing is written for
+  them: `CONDITION=` stops `PROC HAZARD`'s optimizer when its Hessian
+  approximation becomes too ill-conditioned, and `QUASI` chooses its
+  optimizer. `hazard()` offers no optimizer choice (it fits by BFGS, after
+  a Nelder-Mead warm-up in some multiphase fits) and has no such stop.
+  Passed anyway, as `control = list(condition = 14, method = "bfgs")`,
+  they would only draw a warning that they do nothing.
 - `PROC STANDARD REPLACE` from the SAS `DATA` steps becomes one line that
   fills the missing `inc_surg` values with the column mean.
 
@@ -429,7 +448,7 @@ fit <- hazard(
     log(4.391673e-07),
     1.375285, 3.11765, 1.054988
   ),
-  control = list(condition = 14, conserve = TRUE, method = "bfgs"),
+  control = list(conserve = TRUE),                 # CONSERVE
   fit = TRUE
 )
 
@@ -475,15 +494,21 @@ The chunk hides them because `summary()` reports the same thing.
 | `$data$x`             | Design matrix                                               |
 | `$fit$theta`          | Coefficient vector: estimates when `fit = TRUE`, the starting values when `fit = FALSE` |
 | `$fit$converged`      | `TRUE`/`FALSE` from the optimizer; `NA` when `fit = FALSE`  |
-| `$fit$objective`      | Log-likelihood at convergence; `NA` when `fit = FALSE`      |
+| `$fit$objective`      | Objective at convergence (the log-likelihood, except as noted below); `NA` when `fit = FALSE` |
 | `$legacy_args`        | Named pass-through arguments for parity                     |
 
-> **Note:** `$fit$objective` above is a *number*: the log-likelihood the
-> optimizer reached; `print()` and `summary()` label it `log-lik` and
-> `log_lik`, which are the names to prefer when writing about it. It is
-> unrelated to the `objective` *argument* of `hazard()`, which selects an
-> estimand: `"likelihood"` (the default) or `"sas"`, reproducing what
-> `PROC HAZARD` accumulates for an interval-censored row. See `?hazard`; the
+> **Note:** `$fit$objective` above is a *number*: the value the optimizer
+> reached, which is the log-likelihood with the one exception described
+> below. `print()` and `summary()` label it
+> `log-lik` and `log_lik`, which are the names to prefer when writing about
+> it. The exception is a fit with `objective = "sas"` that read an
+> interval-censored row (one of positive weight, not dropped by a phase
+> design): there the value is `PROC HAZARD`'s objective, not a
+> log-likelihood, and `print()` labels it `SAS objective`, while
+> `summary()` returns `log_lik = NA` and the value as `objective_value`. The
+> field is distinct from the `objective` *argument* of `hazard()`, which
+> selects how it is calculated: `"likelihood"` (the default) or `"sas"`,
+> reproducing what `PROC HAZARD` accumulates for an interval-censored row. See `?hazard`; the
 > SAS objective exists to reproduce legacy runs, not for new analyses.
 
 ---
@@ -542,16 +567,68 @@ to predict from. What you should not read into that is "the translator
 works": it is a translation aid, and four limits are worth knowing
 before you point it at a corpus.
 
-- **A `SELECTION` statement is refused, not translated.** The emitted
-  chunk is a `stop()`. `hzr_stepwise()`'s refit path needs a
-  formula-interface base fit and this translator emits the vector
-  interface, so a translated screen would report zero steps,
-  indistinguishable from "nothing met `slentry`". Run the selection by
-  hand.
+- **A `SELECTION` statement is translated into a real screen, and the
+  screen may choose a different model than `PROC HAZARD` did.** The job's
+  candidates, per-variable flags (`/S`, `/I`, `/E`) and `SLE`/`SLS`
+  thresholds are carried into an `hzr_stepwise()` call. `PROC HAZARD` uses
+  approximate variances while selecting. In a screen that enters
+  variables, the entry statistic here reproduces that approximation
+  (except for a candidate refitted because its information is
+  indefinite); in one that removes them, the Wald tests behind each
+  removal use the full Hessian, so removals can differ. A `BACKWARD`
+  screen only removes and a `NOSTEPWISE` one only enters, and the callout
+  the emitted document carries above the chunk describes only what that
+  job's screen does. Compare the
+  selected model against the SAS listing before relying on it. Options
+  with no faithful translation are still refused, each emitting a
+  `stop()`: `FAST`, `MAXVARS`, `RESTRICT`, a
+  per-variable `MOVE=` or `ORDER=`, and a variable held by `/I` in one
+  phase but movable in another. On the reference corpus two jobs in four
+  translate; the other two are a cross-phase `/I` and a `RESTRICT`.
 - **`LCENSOR` combined with `ICENSOR` is refused.** `hazard()`'s single
   `time_lower` argument carries the entry time for status 0/1 rows and
   the interval's lower bound for status 2 rows; one column cannot
   express both. Either statement alone translates.
+- **A job `PROC HAZARD` itself refuses, or one whose model this
+  translation cannot emit, warns loudly and still fits.** A syntax error
+  in a `PARMS` operand or on the `PROC` line (a value its lexer does not
+  read as a number, a keyword outside the grammar, a template's `?`), a
+  `SETG3` refusal, `FIXMNU1`, a non-zero `DELTA` on an active early
+  phase, `FIXTAU` with no `TAU` written, and `FIXGE2`/`FIXGAE2` without
+  `WEIBULL` each get a `warning()` chunk immediately above the fit,
+  naming the cause, and a row in `$untranslated`. A fit standing in for a
+  job `PROC HAZARD` does not run, or for a model it does not fit, is the
+  answer this package most wants to avoid, so it is labelled where you
+  cannot miss it rather than left to be inferred from the estimates.
+
+  The warning is **per job**. A file holding several jobs emits one fit
+  chunk each, and only the refused job's fit is preceded by a warning, so
+  the document renders to completion and every other job runs unchanged.
+  An earlier draft of this work stopped instead; Quarto then exited 1 and
+  wrote no output document at all, including for the jobs *before* the
+  refused one.
+
+  Two limits on that. An **unknown** keyword is *recorded, not refused*:
+  a `%repeat` call brings a DATA step's own keywords through the same
+  parser, so refusing them would flag jobs that run. And an operand
+  carrying a **macro reference** gets no syntax verdict at all, because
+  SAS expands it before `PROC HAZARD` reads the statement, so the
+  translation cannot know what arrived. It still warns on a job whose
+  phases were built: the unread operand may be the one that sets a shape,
+  and the emitted phase would otherwise carry SAS's default where the job
+  wrote something else.
+
+  One case still halts, and it halts more than the job. Where the value
+  `PROC HAZARD` refuses is also one `hzr_phase()` will not build, the
+  warning and the fit are both emitted as usual --- but `hzr_phase()`
+  then rejects the value when the chunk actually runs, and an error in a
+  chunk stops Quarto outright: it exits 1 and writes **no output
+  document at all**, including for the jobs before this one. The console
+  shows only `hzr_phase()`'s own message, because `knitr` collects
+  warnings into the document that was never written. So the reason the
+  job was refused does not reach you; only the symptom does. Delete that
+  job from the file if you need the other jobs' results before you can
+  correct it.
 - **Prediction grids the parser cannot resolve are refused whole**, and
   an unresolved `INHAZ=` stops the render on purpose. Both are covered
   under "What it doesn't translate" below. Note that resolving an
@@ -639,7 +716,7 @@ fit <- hazard(
     log(0.2361727), log(0.1512095), 1.438652, 1, log(0.0005436977)
   ),
   weights = ifelse(DEAD > 0, DEAD, 1),
-  control = list(condition = 14, conserve = TRUE, method = "bfgs")
+  control = list(conserve = TRUE)
 )
 ```
 
@@ -670,17 +747,20 @@ The fit is bound to `fit` and `fit = TRUE` is emitted, which is what
 makes the document runnable: a later `predict()` chunk from a
 `PROC HAZPRED` block in the same job refers to that name.
 
-`CONSERVE` becomes `control$conserve = TRUE`, `QUASI` becomes
-`control$method = "bfgs"`, `CONDITION=14` becomes `control$condition
-= 14`, and the `PARMS` early-phase shape (`MUE`/`THALF`/`NU`/`M FIXM`)
-becomes a `hzr_phase("cdf", ...)` with `m` fixed. These are the forms
-the hand translation above uses. `FIXM` holds `m` only through
-`fixed = "m"` on the phase. `QUASI` changes nothing: `hazard()` does not
-read `control$method`, and the fitting path uses BFGS regardless (a
+`CONSERVE` becomes `control$conserve = TRUE`, and the `PARMS`
+early-phase shape (`MUE`/`THALF`/`NU`/`M FIXM`) becomes a
+`hzr_phase("cdf", ...)` with `m` fixed. `FIXM` holds `m` only through
+`fixed = "m"` on the phase. `QUASI` and `CONDITION=14` are not in
+`control`, because `hazard()` reads neither: they are listed in
+`job$untranslated` with the reason. `QUASI` chooses `PROC HAZARD`'s
+optimizer, and `hazard()` has no choice to make: it always uses BFGS (a
 multiphase fit may run a Nelder-Mead warm-up first, and a stop that fails
-SAS's gradient test continues with `stats::nlm()`), so the entry only
-records the SAS choice. The fitting path reads none of `control$fix`,
-`control$quasi` or `control$method`.
+SAS's gradient test continues with `stats::nlm()`). `CONDITION=` stops
+`PROC HAZARD`'s optimizer as ill-conditioned once its Hessian
+approximation's condition estimate passes the limit, and `hazard()` has no
+such stop; it warns about the final Hessian instead. Earlier
+versions of the translator wrote both into `control`, where nothing read
+them.
 `dist = "multiphase"` is emitted whenever `phases` is, and `theta`
 carries the full interleaved multiphase start vector (early scale,
 then every early-phase shape parameter in phase order, then the
@@ -690,23 +770,33 @@ constant/late scale), not just the phases' log(mu) starts.
 
 Constructs the parser can't resolve are never silently dropped: they
 land on the returned `hzr_sas_job` object and render as visible
-`UNTRANSLATED` callouts in the `.qmd`, so a translated document shows
+`UNTRANSLATED` callouts in the `.qmd` (where they do not stop the
+document outright, above), so a translated document shows
 its own gaps instead of quietly under-reporting the original job. Two
 gaps are common enough in production jobs to know about going in:
 
-- **`PROC HAZPRED` prediction grids built from `SET`-derived values,
-  function calls, or unknown names are not translated.** The parser
-  resolves a grid's `DO` loop bounds when they are literal numbers or
-  DATA-step constants it can fold (e.g. `DO MONTHS = 1*DTY, 2*DTY,
-  ... ;` with `DTY` assigned earlier in the same DATA step), but a
-  bound read from `SET`, computed by a function call, or naming
-  something the parser can't resolve is refused whole rather than
-  partially read: a partial grid is a partial `newdata`, and
-  reporting predictions over a half-read grid would be worse than not
-  reporting them. Such grids emit an `UNTRANSLATED` block; build the
-  `newdata` grid by hand and pass it to `predict.hazard()` instead. On
-  the public corpus, grid resolution is 19 of 55 (35%), up from 10 of
-  55 (18%) before constant folding.
+- **A `PROC HAZPRED` grid is rebuilt from the job's own DATA steps,
+  and some of those steps are only partly read.** The translator
+  follows `DATA=` back the way SAS does: the last step that wrote the
+  dataset before the `PROC HAZPRED`, then each `SET` input of that
+  step, and so on. So a `DATA DESIGN` step's covariates, a
+  `SET PREDICT DIGITAL` that stacks two grids, and a
+  `YEARS = MONTHS/12` all reach the grid, and the emitted `predict()`
+  runs at the variable the `TIME` statement names. Arithmetic, `LOG`
+  and `EXP`, `DO` lists with constant bounds, `OUTPUT`, `DROP`, `KEEP`
+  and `PROC SORT ... BY` are translated. A statement that sets a value
+  the translator can't compute, such as an `IF ... THEN` assignment or
+  a function it does not carry, is recorded as `UNTRANSLATED`, the
+  grid chunk warns, and that variable is `NA` in the grid, so any
+  prediction that uses it is `NA` too. The rest of the grid is still
+  built. A step that decides which rows exist in a way it can't read
+  (an `INFILE`, a `MERGE`, a subsetting `IF` or `IF ... THEN DELETE`,
+  another procedure's `OUT=`, a `PROC SQL` `CREATE TABLE`, a loop bound
+  taken from data) refuses the whole grid: the `predict()` chunks stop,
+  so build the `newdata` grid by hand and pass it to
+  `predict.hazard()`. On the public corpus, 15 of 36 `PROC HAZPRED`
+  blocks now get a grid, 7 of them with a warning; before 1.2.13, 13
+  did, several of them missing covariates or rows with nothing recorded.
 - **An unresolved `INHAZ=` fails the render on purpose.** If a
   `PROC HAZPRED` job's fitted-model dataset can't be found (neither
   from another translated job's `OUTHAZ=` nor from the `librefs=`

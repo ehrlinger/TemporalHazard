@@ -30,19 +30,27 @@ A data frame with one row per risk group and columns:
 survival at \code{time}).}
 \item{n}{Number of observations in the group.}
 \item{events}{Observed event count in the group (all events over
-follow-up).}
+follow-up), weighted by the case weights for a weighted fit.}
 \item{expected}{Expected event count: the sum of each subject's predicted
-cumulative hazard at its own follow-up time.}
-\item{observed_rate}{Observed event rate (events / n).}
-\item{expected_rate}{Expected event rate (expected / n).}
+cumulative hazard at its own follow-up time, minus its value at its entry
+time when it has one, weighted by the case weights for a weighted
+fit.}
+\item{observed_rate}{Observed event rate (events / n; for a weighted
+fit, events per unit of case weight).}
+\item{expected_rate}{Expected event rate (expected / n; for a weighted
+fit, per unit of case weight).}
 \item{chi_sq}{Chi-square contribution: (events - expected)^2 /
-expected.}
+expected. For a weighted fit the denominator is the Poisson variance
+of the weighted count, the sum of each subject's squared weight times
+its cumulative hazard, so the statistic does not change when every
+weight is multiplied by the same constant.}
 \item{p_value}{Upper-tail p-value from the chi-square test for
 this group (1 df).}
 \item{mean_survival}{Mean predicted survival probability at the horizon
 in the group.}
 \item{mean_cumhaz}{Mean predicted cumulative hazard at follow-up in the
-group.}
+group: unweighted, and without the entry-time correction, so for a
+left-truncated or weighted fit it is not \code{expected / n}.}
 }
 
 An attribute \code{"overall"} is attached with the overall chi-square
@@ -59,7 +67,11 @@ ranked by predicted survival at the horizon \code{time} and split into equal-siz
 risk groups. Within each group the \strong{expected} event count is the sum of
 each subject's predicted cumulative hazard at its \emph{own} follow-up time, and
 the \strong{observed} count is its number of events; under conservation of events
-the group totals sum to the total observed events. The horizon therefore only
+the group totals sum to the total observed events. A subject with an entry
+time (\code{time_lower} on a left-truncated fit) is at risk only after it, so it
+contributes its cumulative hazard at exit minus its value at entry. For a
+weighted fit both counts carry the case weights, since such a fit conserves
+weighted events. Both follow \code{\link[=hzr_gof]{hzr_gof()}}. The horizon therefore only
 stratifies subjects into risk groups; it does not restrict or exclude any
 subject, and the expected/observed totals are independent of it.
 }

@@ -13,7 +13,7 @@
 #   - formula: optional one-sided formula for phase-specific covariates
 #
 # The helpers extract metadata needed during likelihood construction:
-#   - .hzr_phase_n_shape():     number of shape parameters (3 or 0)
+#   - .hzr_phase_n_shape():     number of shape parameters (3, 4 or 0)
 #   - .hzr_phase_theta_names(): named labels for the parameter sub-vector
 #
 # SAS/C BRIDGE
@@ -28,6 +28,28 @@
 # The "g3" type uses the G3 decomposition (unbounded power-law), matching
 # the C/SAS HAZARD implementation for late-phase rising hazards.
 # The "hazard" type (-log(1-G(t))) is available for alternative models.
+
+#' Is a phase type unbounded in its own parameterisation?
+#'
+#' `"hazard"` is \eqn{-\log(1 - G(t))}, which diverges as \eqn{G \to 1}: the
+#' phase has no upper bound, and nothing keeps its `t_half` inside the
+#' observed support. A fit can walk `t_half` below the data, land the whole
+#' observed range where \eqn{G} is essentially 1, and run the objective away
+#' to a supremum it reports as a converged interior optimum (#444).
+#'
+#' `"cdf"` uses the same G1 decomposition but is bounded on \eqn{[0, 1]}, so a
+#' small `t_half` there is an ordinary estimate and not a runaway. The
+#' distinction is a property of the TYPE, not of the parameter name, which is
+#' why this is keyed on the type.
+#'
+#' @param type A phase type string.
+#' @return `TRUE` when the type's parameterisation is unbounded.
+#' @keywords internal
+#' @noRd
+.hzr_phase_type_unbounded <- function(type) {
+  identical(as.character(type), "hazard")
+}
+
 
 # ============================================================================
 # Constructor
@@ -110,19 +132,22 @@
 #'   `"hazard"` phases.  SAS early: `NU`.
 #' @param m Numeric scalar; initial shape exponent.  Used for `"cdf"` and
 #'   `"hazard"` phases.  SAS early: `M`.
-#' @param tau Positive scalar; scale parameter for `"g3"` phases.
+#' @param tau Positive finite scalar; scale parameter for `"g3"` phases.
 #'   SAS late: `TAU`.
-#' @param gamma Positive scalar; time exponent for `"g3"` phases.
+#' @param gamma Positive finite scalar; time exponent for `"g3"` phases.
 #'   SAS late: `GAMMA`.
 #' @param alpha Non-negative scalar; shape parameter for `"g3"` phases.
 #'   When `alpha > 0`, the generic G3 formula is used; `alpha = 0` gives the
 #'   exponential limiting case.  SAS late: `ALPHA`.
-#' @param eta Positive scalar; outer exponent for `"g3"` phases.
+#' @param eta Positive finite scalar; outer exponent for `"g3"` phases.
 #'   SAS late: `ETA`.
 #' @param formula Optional one-sided formula (e.g. `~ age + nyha`) for
 #'   phase-specific covariates.  It is evaluated in the `data` given to
 #'   [hazard()], so without `data` [hazard()] refuses it, unless it builds
 #'   nothing either way: an intercept-only `~ 1` with no global `x`.
+#'   The phase's scale parameter plays the role of an intercept, so the
+#'   design never has one: removing it (`~ 0 + age`, `~ age - 1`) is
+#'   ignored with a warning, and builds the design of `~ age`.
 #'   When `NULL` (default), the phase inherits the global design from
 #'   [hazard()]: the global formula's covariates, or `x` on the vector
 #'   interface.
@@ -143,6 +168,21 @@
 #'     \item{`"eta_gamma"`}{\eqn{\eta = 2/\gamma}, so that
 #'       \eqn{\gamma\eta = 2}. SAS/C: `FIXGE2`.}
 #'   }
+#'   At `alpha = 1`, `hzr_phase()`'s default, the g3 form is
+#'   \eqn{(t/\tau)^{\gamma\eta}}{(t/tau)^(gamma*eta)} (see [hzr_decompos_g3()]),
+#'   which depends on
+#'   \eqn{\gamma} and \eqn{\eta} only through their product. So
+#'   \eqn{\gamma} and \eqn{\eta} are not separately identified there: under
+#'   `"eta_gamma"` the product is fixed at 2 and \eqn{\gamma} is not
+#'   identified at all, and with both estimated only the product is. With
+#'   `alpha` *fixed* at 1, [hazard()] therefore fits the phase as PROC HAZARD
+#'   does: `tau` is held at 1 and the product is carried by one parameter
+#'   (under `"eta_gamma"`, \eqn{\gamma = 2} and \eqn{\eta = 1} are both held),
+#'   with a warning and a record in `fit$fit$boundary`. Under `"eta_gamma"` a
+#'   fixed `alpha` above 1 is refused, as PROC HAZARD refuses it, and a free
+#'   one started at 1 or above starts at 2/3 instead. A free `alpha` that
+#'   comes to rest near 1 can still leave \eqn{\gamma} undetermined; the
+#'   weak-direction warning names it when the Hessian shows it.
 #'   The derived parameter follows the others at every step of the
 #'   optimization, so it is not a free parameter and cannot be named in
 #'   `fixed`; `"shapes"` leaves it out. Its starting value is computed from the
@@ -227,15 +267,18 @@ hzr_phase <- function(type = c("cdf", "hazard", "constant", "g3"),
   # --- Validate shape parameters based on type ------------------------------
   if (type == "g3") {
     # G3 late-phase decomposition: 4 parameters (tau, gamma, alpha, eta)
+    # Finite as well as positive: an infinite shape was accepted here and only
+    # failed later, inside the optimizer.
     stopifnot(
-      "tau must be a positive scalar" =
-        is.numeric(tau) && length(tau) == 1L && tau > 0,
-      "gamma must be a positive scalar" =
-        is.numeric(gamma) && length(gamma) == 1L && gamma > 0,
+      "tau must be a positive scalar, and finite" =
+        is.numeric(tau) && length(tau) == 1L && tau > 0 && is.finite(tau),
+      "gamma must be a positive scalar, and finite" =
+        is.numeric(gamma) && length(gamma) == 1L && gamma > 0 &&
+          is.finite(gamma),
       "alpha must be a non-negative scalar" =
         is.numeric(alpha) && length(alpha) == 1L && alpha >= 0 && is.finite(alpha),
-      "eta must be a positive scalar" =
-        is.numeric(eta) && length(eta) == 1L && eta > 0
+      "eta must be a positive scalar, and finite" =
+        is.numeric(eta) && length(eta) == 1L && eta > 0 && is.finite(eta)
     )
   } else if (type != "constant") {
     # G1 early-phase decomposition: 3 parameters (t_half, nu, m)
@@ -266,6 +309,17 @@ hzr_phase <- function(type = c("cdf", "hazard", "constant", "g3"),
     if (length(formula) == 3L) {
       stop("Phase formula must be one-sided (e.g. ~ age + nyha), ",
            "not two-sided (response ~ predictors).", call. = FALSE)
+    }
+    # The design is built as if the intercept were present (#303), so say
+    # so here, once, rather than on every refit that builds the design.
+    tt <- stats::terms(formula, allowDotAsName = TRUE)
+    # `~ 0` alone builds no columns either way, so there is nothing to say.
+    if (attr(tt, "intercept") == 0L && length(attr(tt, "term.labels")) > 0L) {
+      warning("Phase formula `", paste(deparse(formula), collapse = " "),
+              "` removes the intercept, which a phase formula cannot do: ",
+              "the phase's scale parameter plays the intercept role. The ",
+              "design is built as if the intercept were present, so factors ",
+              "are coded as they would be with it.", call. = FALSE)
     }
   }
 
@@ -316,6 +370,25 @@ hzr_phase <- function(type = c("cdf", "hazard", "constant", "g3"),
     } else if (constraint == "eta_gamma") {
       supplied <- if (missing(eta)) NULL else eta
       eta <- 2 / gamma
+    }
+    # The checks above saw the sources, not the derived value. Finite sources
+    # can still overflow (alpha = Inf) or underflow, so check it too. A
+    # derived alpha must be > 0 even though a supplied one may be 0: alpha = 0
+    # selects the exponential limiting case, which a user can choose by
+    # fixing it, but reaching it through gamma * eta / 2 underflowing is a
+    # silent switch of model family, not a choice, so it is refused.
+    if (constraint != "none") {
+      value <- if (constraint == "alpha_gamma_eta") alpha else eta
+      if (!(is.finite(value) && value > 0)) {
+        sources <- if (constraint == "alpha_gamma_eta") {
+          paste0("gamma = ", format(gamma, digits = 6), ", eta = ",
+                 format(eta, digits = 6))
+        } else {
+          paste0("gamma = ", format(gamma, digits = 6))
+        }
+        stop(.hzr_constraint_rule(constraint), " is not a finite positive ",
+             "number (", sources, ").", call. = FALSE)
+      }
     }
     if (constraint != "none" && !is.null(supplied)) {
       derived <- .hzr_constraint_derived(constraint)
@@ -801,6 +874,56 @@ hzr_theta_names <- function(phases, covariates = NULL) {
     theta[term$pos] <- term$value
   }
   theta
+}
+
+#' Covariate columns each phase uses, located as the optimizer locates them
+#'
+#' A phase formula against `data`, else the global design, else none (#328).
+#' @noRd
+.hzr_phase_covariate_counts <- function(phases, data, x_fit) {
+  vapply(phases, function(ph) {
+    if (!is.null(ph$formula) && !is.null(data)) {
+      ncol(.hzr_formula_design(ph$formula, data)$x)
+    } else if (!is.null(x_fit)) {
+      ncol(x_fit)
+    } else {
+      0L
+    }
+  }, integer(1))
+}
+
+#' Theta entries each phase takes: log_mu, every shape slot fixed or free,
+#' covariates (#408)
+#'
+#' `covariate_counts` may be passed when the caller has already resolved the
+#' phases' designs, as `hzr_evaluate()` has (#144); both then count the same
+#' way.
+#' @noRd
+.hzr_phase_theta_counts <- function(phases, data, x_fit,
+                                    covariate_counts = NULL) {
+  if (is.null(covariate_counts)) {
+    covariate_counts <- .hzr_phase_covariate_counts(phases, data, x_fit)
+  }
+  vapply(phases, function(ph) 1L + .hzr_phase_n_shape(ph), integer(1)) +
+    covariate_counts
+}
+
+#' The message for a multiphase theta of the wrong length (#408, #144)
+#'
+#' One sentence for both places that check it, hazard(fit = TRUE) and
+#' hzr_evaluate(), built from the per-phase counts so the two cannot
+#' describe the same mismatch differently.
+#' @noRd
+.hzr_theta_length_message <- function(n, per_phase) {
+  paste0(
+    "'theta' has ", n, " entries, but this model takes ", sum(per_phase),
+    " (", paste(names(per_phase), per_phase, collapse = ", "), "): each ",
+    "phase takes its log_mu, then its shape parameters whether fixed ",
+    "or free (3 for a cdf or hazard phase, 4 for g3, none for ",
+    "constant), then one coefficient per column of its own formula's ",
+    "design, or of the global design it inherits. See ",
+    "hzr_theta_names()."
+  )
 }
 
 #' Apply the constraints to a supplied theta, saying what was replaced

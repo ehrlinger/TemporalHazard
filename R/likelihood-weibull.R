@@ -88,6 +88,14 @@ NULL
 #' - -1: left-censored with upper bound time_upper \(or time\)
 #' - 2: interval-censored in the interval \(time_lower, time_upper\)
 #'
+#' Every term is formed on the log scale (#566): `log H = nu (log mu + log t) +
+#' eta` and `log h = log nu + nu log mu + (nu - 1) log t + eta`. The natural-
+#' scale products `mu^nu`, `(mu t)^nu` and `t^(nu - 1)` each underflow or
+#' overflow where the log-likelihood is an ordinary number.
+#'
+#' @param log_mu Optional `log(mu)`, used in place of `log(theta[1])`. The
+#'   optimizer passes its own `alpha / nu`, which a reported `mu` may not be
+#'   able to hold.
 #' @noRd
 .hzr_logl_weibull <- function(
     theta,
@@ -99,7 +107,8 @@ NULL
     weights = NULL,
     dist_name = "weibull",
     return_gradient = FALSE,
-    return_hessian = FALSE) {
+    return_hessian = FALSE,
+    log_mu = NULL) {
 
   # Shape parameter count for Weibull
   n_shape <- 2  # mu, nu (scale, shape)
@@ -124,8 +133,16 @@ NULL
   }
 
   # Stability checks
-  if (mu <= 0 || nu <= 0) {
-    return(Inf)  # Infeasible: return large penalty
+  if (is.null(log_mu)) {
+    if (mu <= 0 || nu <= 0) {
+      return(Inf)  # Infeasible: return large penalty
+    }
+    log_mu <- log(mu)
+  } else if (nu <= 0) {
+    return(Inf)
+  }
+  if (!is.finite(log_mu) || !is.finite(nu)) {
+    return(Inf)
   }
 
   # Normalize censoring bounds to lower/upper vectors for unified formulas.
@@ -137,7 +154,10 @@ NULL
   if (any(status == 1 & time <= 0)) {
     return(Inf)
   }
-  if (any(status %in% c(-1, 2)) && any(upper <= 0)) {
+  # Per row (#341): only a left- or interval-censored row whose upper bound
+  # is 0 has no probability. A right-censored row at time 0 contributes
+  # log S(0) = 0, and an interval opening at 0 contributes log(1 - S(u)).
+  if (any(status %in% c(-1, 2) & upper <= 0)) {
     return(Inf)
   }
   if (any(status == 2) && any(lower[status == 2] >= upper[status == 2])) {
@@ -148,12 +168,17 @@ NULL
   # Hazard is the exact derivative of the cumulative hazard H = (mu t)^nu e^eta:
   #   h = dH/dt = nu * mu^nu * t^(nu-1) * e^eta = (nu / t) * H
   # (Form A, matching the C/SAS HAZARD reference where HF = MU * dG/dt.)
-  haz_event <- nu * mu ^ nu * (time ^ (nu - 1)) * exp(eta)
-  cumhaz_event <- (mu * time) ^ nu * exp(eta)
+  # Both on the log scale (#566). A time of 0 gives log H = -Inf and H = 0.
+  log_cumhaz_of <- function(t) nu * (log_mu + log(t)) + eta
+  log_haz_event <- log(nu) + nu * log_mu + (nu - 1) * log(time) + eta
+  haz_event <- exp(log_haz_event)
+  log_cumhaz_event <- log_cumhaz_of(time)
+  cumhaz_event <- exp(log_cumhaz_event)
 
   # Lower/upper cumulative hazards for censoring contributions.
-  cumhaz_lower <- (mu * lower) ^ nu * exp(eta)
-  cumhaz_upper <- (mu * upper) ^ nu * exp(eta)
+  log_cumhaz_lower <- log_cumhaz_of(lower)
+  log_cumhaz_upper <- log_cumhaz_of(upper)
+  cumhaz_lower <- exp(log_cumhaz_lower)
 
   # Counting-process entry-time cumulative hazard (H(start)) for
   # event/right-censored rows.  Only rows where time_lower < time and
@@ -167,7 +192,7 @@ NULL
     epoch_idx <- status %in% c(0L, 1L) & time_lower < time
     start_vec[epoch_idx] <- time_lower[epoch_idx]
   }
-  cumhaz_start <- (mu * start_vec) ^ nu * exp(eta)
+  cumhaz_start <- exp(log_cumhaz_of(start_vec))
 
   idx_event <- status == 1
   idx_right <- status == 0
@@ -177,7 +202,7 @@ NULL
   # Exact events: w * [log h(stop) - (H(stop) - H(start))]
   ll_event <- if (any(idx_event)) {
     sum(weights[idx_event] *
-          (log(haz_event[idx_event]) -
+          (log_haz_event[idx_event] -
              (cumhaz_event[idx_event] - cumhaz_start[idx_event])))
   } else {
     0
@@ -191,18 +216,22 @@ NULL
     0
   }
 
-  # Left-censored: w * [log(1 - exp(-H(u)))]
+  # Left-censored: w * [log(1 - exp(-H(u)))], read from log H(u): for a tiny
+  # or subnormal H it is log H, which forming H first would lose (#566).
   ll_left <- if (any(idx_left)) {
-    sum(weights[idx_left] * hzr_log1mexp(cumhaz_upper[idx_left]))
+    sum(weights[idx_left] * .hzr_log1mexp_log(log_cumhaz_upper[idx_left]))
   } else {
     0
   }
 
-  # Interval-censored: w * [-H(l) + log(1 - exp(-(H(u)-H(l))))]
+  # Interval-censored: w * [-H(l) + log(1 - exp(-(H(u)-H(l))))], with
+  # log(H(u) - H(l)) = log H(u) + log(1 - H(l)/H(u)).
   ll_interval <- if (any(idx_interval)) {
-    delta_h <- cumhaz_upper[idx_interval] - cumhaz_lower[idx_interval]
+    lu <- log_cumhaz_upper[idx_interval]
+    ll <- log_cumhaz_lower[idx_interval]
+    log_delta <- lu + log(-expm1(ll - lu))
     sum(weights[idx_interval] *
-          (-cumhaz_lower[idx_interval] + hzr_log1mexp(delta_h)))
+          (-cumhaz_lower[idx_interval] + .hzr_log1mexp_log(log_delta)))
   } else {
     0
   }
@@ -231,6 +260,21 @@ NULL
   }
 
   logl
+}
+
+#' log(1 - exp(-x)) from log(x) (#566)
+#'
+#' For x below 1e-10, log(1 - exp(-x)) = log(x) - x/2 + O(x^2), which keeps
+#' the digits a subnormal or underflowed x has lost. Otherwise
+#' [hzr_log1mexp()]; x = Inf gives 0.
+#' @noRd
+.hzr_log1mexp_log <- function(lx) {
+  x <- exp(lx)
+  out <- hzr_log1mexp(x)
+  tiny <- is.finite(lx) & x < 1e-10
+  out[tiny] <- lx[tiny] - x[tiny] / 2
+  out[!is.na(lx) & lx == Inf] <- 0
+  out
 }
 
 #' Score vector (gradient of log-likelihood)
@@ -493,11 +537,13 @@ NULL
 
     # Left / interval censoring: delegate to full Weibull likelihood via
     # the natural-scale function, converting params on the fly.
+    # log(mu) = alpha / nu is passed as is: exp() of it can overflow or
+    # underflow at a genuine maximum (#566).
     if (any(status %in% c(-1, 2))) {
       mu <- exp(alpha / g)
       return(.hzr_logl_weibull(c(mu, g, beta), time, status,
                                time_lower, time_upper, x,
-                               weights = w_use, ...))
+                               weights = w_use, log_mu = alpha / g, ...))
     }
 
     log_t <- log(pmax(time, .Machine$double.xmin))
@@ -638,6 +684,16 @@ NULL
 
   result$par <- setNames(c(mu_hat, nu_hat, beta_hat), names(theta_start))
 
+  # The same estimate with log(mu) in place of mu (#566). log(mu) = alpha / nu
+  # always holds a double where mu itself can overflow to Inf, underflow to 0
+  # or lose its digits; predict() and summary() read this. Its covariance is
+  # the delta method again, with d log(mu) / d alpha = 1 / nu and
+  # d log(mu) / d psi = -alpha / nu, masked where an internal variance is.
+  log_names <- c("log_mu", names(theta_start)[-1])
+  log_theta <- setNames(c(alpha_hat / nu_hat, nu_hat, beta_hat),
+                        if (length(names(theta_start)) == p) log_names else NULL)
+  log_vcov <- NULL
+
   # Delta method: Cov(mu, nu, beta) = J * Cov(alpha, psi, beta) * J^T
   #
   #   dmu/dalpha = mu / nu             dmu/dpsi = -mu alpha / nu
@@ -668,7 +724,16 @@ NULL
     v_nat[bad_nat, ] <- NA_real_
     v_nat[, bad_nat] <- NA_real_
     result$vcov <- v_nat
+
+    J_log <- J
+    J_log[1, 1] <- 1 / nu_hat
+    J_log[1, 2] <- -alpha_hat / nu_hat
+    log_vcov <- J_log %*% v_int %*% t(J_log)
+    log_vcov[bad_nat, ] <- NA_real_
+    log_vcov[, bad_nat] <- NA_real_
+    dimnames(log_vcov) <- list(names(log_theta), names(log_theta))
   }
+  result$log_scale <- list(theta = log_theta, vcov = log_vcov)
 
   result
 }

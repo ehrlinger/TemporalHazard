@@ -90,7 +90,11 @@ test_that("a hazard() call with data= gets a loud missing-data guard chunk, firs
 
 test_that("hzr_translate_sas parses the packaged example without writing when out_dir is NULL", {
   f <- system.file("extdata", "hz-example.sas", package = "TemporalHazard")
-  job <- hzr_translate_sas(f)
+  # The example carries QUASI and CONDITION=14, which hazard() has no
+  # equivalent for, so they are recorded and the translator says so (#384).
+  expect_warning(job <- hzr_translate_sas(f),
+                 "2 untranslated construct(s) in hz-example.sas: QUASINEWTON, CONDITION",
+                 fixed = TRUE)
   expect_s3_class(job, "hzr_sas_job")
   expect_true(job$coverage$tokens_seen > 0L)
 })
@@ -277,7 +281,7 @@ test_that("a PARMS this parser cannot read is recorded but NOT refused", {
   # So the translator stops in place of the fit, saying the limit is its own.
   f <- withr::local_tempfile(fileext = ".sas")
   writeLines(paste("PROC HAZARD DATA=D; TIME FU; EVENT DEAD;",
-                   "PARMS MUE = 0.2 THALF = 1 NU = 1; RUN;"), f)
+                   "PARMS &ALLPARMS; RUN;"), f)
   job <- suppressWarnings(hzr_translate_sas(f))
 
   expect_false(any(grepl("No phase selected", job$untranslated$reason,
@@ -289,7 +293,7 @@ test_that("a PARMS this parser cannot read is recorded but NOT refused", {
   expect_true(any(vapply(job$calls, says_limit, logical(1))))
   # ... and the operands it could not read are still reported, so declining to
   # refuse is not the same as declaring the job fine.
-  expect_true("MUE" %in% job$untranslated$construct)
+  expect_true("&ALLPARMS" %in% job$untranslated$construct)
 })
 
 test_that("a second PARMS statement adds to the first rather than replacing it", {

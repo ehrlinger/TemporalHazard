@@ -2,7 +2,7 @@
 
 CRAN R package. A native R implementation of the multiphase parametric hazard model of
 Blackstone, Naftel and Turner (1986) — the model the SAS/C `HAZARD` program implements. The
-public API is `hazard()` plus the `hzr_*` family (24 exports, 20 S3 methods, as declared in
+public API is `hazard()` plus the `hzr_*` family (25 exports, 21 S3 methods, as declared in
 `NAMESPACE`).
 
 The package exists to **reproduce a reference implementation**. That shapes almost every rule
@@ -411,6 +411,14 @@ A new dependency is a CRAN cost. Ask first.
 - ⚠️ **Unlike ggRandomForests, there is no test here that greps `NEWS.md` for the `DESCRIPTION`
   version.** Nothing will catch a mismatch. Keep `DESCRIPTION` `Version:` and the `NEWS.md`
   top heading in sync **by hand** on every bump.
+- **A change that ships writes its NEWS entry to a file of its own,**
+  `news/<branch>.md` with `/` in the branch name replaced by `-`: the bullet or bullets
+  exactly as they will read in `NEWS.md`, and no heading. Do not edit `NEWS.md` itself; two
+  pull requests open at once would conflict there. The bump moves `Version:` in
+  `DESCRIPTION`, then runs `python3 .github/scripts/news.py collect`, which files the
+  fragments under that version's heading in merge order and deletes them. The
+  `news-fragment` job in `lint.yaml` fails a pull request that ships something and adds no
+  fragment. A change `.Rbuildignore` excludes in full writes none.
 - **`Closes #123` fires on the normal flow.** GitHub auto-closes only on merge into the
   *default* branch, and routine work now merges to `main`, which is it. This inverted on
   2026-08-24 when the `dev` branch was dropped; before that the keyword silently did nothing

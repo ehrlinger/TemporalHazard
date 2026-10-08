@@ -27,8 +27,8 @@ phase_formula_fit <- function(sum_contrasts = FALSE) {
 
 # Expected total cumulative hazard for rows with the given `young` indicator.
 reference_cumhaz <- function(fit, time, young) {
-  base <- predict(fit, newdata = data.frame(time = time),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = time),
+                           type = "cumulative_hazard", decompose = TRUE)
   beta <- fit$fit$theta[["early.grpyoung"]]
   exp(beta * young) * base$early + base$constant
 }
@@ -95,8 +95,8 @@ test_that("extra and reordered newdata columns are ignored", {
   # decompose = TRUE and se.fit = TRUE read the same per-phase design.
   dec <- predict(fit, newdata = nd, type = "cumulative_hazard",
                  decompose = TRUE)
-  base <- predict(fit, newdata = data.frame(time = tt),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = tt),
+                           type = "cumulative_hazard", decompose = TRUE)
   beta <- fit$fit$theta[["early.grpyoung"]]
   expect_equal(dec$early / (exp(beta * c(1, 0)) * base$early), c(1, 1),
                tolerance = 1e-10, ignore_attr = TRUE)
@@ -114,8 +114,11 @@ test_that("newdata carrying the fit's design columns by name is accepted", {
                c(1, 1), tolerance = 1e-10, ignore_attr = TRUE)
   # Design-only newdata is unchanged by #272: values computed at 7edcee6,
   # before the rule changed. Optimizer results, so a loose tolerance.
+  # Re-measured for #565 (was c(0.1798473913724, 0.0561517857091)): the
+  # log-likelihood held at -215.76983954 and the estimates moved in the
+  # sixth digit.
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard"),
-               c(0.1798473913724, 0.0561517857091),
+               c(0.17984755866295, 0.05615164221977),
                tolerance = 1e-6, ignore_attr = TRUE)
   expect_equal(predict(fit, newdata = nd, type = "hazard"),
                c(0.18008683518445, 0.00599828867018),
@@ -161,8 +164,8 @@ test_that("some phase variables beside all design columns is refused (#272)", {
     "gives the formula variable\\(s\\) 'grp'.*lacks 'sx'"
   )
   # Control: design columns only is the design route, not an error.
-  base <- predict(fit, newdata = data.frame(time = 2),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = 2),
+                           type = "cumulative_hazard", decompose = TRUE)
   b <- fit$fit$theta[c("early.grpyoung", "early.sxM")]
   got <- predict(fit, newdata = data.frame(time = 2, grpyoung = 1, sxM = 0),
                  type = "cumulative_hazard")
@@ -197,8 +200,10 @@ test_that("a fit with neither the stored design nor its data predicts from desig
                "phase 'early' of this fit was saved without its design.*refit")
   nd <- data.frame(time = c(1, 1))
   nd$grpyoung <- c(0, 1)
+  # Re-measured for #565 (was c(0.04647389634149, 0.23995615103791)): the
+  # same fit as above, log-likelihood unchanged at -215.76983954.
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard"),
-               c(0.04647389634149, 0.23995615103791),
+               c(0.04647377856878, 0.23995637319111),
                tolerance = 1e-6, ignore_attr = TRUE)
 })
 
@@ -226,8 +231,8 @@ test_that("a fit without the stored design refuses some variables beside its des
     "gives the formula variable\\(s\\) 'grp'.*lacks 'sx'"
   )
   # Design columns only: nothing to contradict, so they are used.
-  base <- predict(fit, newdata = data.frame(time = 2),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = 2),
+                           type = "cumulative_hazard", decompose = TRUE)
   b <- fit$fit$theta[["early.grpyoung"]]
   got <- predict(fit, newdata = data.frame(time = 2, grpyoung = 1, sxM = 0),
                  type = "cumulative_hazard")
@@ -267,8 +272,8 @@ test_that("a changed variable that feeds a derived phase column is refused (#272
   )
   # With grp as well, the design is rebuilt and the stale column ignored.
   nd$grp <- "young"
-  base <- predict(fit, newdata = data.frame(time = 2),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = 2),
+                           type = "cumulative_hazard", decompose = TRUE)
   eta <- b[["early.age"]] * 60 + b[["early.grpyoung"]] +
     b[["early.age:grpyoung"]] * 60
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard") /
@@ -281,8 +286,8 @@ test_that("design-only newdata with a bare numeric variable is not a mix (#272)"
   # from it, so age + grpyoung is design-only newdata, not a partial one.
   fit <- phase_age_fit(~ age + grp)
   b <- fit$fit$theta
-  base <- predict(fit, newdata = data.frame(time = 2),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = 2),
+                           type = "cumulative_hazard", decompose = TRUE)
   got <- predict(fit, newdata = data.frame(time = 2, age = 60, grpyoung = 1),
                  type = "cumulative_hazard")
   eta <- b[["early.age"]] * 60 + b[["early.grpyoung"]]
@@ -311,8 +316,8 @@ test_that("a factor's non-default contrasts are the fit's, not the default", {
   expect_true(fit$fit$converged)
   expect_identical(colnames(fit$fit$x_list$early), "grp1")
   tt <- c(0.5, 2)
-  base <- predict(fit, newdata = data.frame(time = tt),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = tt),
+                           type = "cumulative_hazard", decompose = TRUE)
   beta <- fit$fit$theta[["early.grp1"]]
   expect_gt(abs(beta), 0.5)
   for (lab in c("old", "young")) {
@@ -371,8 +376,8 @@ test_that("a phase formula's environment constant still reaches newdata", {
   )
   expect_true(fit$fit$converged)
   tt <- c(0.5, 2)
-  base <- predict(fit, newdata = data.frame(time = tt),
-                  type = "cumulative_hazard", decompose = TRUE)
+  base <- predict_baseline(fit, newdata = data.frame(time = tt),
+                           type = "cumulative_hazard", decompose = TRUE)
   beta <- fit$fit$theta[["early.I(age > cutoff)TRUE"]]
   expect_gt(abs(beta), 0.5)
   got <- predict(fit, newdata = data.frame(time = tt, age = c(150, 50)),
@@ -415,14 +420,18 @@ test_that("all columns present: predictions unchanged from main 8a26c0e", {
   expect_true(fit$fit$converged)
   nd <- data.frame(time = c(0.5, 2, 6), mal = c(0, 1, 1), age = c(30, 60, 120))
   # Optimizer results, so a tolerance well above the optimizer's noise.
+  # The cumulative hazard and hazard were re-measured for #565 (they were
+  # c(0.08822505274, 0.42642619050, 0.49399211094) and
+  # c(0.088515938428, 0.043098312832, 0.006837292565)): the log-likelihood
+  # held at -220.03818202 and the estimates moved in the sixth digit.
   expect_equal(predict(fit, newdata = nd, type = "cumulative_hazard"),
-               c(0.08822505274, 0.42642619050, 0.49399211094),
+               c(0.08822459923464, 0.42642669474582, 0.49399273958405),
                tolerance = 1e-6, ignore_attr = TRUE)
   expect_equal(predict(fit, newdata = nd, type = "survival"),
                c(0.9155548054, 0.6528380494, 0.6101855969),
                tolerance = 1e-6, ignore_attr = TRUE)
   expect_equal(predict(fit, newdata = nd, type = "hazard"),
-               c(0.088515938428, 0.043098312832, 0.006837292565),
+               c(0.088515493156538, 0.043098375695453, 0.006837313347978),
                tolerance = 1e-6, ignore_attr = TRUE)
 })
 

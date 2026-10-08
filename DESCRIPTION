@@ -1,6 +1,6 @@
 Package: TemporalHazard
 Title: Temporal Parametric Hazard Modeling
-Version: 1.2.11
+Version: 1.2.12
 Authors@R: person("John", "Ehrlinger", email = "john.ehrlinger@gmail.com", role = c("aut", "cre", "cph"))
 URL: https://ehrlinger.github.io/TemporalHazard/, https://github.com/ehrlinger/TemporalHazard
 BugReports: https://github.com/ehrlinger/TemporalHazard/issues
@@ -22,9 +22,12 @@ Encoding: UTF-8
 Language: en-US
 Roxygen: list(markdown = TRUE)
 VignetteBuilder: quarto
-Depends: R (>= 4.1.0)
+SystemRequirements: Quarto command line tool
+    (<https://github.com/quarto-dev/quarto-cli>)
+Depends: R (>= 4.4.0)
 Imports:
-    survival
+    survival,
+    withr
 Suggests:
     covr,
     ggplot2,
@@ -37,8 +40,7 @@ Suggests:
     roxygen2,
     rmarkdown,
     scales,
-    testthat (>= 3.2.0),
-    withr
+    testthat (>= 3.2.0)
 LazyData: true
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.1.0

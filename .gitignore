@@ -9,7 +9,8 @@
 
 # Documentation and site
 /docs/
-/pkgdown/
+/pkgdown/*
+!/pkgdown/extra.css
 
 # Vignettes and logs
 vignettes/*.html

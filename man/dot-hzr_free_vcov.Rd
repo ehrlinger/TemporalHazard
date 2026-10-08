@@ -2,25 +2,43 @@
 % Please edit documentation in R/predict-cl.R
 \name{.hzr_free_vcov}
 \alias{.hzr_free_vcov}
-\title{Free-parameter vcov submatrix for the delta-method sandwich}
+\title{Vcov submatrix for the delta-method sandwich}
 \usage{
-.hzr_free_vcov(vcov_mat, p)
+.hzr_free_vcov(
+  vcov_mat,
+  p,
+  unused = integer(0),
+  fixed = NULL,
+  param_names = NULL
+)
 }
 \arguments{
 \item{vcov_mat}{The fitted vcov (or NULL / wrong shape).}
 
 \item{p}{Length of the parameter vector.}
+
+\item{unused}{Indices of parameters the prediction does not depend on, by
+the prediction's form (\code{.hzr_weibull_used()}, \code{.hzr_multiphase_used()}),
+never read off numeric zeros in the Jacobian. They are dropped exactly,
+whatever their variance.}
+
+\item{fixed}{Logical, \code{TRUE} for a parameter held fixed in the fit, or
+\code{NULL} when nothing is fixed (every single-distribution fit).}
+
+\item{param_names}{Names for the warning, or \code{NULL}.}
 }
 \value{
 \code{list(vcov_use, free_idx)}, or \code{NULL} if unusable.
 }
 \description{
-Fixed parameters (e.g. \code{fixed = "shapes"}) leave NA rows/cols in the expanded
-vcov. Treat them as known-with-zero-variance: restrict the sandwich to the
-free submatrix. (The CoE-conserved \code{log_mu} normally participates, because
-CoE fits use the full-information vcov, but it leaves an NA row, like a fixed
-parameter, when that recomputation was unavailable.) Returns \code{NULL} (with a
-warning) when CLs cannot be computed. Shared by the aggregate and decomposed
-se.fit paths.
+Restricts the sandwich to the parameters the prediction uses. A parameter
+held fixed (\code{fixed}, from the fit's \code{fixed_mask}; e.g. \code{fixed = "shapes"})
+with an NA row is dropped as known. (The CoE-conserved \code{log_mu} is one when
+its full-information recompute failed; the caller warns.) A fixed one with
+a variance, such as a shape a g3 constraint derives, stays in. An NA
+variance on a parameter that is NOT fixed was masked by \code{.hzr_safe_solve()}
+as non-positive: it withholds the standard error if the prediction uses
+it (#586). Returns \code{NULL} (with a warning) when CLs cannot be computed.
+Shared by the aggregate and decomposed se.fit paths.
 }
 \keyword{internal}

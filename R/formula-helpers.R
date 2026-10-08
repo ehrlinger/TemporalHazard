@@ -36,6 +36,8 @@
     stop("'formula' must be a formula object.", call. = FALSE)
   }
 
+  data <- .hzr_drop_empty_names(data, formula)
+
   # Parse the LHS (should be Surv(...))
   lhs <- formula[[2L]]
   rhs <- formula[[3L]]
@@ -64,6 +66,26 @@
     # One-sided formula for model.matrix(), with `.` expanded against `data`
     # without the Surv() variables (#273). See .hzr_expand_rhs().
     rhs_formula <- .hzr_expand_rhs(formula, data)
+    # Every distribution carries its own intercept (its baseline parameter),
+    # so the design always drops one. Without an intercept in the formula, a
+    # factor would code every level, collinear with that parameter (#337).
+    # Build the design as if the intercept were present, and say so. The
+    # phase-formula counterpart is .hzr_formula_design() (#303).
+    rhs_terms <- stats::terms(rhs_formula, data = data)
+    if (attr(rhs_terms, "intercept") == 0L &&
+          length(attr(rhs_terms, "term.labels")) > 0L) {
+      # Classed so that a refit of an already-warned fit can muffle it.
+      warning(warningCondition(paste0(
+        "The formula `", paste(deparse(formula), collapse = " "),
+        "` removes the intercept, which a hazard model cannot do: the ",
+        "distribution's baseline parameter -- the one the covariates add ",
+        "to -- already plays the intercept role. The ",
+        "design is built as if the intercept were present, so factors are ",
+        "coded as they would be with it."
+      ), class = "hzr_intercept_removed"))
+      attr(rhs_terms, "intercept") <- 1L
+      rhs_formula <- rhs_terms
+    }
     tryCatch({
       x <- stats::model.matrix(rhs_formula, data = data)
       x_contrasts <- attr(x, "contrasts")
@@ -147,6 +169,39 @@
     rhs_formula <- stats::reformulate("1", env = environment(rhs_formula))
   }
   rhs_formula
+}
+
+#' Drop the columns of `data` named ""
+#'
+#' A column named "" can be named by no formula, so it can play no part in a
+#' model. Two base-R calls in the formula path still fail on it outright:
+#' `list2env()` over the data and `terms(formula, data = data)` for a
+#' two-sided formula or one containing `.`. Both stop with "attempt to use
+#' zero-length variable name". That stopped every fit, and every stepwise
+#' refit, on data that merely CARRIED such a column (#470). Only `.` would
+#' have reached for the column, so only then is there anything to tell the
+#' user. This matches the stepwise default scope, which says the same column
+#' "cannot be a stepwise candidate" (#449). An NA name is left alone, because
+#' nothing fails on it.
+#'
+#' @param data A data frame.
+#' @param formula The formula about to be read against `data`, or `NULL` to
+#'   drop silently, for a caller that is not expanding `.` for the user.
+#' @param where Where `.` appears, for the warning, e.g. `" in phase 'early'"`.
+#' @return `data` without the ""-named columns.
+#' @noRd
+.hzr_drop_empty_names <- function(data, formula = NULL, where = "") {
+  empty <- !is.na(names(data)) & !nzchar(names(data))
+  if (!any(empty)) return(data)
+  if (!is.null(formula) && "." %in% all.vars(formula[[length(formula)]])) {
+    one <- sum(empty) == 1L
+    warning(sum(empty), if (one) " column" else " columns",
+            " of `data` named \"\" ", if (one) "is" else "are",
+            " left out of `.`", where, ": a model formula cannot name ",
+            if (one) "it" else "them", ". Rename ", if (one) "it" else "them",
+            " to include ", if (one) "it" else "them", ".", call. = FALSE)
+  }
+  data[!empty]
 }
 
 
@@ -351,6 +406,24 @@
     if (ncol(covs) == 0L || length(object$fit$theta) <= n_shape) {
       return(NULL)
     }
+    # Position is the only mapping left, and that is worth saying out loud.
+    # The columns are matched to coefficients in the order `newdata` happens
+    # to supply them, so a caller who reorders or renames them, or adds one,
+    # gets different numbers with nothing else changing. The fit itself is
+    # what is missing a design: `hazard()` refuses to build such an object
+    # now (#375), so one can only arrive from an older version or by hand.
+    warning(
+      "This model stored no design matrix, so 'newdata' columns are matched ",
+      "to its ", length(object$fit$theta) - n_shape,
+      " covariate coefficient",
+      if (length(object$fit$theta) - n_shape == 1L) "" else "s",
+      " BY POSITION, in the order supplied (",
+      paste(utils::head(colnames(covs), 3L), collapse = ", "),
+      if (ncol(covs) > 3L) ", ..." else "",
+      "). Reordering or renaming them silently changes the predictions. ",
+      "Refit the model so the design is stored and the mapping is by name.",
+      call. = FALSE
+    )
     return(as.matrix(covs))
   }
   # Where `time` is not the prediction time (the eta-based types without
@@ -371,7 +444,7 @@
 #' knots, or an object kept outside `data`) resolves from the formula's
 #' environment, so a same-named `newdata` column can never stand in for it.
 #' A term that took row-level values from outside `data` is then refused by
-#' `.hzr_check_equivariant()`.
+#' `.hzr_check_equivariant()`, and named by `.hzr_outside_rows_term()`.
 #'
 #' @param newdata Data frame of new rows.
 #' @param data_vars The formula's fitting-data variables.
@@ -390,8 +463,8 @@
 #' (`.hzr_phase_newdata_design()`) (#271): the fit's terms, factor levels and
 #' contrasts, so a factor given as a single label still codes to the fit's
 #' columns. `newdata` supplies only the data columns, and a term that does
-#' not follow its rows is refused; see `.hzr_newdata_frame()` and
-#' `.hzr_check_equivariant()`.
+#' not follow its rows is refused; see `.hzr_newdata_frame()`,
+#' `.hzr_check_equivariant()` and `.hzr_outside_rows_term()`.
 #'
 #' @param design A stored design: `terms`, `xlevels`, `contrasts`,
 #'   `data_vars`.
@@ -402,6 +475,7 @@
 #' @keywords internal
 #' @noRd
 .hzr_rebuild_design <- function(design, newdata, cols, where) {
+  .hzr_warn_row_dependent(design$terms, where)
   build <- function(x) {
     nd <- .hzr_newdata_frame(x, design$data_vars)
     mf <- stats::model.frame(design$terms, data = nd, xlev = design$xlevels,
@@ -409,9 +483,197 @@
     stats::model.matrix(design$terms, data = mf,
                         contrasts.arg = design$contrasts)
   }
-  mm <- .hzr_check_equivariant(build, newdata,
-                               attr(design$terms, "term.labels"), where)
+  mm <- tryCatch(
+    .hzr_check_equivariant(build, newdata,
+                           attr(design$terms, "term.labels"), where),
+    error = function(e) e
+  )
+  if (inherits(mm, "error")) {
+    # Only now, with the build already failed or short, is it worth
+    # evaluating the variables to name a term. Nothing extra runs on the
+    # path that succeeds, so `model.frame()`'s one shared mask, its
+    # evaluation count and its errors are exactly what they were (#409).
+    #
+    # And only for a failure that IS about row counts: a condition raised by
+    # the caller's own code inside a term keeps its class, message and
+    # attributes, even when some other term happens to be row-mismatched
+    # (#430 review).
+    if (.hzr_from_design_build(mm)) {
+      term <- .hzr_outside_rows_term(
+        design$terms, .hzr_newdata_frame(newdata, design$data_vars)
+      )
+      if (length(term)) .hzr_stop_unmatched_rows(term, where, nrow(newdata))
+    }
+    stop(mm)
+  }
   mm[, cols, drop = FALSE]
+}
+
+
+# Functions whose value at a row depends on the other rows they are given.
+# predict(newdata = ) evaluates them over newdata's rows, as predict.lm()
+# does, unless model.frame()'s predvars fixed them at fit time (#331).
+.hzr_row_dependent_functions <- c(
+  "mean", "weighted.mean", "median", "min", "max", "range", "quantile",
+  "fivenum", "IQR", "mad", "sd", "var", "sum", "prod", "ave", "length",
+  "nrow", "NROW", "rank", "order", "sort", "rev", "cumsum", "cumprod",
+  "cummin", "cummax", "diff", "scale", "poly", "ns", "bs", "factor",
+  "as.factor", "droplevels", "cut"
+)
+
+
+#' Warn when a rebuilt design computes a statistic over newdata's rows
+#'
+#' A term such as `I(age - min(age))` or `I(scale(age)^2)` is evaluated over
+#' `newdata`'s rows, so its value at a row depends on which rows are given
+#' (#331). A top-level `scale()`, `poly()`, `ns()` or `bs()` term is not:
+#' `model.frame()` rewrites it in the terms' `predvars` with the fit's centre,
+#' basis or knots, or leaves it unchanged when it takes nothing from the rows
+#' (raw `poly()`, `scale(center = FALSE, scale = FALSE)`). A top-level
+#' `factor()` term takes the fit's levels through `xlev`. `cut()` counts
+#' unless its breaks are written as several numbers. The list of functions
+#' is closed: a function not on it, including a user's, is not detected.
+#'
+#' @param terms The design's terms, carrying `predvars`.
+#' @param where Text naming the design, for messages.
+#' @return `NULL`, invisibly; warns once, naming every such term.
+#' @keywords internal
+#' @noRd
+.hzr_warn_row_dependent <- function(terms, where) {
+  vars <- as.list(attr(terms, "variables"))[-1L]
+  pv <- attr(terms, "predvars")
+  pv <- if (is.null(pv)) vars else as.list(pv)[-1L]
+  head_name <- function(e) {
+    h <- e[[1L]]
+    if (is.symbol(h)) {
+      return(as.character(h))
+    }
+    if (is.call(h) && length(h) == 3L && is.symbol(h[[1L]]) &&
+          as.character(h[[1L]]) %in% c("::", ":::")) {
+      return(as.character(h[[3L]]))
+    }
+    ""
+  }
+  found <- function(e) {
+    if (!is.call(e)) {
+      return(character(0))
+    }
+    nm <- head_name(e)
+    hit <- nm %in% .hzr_row_dependent_functions
+    if (nm == "cut") {
+      breaks <- if ("breaks" %in% names(e)) e[["breaks"]] else e[3L][[1L]]
+      several <- (is.numeric(breaks) && length(breaks) > 1L) ||
+        (is.call(breaks) && identical(breaks[[1L]], as.name("c")) &&
+           length(breaks) > 2L)
+      hit <- !several
+    }
+    c(if (hit) nm, unlist(lapply(as.list(e)[-1L], found)))
+  }
+  terms_hit <- character(0)
+  fns <- character(0)
+  for (i in seq_along(vars)) {
+    v <- vars[[i]]
+    p <- pv[[i]]
+    fixed <- is.call(p) &&
+      (!identical(v, p) ||
+         head_name(p) %in% c("factor", "as.factor", "scale", "poly", "ns",
+                             "bs"))
+    f <- if (fixed) unlist(lapply(as.list(p)[-1L], found)) else found(p)
+    if (length(f) > 0L) {
+      terms_hit <- c(terms_hit, paste(deparse(v), collapse = " "))
+      fns <- c(fns, f)
+    }
+  }
+  if (length(terms_hit) > 0L) {
+    msg <- paste0(
+      "predict(newdata =): ", paste0("'", terms_hit, "'", collapse = ", "),
+      " of ", where, " computes ", paste0(unique(fns), "()", collapse = ", "),
+      " over the rows of 'newdata', not the data the model was fitted to, ",
+      "so a row's prediction depends on the other rows given. See ",
+      "?predict.hazard."
+    )
+    # Classed, so predict() can gather one per phase into one warning.
+    warning(structure(class = c("hzr_row_dependent", "warning", "condition"),
+                      list(message = msg, call = NULL)))
+  }
+  invisible(NULL)
+}
+
+
+#' The kind of a column, as the newdata type check compares it
+#'
+#' @param v A column.
+#' @return A single string.
+#' @keywords internal
+#' @noRd
+.hzr_column_kind <- function(v) {
+  if (inherits(v, "difftime")) {
+    return(paste("difftime in", units(v)))
+  }
+  if (inherits(v, "Date")) {
+    return("Date")
+  }
+  if (inherits(v, "POSIXt")) {
+    return("date-time")
+  }
+  if (is.factor(v) || is.character(v)) {
+    return("character or factor")
+  }
+  if (is.logical(v)) {
+    return("logical")
+  }
+  if (is.numeric(v)) {
+    return("numeric")
+  }
+  class(v)[1L]
+}
+
+
+#' Warn when a newdata column has another type than the fitting data's
+#'
+#' The formula is evaluated on `newdata` as given (#334): a numeric column
+#' given as character compares as strings, and a `difftime` in other units
+#' is used in those units. A factor given as labels, or an integer for a
+#' double, is not a mismatch. Compared against the fitting data the fit
+#' kept (`data$frame`, 1.1.0 onward); a fit without it is not checked.
+#'
+#' @param object A fitted `hazard` object.
+#' @param newdata Data frame of new rows.
+#' @return `NULL`, invisibly; warns once, naming every mismatched column.
+#' @keywords internal
+#' @noRd
+.hzr_warn_newdata_types <- function(object, newdata) {
+  frame <- object$data$frame
+  if (!is.data.frame(frame)) {
+    return(invisible(NULL))
+  }
+  vars <- object$data$x_design$data_vars
+  phases <- object$fit$phases
+  if (is.null(phases)) phases <- object$spec$phases
+  for (nm in names(phases)) {
+    design <- object$fit$x_design[[nm]]
+    vars <- c(vars, if (!is.null(design)) {
+      design$data_vars
+    } else if (!is.null(phases[[nm]]$formula)) {
+      all.vars(phases[[nm]]$formula)
+    })
+  }
+  vars <- intersect(unique(vars), intersect(names(newdata), names(frame)))
+  bad <- character(0)
+  for (v in vars) {
+    now <- .hzr_column_kind(newdata[[v]])
+    was <- .hzr_column_kind(frame[[v]])
+    if (!identical(now, was)) {
+      bad <- c(bad, paste0("'", v, "' is ", now, " but was ", was))
+    }
+  }
+  if (length(bad) > 0L) {
+    warning("predict(newdata =): in 'newdata', ", paste(bad, collapse = ", "),
+            " in the data the model was fitted to; the formula is ",
+            "evaluated on 'newdata' as given. See ?predict.hazard.",
+            call. = FALSE)
+  }
+  invisible(NULL)
 }
 
 
@@ -480,8 +742,9 @@
 #' formula's environment) does not move with them, so the design is rebuilt
 #' with the rows cyclically shifted and any column that does not follow is
 #' refused, naming its term. This does not depend on the shape of the
-#' outside object. One row cannot be shifted; the row-count backstop
-#' (`.hzr_check_design_rows()`) covers it.
+#' outside object. One row cannot be shifted, so the row-count backstop
+#' (`.hzr_check_design_rows()`) is what refuses it, and
+#' `.hzr_outside_rows_term()` then names the term.
 #'
 #' @param build Function of a data frame of new rows, returning the model
 #'   matrix with its `assign` attribute.
@@ -524,12 +787,164 @@
   bad <- which(colSums(!same) > 0L)
   if (length(bad) > 0L) {
     term <- unique(c("(Intercept)", labels)[attr(mm, "assign")[bad] + 1L])
-    stop("term ", paste0("'", term, "'", collapse = ", "), " of ", where,
-         " uses row-level values taken from outside `data`; ",
-         "predict(newdata =) cannot rebuild them for new rows. Move them ",
-         "into `data` as columns and refit.", call. = FALSE)
+    .hzr_stop_outside_term(term, where)
   }
   mm
+}
+
+
+#' Name a list of terms the same way wherever one is refused
+#'
+#' @param term Character vector of term labels.
+#' @noRd
+.hzr_term_list <- function(term) {
+  paste0("'", term, "'", collapse = ", ")
+}
+
+
+#' Refuse model terms that take row-level values from outside `data`
+#'
+#' For the equivariance check (`.hzr_check_equivariant()`), which has
+#' established the cause: the term did not follow a cyclic shift of
+#' `newdata`'s rows, which a term built from those rows cannot do.
+#' @param term Character vector of term labels.
+#' @param where Text naming the design.
+#' @noRd
+.hzr_stop_outside_term <- function(term, where) {
+  stop("term ", .hzr_term_list(term), " of ", where,
+       " uses row-level values taken from outside `data`; ",
+       "predict(newdata =) cannot rebuild them for new rows. Move them ",
+       "into `data` as columns and refit.", call. = FALSE)
+}
+
+
+#' Refuse a term that does not give one value per row of `newdata`
+#'
+#' For the diagnosis (`.hzr_outside_rows_term()`), which has established
+#' only the row count. Outside-`data` values are ONE cause; a length-changing
+#' function of a `data` column, such as `unique()` or `stats::na.omit()`, is
+#' another, and for that one "move it into `data`" is advice the user cannot
+#' follow. The message gives both rather than asserting the first (#409).
+#' @param term Character vector of term labels.
+#' @param where Text naming the design.
+#' @param n Number of rows in `newdata`.
+#' @noRd
+.hzr_stop_unmatched_rows <- function(term, where, n) {
+  stop("term ", .hzr_term_list(term), " of ", where,
+       " does not give one value per row of 'newdata' (", n, " row(s)), so ",
+       "predict(newdata =) cannot rebuild it for new rows. Either the term ",
+       "takes row-level values from outside `data`, such as a vector in the ",
+       "formula's environment, in which case move those into `data` as ",
+       "columns and refit; or it uses a length-changing function, such as ",
+       "unique() or stats::na.omit(), which has no value to give for a new ",
+       "row.", call. = FALSE)
+}
+
+
+#' Did this condition come from building the design, rather than user code?
+#'
+#' `predict(newdata = )` replaces a build failure with a named-term refusal,
+#' and must not do that to a condition the caller raised inside one of their
+#' own terms: `~ I(ff(age)) + zz`, where `ff()` fails and `zz` merely happens
+#' to be row-mismatched, lost the caller's class and message and blamed `zz`
+#' (#430 review). The two are told apart by `conditionCall()`, which is the
+#' building function for a design failure and the user's own call otherwise.
+#'
+#' Matching the CALL rather than the message is deliberate: both base
+#' messages ("variable lengths differ", "length of 'dimnames' ...") come from
+#' C and are translated, so a message test would quietly stop working outside
+#' an English locale -- which no CI here would catch. Our own backstop
+#' carries no call and is recognised by its class instead.
+#'
+#' A user function that itself calls `model.frame()` or `model.matrix()` and
+#' fails inside it is misread as a design failure: `conditionCall()` reports
+#' the same callee for both. That is a known limitation, not an oversight
+#' (#446) -- separating them needs the call stack at signal time, it fails
+#' loudly either way, and NEWS records the exception. The behaviour is
+#' PINNED by "a nested model.frame() failure is misattributed, as
+#' documented", so fixing #446 fails that test and forces this note and the
+#' NEWS sentence to be updated with it.
+#'
+#' @param e A condition.
+#' @return `TRUE` when the condition came from the design build.
+#' @noRd
+.hzr_from_design_build <- function(e) {
+  if (inherits(e, "hzr_design_rows_error")) {
+    return(TRUE)
+  }
+  cl <- conditionCall(e)
+  if (!is.call(cl)) {
+    return(FALSE)
+  }
+  fn <- paste(deparse(cl[[1L]]), collapse = "")
+  fn %in% c("model.frame", "model.frame.default", "model.matrix",
+            "model.matrix.default", "stats::model.frame",
+            "stats::model.frame.default", "stats::model.matrix",
+            "stats::model.matrix.default")
+}
+
+
+#' Name a term whose variable has the wrong number of rows for `newdata`
+#'
+#' A DIAGNOSIS, run only after `model.frame()` has already failed or
+#' returned the wrong rows. It never decides whether a prediction happens:
+#' it only names a term for a call that is already failing, and the caller
+#' re-raises the original condition when this names nothing.
+#'
+#' The variables are evaluated in ONE mask, in order, as `model.frame()`
+#' evaluates them, so a term that assigns into the mask (`I(zz <- age)`) is
+#' visible to a later term that reads it. Evaluating them separately named
+#' terms that were fine (#430 review).
+#'
+#' `newdata` supplies only the fit's data columns, so a model-frame
+#' variable evaluated there whose row count is not `newdata`'s cannot be
+#' matched to `newdata`'s rows. The usual cause is row-level values from
+#' outside `data` (a vector in the formula's environment), but it is
+#' **not** the only one:
+#' a length-changing function of a `data` column, `I(unique(age))` or
+#' `I(as.numeric(stats::na.omit(age)))`, lands here too. The row count alone
+#' does not tell them apart, so the message names both
+#' (`.hzr_stop_unmatched_rows()`). Left to `model.frame()`, either failed
+#' with "variable lengths differ", naming whichever variable it compared
+#' against, or reached the row-count backstop, which names no term (#409).
+#' A scalar or a knot vector passed as an argument is not a model-frame
+#' variable of the wrong length, so it is untouched. A variable that fails
+#' to evaluate names nothing, which leaves the original error to propagate.
+#' @param terms The stored terms object.
+#' @param nd The newdata frame, restricted to the data columns.
+#' @return Character vector of term labels, empty when nothing is wrong.
+#' @noRd
+.hzr_outside_rows_term <- function(terms, nd) {
+  vars <- attr(terms, "predvars")
+  if (is.null(vars)) vars <- attr(terms, "variables")
+  vars <- as.list(vars)[-1L]
+  factors <- attr(terms, "factors")
+  if (!length(vars) || !length(factors)) {
+    return(character(0))
+  }
+  env <- environment(terms)
+  if (is.null(env)) env <- parent.frame()
+  # ONE mask, evaluated in order, because that is what `model.frame()` does.
+  # A term that assigns, `I(zz <- age)`, has to be visible to a later term
+  # that reads it: evaluated in separate masks the diagnosis instead found
+  # the formula environment's unrelated `zz` and named `I(zz^2)` as well as
+  # the genuinely mismatched term, sending the user to repair a term that
+  # was fine (#430 review). `vapply()` evaluates in order, and `mask`
+  # persists across the calls, so the assignment carries.
+  mask <- list2env(as.list(nd), parent = env)
+  wrong <- vapply(vars, function(v) {
+    val <- tryCatch(eval(v, mask), error = function(e) NULL)
+    !is.null(val) && NROW(val) != nrow(nd)
+  }, logical(1))
+  if (!any(wrong)) {
+    return(character(0))
+  }
+  # By POSITION, not by a deparsed string: `deparse()` breaks at 60
+  # characters and indents the continuation, so a joined key never equals
+  # the wide rowname `terms()` stores, and every long term went unnamed.
+  # The factors matrix has one row per entry of `variables`, in order.
+  rows <- rownames(factors)[wrong]
+  colnames(factors)[colSums(factors[rows, , drop = FALSE] != 0) > 0]
 }
 
 
@@ -547,11 +962,21 @@
 #' @noRd
 .hzr_check_design_rows <- function(mm, newdata, where) {
   if (nrow(mm) != nrow(newdata)) {
-    stop("The design rebuilt for ", where, " has ", nrow(mm), " rows for ",
-         nrow(newdata), " row(s) of 'newdata': a term uses row-level values ",
-         "taken from outside `data`, which predict(newdata =) cannot rebuild ",
-         "for new rows. Move them into `data` as columns and refit.",
-         call. = FALSE)
+    # Classed, not merely worded: `.hzr_rebuild_design()` has to tell this
+    # failure from a user's error raised inside a term, and this one carries
+    # no call to identify it by (#430 review).
+    stop(structure(
+      class = c("hzr_design_rows_error", "error", "condition"),
+      list(
+        message = paste0(
+          "The design rebuilt for ", where, " has ", nrow(mm), " rows for ",
+          nrow(newdata), " row(s) of 'newdata': a term uses row-level values ",
+          "taken from outside `data`, which predict(newdata =) cannot rebuild ",
+          "for new rows. Move them into `data` as columns and refit."
+        ),
+        call = NULL
+      )
+    ))
   }
   invisible(NULL)
 }
@@ -962,4 +1387,41 @@
     env <- parent.env(env)
   }
   FALSE
+}
+
+
+#' Warn when a legacy design was rebuilt under non-default contrasts
+#'
+#' A fit saved before `data$x_design` kept no record of its contrasts, so
+#' `.hzr_recover_x_design()` rebuilds it under this session's
+#' `options(contrasts =)`. A contrasts function that names its columns as
+#' treatment coding does, but codes some level differently, reproduces every
+#' fitted value when that level's rows are multiplied by 0 in a term, then
+#' predicts new rows with the other code (#335). Every contrasts entry the
+#' rebuild records by a name other than `contr.treatment` or `contr.poly`
+#' is named in one warning. A user who masks `contr.treatment` itself is
+#' not detected.
+#'
+#' @param contrasts The rebuilt design's `contrasts` list.
+#' @return `NULL`, invisibly.
+#' @keywords internal
+#' @noRd
+.hzr_warn_rebuilt_contrasts <- function(contrasts) {
+  default <- vapply(contrasts, function(k) {
+    is.character(k) && length(k) == 1L &&
+      k %in% c("contr.treatment", "contr.poly")
+  }, logical(1))
+  other <- contrasts[!default]
+  if (length(other) > 0L) {
+    shown <- vapply(other, function(k) {
+      if (is.character(k)) k[1L] else "a contrasts matrix"
+    }, character(1))
+    warning("predict(newdata =): this fit was saved without its formula ",
+            "design, which was rebuilt under this session's contrasts (",
+            paste0("'", names(other), "' by '", shown, "'", collapse = ", "),
+            "); the fit did not record its own, so a level coded ",
+            "differently from the fit is not detected. See ?predict.hazard.",
+            call. = FALSE)
+  }
+  invisible(NULL)
 }

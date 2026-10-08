@@ -126,12 +126,12 @@ cardioversion_job <- function(dir) {
   # second is %HAZPLOT(IN=EVENTS, ...) before the stratified fit. It only
   # reads EVENTS, but a macro call naming the output stops by design, since
   # a false stop costs a deleted chunk and a miss fits the wrong data.
+  # QUASI and CONDITION=, in both blocks, have no hazard() equivalent and are
+  # recorded rather than emitted into control, which reads neither (#384).
   # Nothing else may go missing.
   expect_warning(job <- hzr_translate_sas(path), "STEEPEST")
-  expect_equal(
-    job$untranslated$construct,
-    c("EVENTS changed after %repeat", "STEEPEST", "EVENTS changed after %repeat", "STEEPEST")
-  )
+  block <- c("EVENTS changed after %repeat", "STEEPEST", "QUASINEWTON", "CONDITION")
+  expect_equal(job$untranslated$construct, c(block, block))
   job
 }
 

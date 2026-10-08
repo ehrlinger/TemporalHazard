@@ -15,7 +15,8 @@
   x_list,
   total_events,
   weights = NULL,
-  time_lower = NULL
+  time_lower = NULL,
+  details = FALSE
 )
 }
 \arguments{
@@ -50,9 +51,15 @@ cumulative hazard, matching the multiphase likelihood (and C HAZARD
 \code{setcoe} under \code{LCENSOR}/\code{STARTTME}). Any other row has no entry
 (\code{H(start) = 0}); see \code{.hzr_multiphase_entry()}. \code{NULL} (the default)
 means no truncation.}
+
+\item{details}{\code{FALSE} (the default) returns the theta vector alone.
+\code{TRUE} returns \code{list(theta, solved)}, \code{solved} saying whether the log_mu
+was solved for, as against handed back unchanged because there was
+nothing to solve.}
 }
 \value{
-Updated theta vector with fixmu phase's log_mu adjusted.
+Updated theta vector with fixmu phase's log_mu adjusted, or the
+list described under \code{details}.
 }
 \description{
 Given the current theta vector, analytically solve the fixmu phase's

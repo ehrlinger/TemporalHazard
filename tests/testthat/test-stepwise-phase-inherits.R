@@ -72,8 +72,12 @@ test_that("a Wald step adds to the inherited terms and reports their p-value", {
   # fall; under this control it did, from -196.44 to -204.43, when `age`
   # was replaced.
   expect_gt(sw$fit$objective, base$fit$objective)
+  # The stepwise refit and the explicit fit reach the same maximum (checked
+  # above at 1e-8), from different starts. The likelihood is flat along a
+  # ridge there, so the two points differ in the 5th-6th digit of the
+  # coefficients, and the Wald p-values by about 2e-5 relative (#551).
   expect_equal(sw$steps$p_value, wald_p(explicit, "early.mal"),
-               tolerance = 1e-6)
+               tolerance = 1e-4)
 })
 
 test_that("the score screen enters the variable instead of stopping", {
@@ -278,9 +282,27 @@ test_that("a forward screen that never steps the inheriting phase still runs", {
                                   control = ctl_284))
   }
   sw <- run(survival::Surv(int_dead, dead) ~ grp)
-  expect_identical(sw$steps$variable, "mal")
-  expect_identical(phase_covs(sw, "constant"),
-                   c("constant.age", "constant.mal"))
+  # The screen runs and tests mal, which does not enter: its refit reaches
+  # the maximum (at or above the base it contains) and its Wald p exceeds
+  # slentry. Before #551 the refit started cold, ended 3.6 log-likelihood
+  # units below the base with p = 0.98, and mal entered on that.
+  base7 <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ grp, data = d7, dist = "multiphase",
+    phases = ph_284(fc = ~ age), fit = TRUE, control = ctl_284
+  ))
+  fs <- suppressWarnings(.hzr_stepwise_forward_step(
+    base7, scope = list(constant = ~ mal), data = d7, criterion = "wald",
+    slentry = 0.99, control = ctl_284
+  ))
+  cand <- suppressWarnings(.hzr_refit_with_scope(
+    base7, action = "add", var = "mal", phase = "constant", data = d7,
+    control = ctl_284
+  ))
+  expect_gte(cand$fit$objective, base7$fit$objective - 1e-6)
+  expect_gt(fs$all_scores$p_value[fs$all_scores$variable == "mal"], 0.99)
+  expect_false(fs$accepted)
+  expect_equal(nrow(sw$steps), 0L)
+  expect_identical(phase_covs(sw, "constant"), "constant.age")
   expect_length(phase_covs(sw, "early"), 2L)
 
   # The inheriting phase keeps its windowed design under either criterion.
@@ -312,9 +334,18 @@ test_that("a NULL scope entry does not count as a stepped phase", {
                                   control = ctl_284))
   }
   sw <- run(list(early = NULL, constant = ~ mal))
-  expect_identical(sw$steps$variable, "mal")
-  expect_identical(phase_covs(sw, "constant"),
-                   c("constant.age", "constant.mal"))
+  # The NULL entry is not stepped and the screen runs; mal is tested and does
+  # not enter, its Wald p exceeding slentry once its refit reaches the
+  # maximum (#551; before, a cold-started refit ended below the base and mal
+  # entered on that).
+  fs <- suppressWarnings(.hzr_stepwise_forward_step(
+    base, scope = list(early = NULL, constant = ~ mal), data = d7,
+    criterion = "wald", slentry = 0.99, control = ctl_284
+  ))
+  expect_identical(fs$all_scores$variable, "mal")
+  expect_gt(fs$all_scores$p_value, 0.99)
+  expect_equal(nrow(sw$steps), 0L)
+  expect_identical(phase_covs(sw, "constant"), "constant.age")
   expect_length(phase_covs(sw, "early"), 2L)
 
   # A formula entry still counts: `early` would be stepped, and its

@@ -148,9 +148,12 @@ NULL
   lower <- if (is.null(time_lower)) time else time_lower
   upper <- if (is.null(time_upper)) time else time_upper
 
-  if (any(status %in% c(1, 0) & time <= 0)) return(Inf)
-  if (any(status == -1 & upper <= 0)) return(Inf)
-  if (any(status == 2 & (lower <= 0 | upper <= 0))) return(Inf)
+  # Per row (#341). An event at time 0 has no density. A right-censored row
+  # at 0 contributes log S(0) = 0, and an interval opening at 0 contributes
+  # log F(u): log(0) = -Inf gives z = -Inf, where pnorm() returns exactly
+  # those limits. Only a left or interval bound of 0 has no probability.
+  if (any(status == 1 & time <= 0)) return(Inf)
+  if (any(status %in% c(-1, 2) & upper <= 0)) return(Inf)
   if (any(status == 2) && any(lower[status == 2] >= upper[status == 2])) return(Inf)
 
   # Event-time terms are based on z at observed `time`.
@@ -307,6 +310,12 @@ NULL
   # Clamp to prevent Inf * 0 issues when z is very large.
   mills <- pmin(mills, 1e6)
 
+  # A right-censored row at time 0 has z = -Inf and contributes nothing, but
+  # its zero multipliers would meet z as 0 * -Inf = NaN (#341).
+  at_zero <- status == 0 & time <= 0
+  z[at_zero] <- 0
+  mills[at_zero] <- 0
+
   censored <- 1 - status  # (1 - delta_i)
 
   # Weighted per-row building blocks. Every term below is the unweighted form
@@ -419,6 +428,12 @@ NULL
   a_coef <- (delta + cens * m * (m - z)) / sigma^2                 # (eta, eta)
   b_coef <- (delta * 2 * z + cens * m * (z * (m - z) + 1)) / sigma # (eta, log_sigma)
   c_coef <- delta * 2 * z^2 + cens * m * z * (z * (m - z) + 1)     # (log_sigma)^2
+  # A right-censored row at time 0 contributes nothing; its coefficients are
+  # 0 * Inf = NaN as computed (#341).
+  at_zero <- status == 0 & time <= 0
+  a_coef[at_zero] <- 0
+  b_coef[at_zero] <- 0
+  c_coef[at_zero] <- 0
 
   # Counting-process entry: + w * H(start) is the right-censored term at
   # `start` with the sign flipped, so subtract the right-censored
