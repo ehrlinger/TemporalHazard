@@ -265,7 +265,11 @@ final fit) may not be a maximum, by the rule
 [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 warns on with class `"hzr_possible_false_maximum"`, is counted, and
 `hzr_bootstrap()` warns once with that count. Such replicates are kept
-in the pooled results.
+in the pooled results. Two more kinds of replicate are counted, warned
+about once and kept in the same way: one whose base refit or final fit
+stopped on [`nlm()`](https://rdrr.io/r/stats/nlm.html) code 4 or 5 and
+failed the relative-gradient test, and, in selection mode, one whose
+screen had a candidate refit fail, so that candidate was never tested.
 
 ## Selection mode is experimental
 

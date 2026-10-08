@@ -313,7 +313,11 @@ coefficient distribution conditional on selection.</p>
 <p>A replicate in which any fit (the base refit, a stepwise refit or the final
 fit) may not be a maximum, by the rule <code><a href="hazard.html">hazard()</a></code> warns on with class
 <code>"hzr_possible_false_maximum"</code>, is counted, and <code>hzr_bootstrap()</code> warns
-once with that count. Such replicates are kept in the pooled results.</p>
+once with that count. Such replicates are kept in the pooled results.
+Two more kinds of replicate are counted, warned about once and kept in the
+same way: one whose base refit or final fit stopped on <code><a href="https://rdrr.io/r/stats/nlm.html" class="external-link">nlm()</a></code> code 4 or 5
+and failed the relative-gradient test, and, in selection mode, one whose
+screen had a candidate refit fail, so that candidate was never tested.</p>
     </div>
     <div class="section level2">
     <h2 id="selection-mode-is-experimental">Selection mode is experimental<a class="anchor" aria-label="anchor" href="#selection-mode-is-experimental"></a></h2>
