@@ -204,6 +204,10 @@ A replicate in which any fit (the base refit, a stepwise refit or the final
 fit) may not be a maximum, by the rule \code{\link[=hazard]{hazard()}} warns on with class
 \code{"hzr_possible_false_maximum"}, is counted, and \code{hzr_bootstrap()} warns
 once with that count. Such replicates are kept in the pooled results.
+Two more kinds of replicate are counted, warned about once and kept in the
+same way: one whose base refit or final fit stopped on \code{nlm()} code 4 or 5
+and failed the relative-gradient test, and, in selection mode, one whose
+screen had a candidate refit fail, so that candidate was never tested.
 }
 \section{Selection mode is experimental}{
 

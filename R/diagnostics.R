@@ -1627,6 +1627,10 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #' fit) may not be a maximum, by the rule [hazard()] warns on with class
 #' `"hzr_possible_false_maximum"`, is counted, and `hzr_bootstrap()` warns
 #' once with that count. Such replicates are kept in the pooled results.
+#' Two more kinds of replicate are counted, warned about once and kept in the
+#' same way: one whose base refit or final fit stopped on `nlm()` code 4 or 5
+#' and failed the relative-gradient test, and, in selection mode, one whose
+#' screen had a candidate refit fail, so that candidate was never tested.
 #'
 #' @param object A fitted `hazard` object (with `fit = TRUE`).
 #' @param n_boot Integer: number of bootstrap replicates (default 200).
@@ -2293,6 +2297,24 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # warns for each, but replicates run quietly, so the count is read off
   # each replicate's own fit and reported once. Their estimates are pooled.
   n_possible_false_max_reps <- 0L
+  # Replicates with a fit that stopped on nlm() code 4 or 5 and failed the
+  # relative-gradient test. hazard() warns for that stop with an unclassed
+  # warning, which the replicate's suppressWarnings() muffles, and the rule
+  # above leaves codes 4 and 5 out because hazard() already warns for them,
+  # so these were pooled with no count at all. Read off the fit's own state
+  # (.hzr_failed_gradient_stop()), not the warning text: the base refit and
+  # the final fit in select mode, the fit in refit mode. Flagged and pooled,
+  # as the possible-false-maximum replicates are, since hazard() leaves
+  # `converged` TRUE for these stops too.
+  n_gradient_fail_reps <- 0L
+  # Select-mode replicates whose screen had a candidate refit fail: that
+  # candidate was never tested, so it counts as not selected (or, for a
+  # removal, as kept). hzr_stepwise() warns about it, but not from inside a
+  # replicate. Flagged and pooled rather than counted as failed, as a screen
+  # that stopped on an uncomputable score is: the replicate's fit is sound,
+  # and it is its selection that is incomplete, which the warning says.
+  n_refit_failed_reps <- 0L
+  n_refit_stopped_reps <- 0L
   # Every fit in a replicate -- the base refit and each stepwise refit in
   # select mode, not only the final fit -- raises hazard()'s classed warning
   # when it meets the rule, whatever path it took. Caught here INSIDE the
@@ -2361,6 +2383,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     # (e.g. a mistyped `scope` column) still surface once from the up-front
     # validation call above, and hard failures are caught below and counted.
     pfm_state$seen <- FALSE
+    pfm_state$base_fit <- NULL
     if (select_mode) {
       # Refit the (shape-fixed) base model on the resampled data first, so
       # the stepwise search's entry/retention tests compare candidates
@@ -2376,6 +2399,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           }
           cl_base$fit <- TRUE
           base_boot <- eval(cl_base, envir = rep_env)
+          pfm_state$base_fit <- base_boot
           # The same reason refit mode records below, rather than whatever
           # `$` on a non-list says, or a missing objective's "did not
           # converge".
@@ -2459,9 +2483,20 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       if (isTRUE(pfm_state$seen)) {
         n_possible_false_max_reps <- n_possible_false_max_reps + 1L
       }
+      if (.hzr_failed_gradient_stop(boot_fit$fit) ||
+            (is.list(pfm_state$base_fit) &&
+               .hzr_failed_gradient_stop(pfm_state$base_fit$fit))) {
+        n_gradient_fail_reps <- n_gradient_fail_reps + 1L
+      }
       if (select_mode) {
         if (isTRUE(boot_fit$criteria$stopped_uncomputable)) {
           n_uncomputable_reps <- n_uncomputable_reps + 1L
+        }
+        if (length(boot_fit$criteria$refit_failures) > 0L) {
+          n_refit_failed_reps <- n_refit_failed_reps + 1L
+          if (isTRUE(boot_fit$criteria$stopped_refit_failed)) {
+            n_refit_stopped_reps <- n_refit_stopped_reps + 1L
+          }
         }
         # Replicates run quietly, so the screen's own warning about a
         # variable decided without a Wald test never reaches the user (#389).
@@ -2683,8 +2718,13 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     warning(n_unrep_scale_reps, " of ", n_success, " successful replicates ",
             "reported a Weibull scale mu that cannot be represented (Inf, 0 ",
             "or a subnormal number), so the summary of mu is not usable; the ",
-            "other parameters are unaffected. A covariate far from zero is ",
-            "the usual cause: centre or rescale the covariates and refit.",
+            "other parameters' estimates are unaffected",
+            if (select_mode) {
+              paste0(" (a screen whose candidate refits failed is reported ",
+                     "separately)")
+            },
+            ". A covariate far from zero is the usual cause: centre or ",
+            "rescale the covariates and refit.",
             call. = FALSE)
   }
 
@@ -2698,6 +2738,25 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       "Check the base fit from other starting values, or centre or rescale ",
       "the covariates."),
       class = "hzr_possible_false_maximum"))
+  }
+
+  if (n_gradient_fail_reps > 0L) {
+    warning(n_gradient_fail_reps, " of ", n_success, " successful replicates ",
+            "had a fit that stopped on nlm() code 4 or 5 and failed the ",
+            "relative-gradient test SAS/C HAZARD requires, in the base fit or ",
+            "the final fit: its estimates may not be at the maximum. They are ",
+            "pooled with the others. Raise control$maxit, or centre or ",
+            "rescale the covariates.", call. = FALSE)
+  }
+
+  if (n_refit_failed_reps > 0L) {
+    warning(n_refit_failed_reps, " of ", n_success, " successful replicates ",
+            "had a candidate refit fail in the stepwise screen (",
+            n_refit_stopped_reps, " stopped on it), so that candidate was ",
+            "never tested: it counts as not selected, or for a removal as ",
+            "kept, and the selection frequencies are biased by it. Run ",
+            "hzr_stepwise() on the base fit to see the refit's error.",
+            call. = FALSE)
   }
 
   if (n_wald_untested_reps > 0L) {
@@ -3017,4 +3076,19 @@ print.hzr_competing_risks <- function(x, digits = 4, ...) {
   print(utils::head(display, 15), row.names = FALSE)
   if (nrow(display) > 15) cat("... (", nrow(display) - 15, " more rows)\n")
   invisible(x)
+}
+
+#' Whether a fit stopped on nlm() code 4 or 5 and failed the gradient test
+#'
+#' The condition on which `hazard()` warns that the optimizer reported
+#' convergence but the estimates fail the relative-gradient test. That
+#' warning is unclassed, so `hzr_bootstrap()` reads the fit's state instead.
+#' Keep in step with the test in `hazard()`.
+#' @param fit_state A fit's `$fit` list.
+#' @return `TRUE` or `FALSE`.
+#' @noRd
+.hzr_failed_gradient_stop <- function(fit_state) {
+  isTRUE(fit_state$converged) &&
+    isTRUE(fit_state$polish_code %in% c(4L, 5L)) &&
+    !isTRUE(fit_state$rel_gradient <= .Machine$double.eps^(1 / 3))
 }
