@@ -47,6 +47,19 @@ test_that("the #518 false maxima that stop on code 2 warn, and stay converged", 
     r <- pfm_fit(hazard(a[[1L]], data = d, dist = a[[2L]], theta = a[[3L]],
                         fit = TRUE))
     f <- r$fit$fit
+    # From c(-100, 1, 1, 1) this fit's false maximum depends on the platform:
+    # code 3 at LL -9477.9 on Linux, code 4 at LL -1072.3 on Windows (#615).
+    # The rule leaves codes 4 and 5 to their own warning, so there that one
+    # fires and the classed one does not; the fit is warned about either way.
+    if (nm == "lognormal_covariates" && isTRUE(f$polish_code %in% c(4L, 5L))) {
+      msgs <- vapply(r$warnings, conditionMessage, character(1))
+      expect_true(any(grepl("fail the relative-gradient test SAS/C HAZARD",
+                            msgs, fixed = TRUE)), label = paste(nm, "code 4/5"))
+      expect_length(pfm_classed(r), 0L)
+      expect_gt(f$rel_gradient, 1e-3)
+      expect_true(f$converged, label = paste(nm, "converged unchanged"))
+      next
+    }
     # The premise: the stop the rule is about.
     expect_true(f$polish_code %in% c(2L, 3L), label = paste(nm, "code"))
     expect_gt(f$rel_gradient, 1e-3)

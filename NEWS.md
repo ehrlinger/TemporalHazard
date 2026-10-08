@@ -1,17 +1,22 @@
 # TemporalHazard (unreleased)
 
-* `hzr_translate_sas()` code failed on R before 4.4 when a phase statement
-  named a variable that is not a syntactic R name, such as `_X1`: the fit
-  stopped with "object '_X1' not found". The emitted status chunk adds its
-  column with `transform()`, which renamed `_X1` to `X_X1` before R 4.4. The
-  chunk now passes `check.names = FALSE`, so the column keeps its name on
-  every R version (#609).
-
 * Articles on the pkgdown site put the table of contents on the left and use
   the full width of the window, through `pkgdown/extra.css`. The installed
   vignettes are unchanged: the Quarto vignette engine renders them in its own
   minimal format, which has no sidebar layout.
 
+* `hzr_bootstrap(seed = )` no longer resets your random number stream. It
+  seeded the global generator with `set.seed()` and left it there, so a
+  script that called `set.seed()` once at the top lost that seed at its first
+  seeded bootstrap, and every draw after it followed from the bootstrap's
+  seed instead. The seed now holds for the call only, through
+  `withr::local_seed()`, and your stream is restored on return. The
+  replicates for a given `seed` are unchanged. `withr` moves from `Suggests`
+  to `Imports`; it depends only on base R.
+
+* `DESCRIPTION` now declares the Quarto command line tool in
+  `SystemRequirements`. The vignettes have always needed it to build; the
+  field makes that visible to installers and to `R CMD check`.
 # TemporalHazard 1.2.13
 
 ## Breaking changes
