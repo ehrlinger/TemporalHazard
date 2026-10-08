@@ -1,9 +1,16 @@
 # TemporalHazard (unreleased)
 
+* Articles on the pkgdown site put the table of contents on the left and use
+  the full width of the window, through `pkgdown/extra.css`. The installed
+  vignettes are unchanged: the Quarto vignette engine renders them in its own
+  minimal format, which has no sidebar layout.
+
 * Now requires R 4.4.0 or newer, up from 4.1.0, to match the rest of the
   HVTI family. `hvtiR::install()` installs the members together, and several
   already required 4.4.0, so on an older R the install failed whatever this
   package declared.
+
+
 
 * `hzr_bootstrap(seed = )` no longer resets your random number stream. It
   seeded the global generator with `set.seed()` and left it there, so a
@@ -17,8 +24,24 @@
 * `DESCRIPTION` now declares the Quarto command line tool in
   `SystemRequirements`. The vignettes have always needed it to build; the
   field makes that visible to installers and to `R CMD check`.
-
 # TemporalHazard 1.2.13
+
+## Breaking changes
+
+* **`hzr_bootstrap(seed = )` no longer resets your random number stream
+  (#611).** It seeded the global generator with `set.seed()` and left it
+  there, so a script that called `set.seed()` once at the top lost that seed
+  at its first seeded bootstrap, and every draw after it followed from the
+  bootstrap's seed instead. The seed now holds for the call only, through
+  `withr::local_seed()`, and your stream is restored when the call returns or
+  fails. **A draw after `hzr_bootstrap(seed = k)` no longer follows from
+  `k`**: a script that relied on that must call `set.seed(k)` itself. The
+  replicates for a given `seed` are unchanged, and equal those of
+  `set.seed(k)` followed by `seed = NULL`. `seed` must now be `NULL` or a
+  single whole number: `1.7`, `c(1, 2)` and `TRUE` used to act silently as
+  `seed = 1`, and `NA` failed with a message that did not name `seed`.
+  `withr` moves from `Suggests` to `Imports`; it depends only on base R.
+  This restores the 1.0.2 behaviour, which 1.0.3 removed.
 
 ## Bug fixes
 

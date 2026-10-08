@@ -2085,11 +2085,23 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
 
   # Seeded after the refusals above, so a refused call leaves the caller's
   # random number stream alone. local_seed() puts the caller's stream back on
-  # exit, so a script that seeded once at the top keeps its own stream after
-  # this call. withr rather than a hand-rolled restore, because writing
-  # .Random.seed into .GlobalEnv ourselves is what 1.0.3 removed under CRAN
-  # policy.
-  if (!is.null(seed)) withr::local_seed(seed)
+  # exit, error exits included, so a script that seeded once at the top keeps
+  # its own stream after this call (#611). It writes .Random.seed into
+  # .GlobalEnv to do so, as .hzr_start_perturbations() does by hand; 1.0.3
+  # removed this package's own write over CRAN policy, so the 1.3.0
+  # submission should confirm the restore is acceptable.
+  # Validated as control$start_seed is (.hzr_optim_multiphase()): set.seed()
+  # truncates 1.7 to 1 and takes the first of c(1, 2), so either would
+  # silently repeat seed 1, and an NA or out-of-range value failed with a
+  # message that did not name `seed`.
+  if (!is.null(seed)) {
+    if (length(seed) != 1L || !is.numeric(seed) || !is.finite(seed) ||
+        seed != trunc(seed) || abs(seed) > .Machine$integer.max) {
+      stop("`seed` must be NULL or a single whole number no larger in ",
+           "magnitude than ", .Machine$integer.max, ".", call. = FALSE)
+    }
+    withr::local_seed(seed)
+  }
 
   # A vector fit made without `data =` has no frame to count rows in, and
   # nrow(NULL) is NULL: every such fit was refused, naming its vectors 'NA'
