@@ -23,7 +23,22 @@ test_that("an outside term beside a data column is named, whichever columns newd
     msg <- tryCatch(predict(fit, newdata = nd, type = "linear_predictor"),
                     error = conditionMessage)
     expect_match(msg, want, fixed = TRUE)
-    expect_false(grepl("variable lengths differ", msg, fixed = TRUE))
+    # What this assertion protects, per the roxygen on
+    # `.hzr_outside_rows_term()`: left to `model.frame()` the failure named
+    # "whichever variable it compared against" -- here `mal`, a column the
+    # user supplied CORRECTLY -- and the user was left with that. It is load
+    # bearing, and was once weakened on this branch to a form that could not
+    # fail.
+    #
+    # The base text is now quoted back on a later line (#446), so the
+    # protection is stated as ORDER: ours leads, `mal` never does. That can
+    # fail -- flipping the order or dropping the note both break it, and both
+    # were run as mutants.
+    expect_match(strsplit(msg, "\n", fixed = TRUE)[[1L]][[1L]], want,
+                 fixed = TRUE)
+    expect_false(grepl("variable lengths differ",
+                       strsplit(msg, "\n", fixed = TRUE)[[1L]][[1L]],
+                       fixed = TRUE))
   }
 })
 
@@ -405,19 +420,21 @@ test_that("a term that reads an earlier term's assignment is not named", {
   expect_false(grepl("I(zz^2)", msg, fixed = TRUE))
 })
 
-test_that("a nested model.frame() failure is misattributed, as documented", {
-  # PINS A KNOWN LIMITATION, deliberately. `conditionCall()` cannot tell our
-  # own frame assembly from one the user's term performed itself: both read
-  # `model.frame.default`. So an error from a `model.frame()` call INSIDE a
-  # term is misread as the design build and replaced by the refusal, naming
-  # whichever term is row-mismatched.
+test_that("a nested model.frame() failure keeps its own error and gains a note", {
+  # PINS THE REMAINING IMPERFECTION, deliberately. `conditionCall()` cannot
+  # tell our own frame assembly from one the user's term performed itself:
+  # both read `model.frame.default`. So an error from a `model.frame()` call
+  # INSIDE a term is still read as the design build, and a row-mismatched
+  # term is named alongside it.
   #
-  # Separating them needs the call stack at signal time, which is more
-  # machinery than this helper earns; the roxygen and NEWS both say so, and
-  # the fix is tracked in its own issue. This test exists so the text and
-  # the behaviour cannot drift apart silently: if someone implements the
-  # frame-depth test, this fails and the documentation must be updated with
-  # it.
+  # What changed is that the naming no longer REPLACES the caller's failure
+  # (#446): the original message survives as the first line, so the user is
+  # told what actually went wrong and the appended note is visibly a separate
+  # statement. Separating the two frames needs the call stack at signal time,
+  # which is more machinery than this helper earns; the roxygen and NEWS both
+  # say so. This test exists so the text and the behaviour cannot drift apart
+  # silently: if someone implements the frame-depth test, this fails and the
+  # documentation must be updated with it.
   set.seed(31)
   d <- data.frame(t = rexp(60), s = rbinom(60, 1, 0.7), age = rnorm(60, 60, 5))
   zz <- rnorm(60)
@@ -440,7 +457,13 @@ test_that("a nested model.frame() failure is misattributed, as documented", {
             type = "linear_predictor"),
     error = conditionMessage
   )
-  # The limitation, stated as an expectation rather than left to prose.
+  # The imperfection, stated as an expectation rather than left to prose:
+  # a term IS still named for a failure that was not its doing. The nested
+  # call raises a plain base error, indistinguishable from our own frame
+  # assembly by `conditionCall()`, so it takes the base-error route.
   expect_match(msg, "does not give one value per row", fixed = TRUE)
-  expect_false(grepl("variable lengths differ", msg, fixed = TRUE))
+  # And the half that is fixed: the caller's own failure is no longer thrown
+  # away -- it is quoted back, after our statement.
+  expect_match(msg, "The design build reported: variable lengths differ",
+               fixed = TRUE)
 })
