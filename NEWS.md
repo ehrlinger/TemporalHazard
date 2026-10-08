@@ -5,6 +5,15 @@
   already required 4.4.0, so on an older R the install failed whatever this
   package declared.
 
+* `hzr_bootstrap(seed = )` no longer resets your random number stream. It
+  seeded the global generator with `set.seed()` and left it there, so a
+  script that called `set.seed()` once at the top lost that seed at its first
+  seeded bootstrap, and every draw after it followed from the bootstrap's
+  seed instead. The seed now holds for the call only, through
+  `withr::local_seed()`, and your stream is restored on return. The
+  replicates for a given `seed` are unchanged. `withr` moves from `Suggests`
+  to `Imports`; it depends only on base R.
+
 # TemporalHazard 1.2.13
 
 ## Bug fixes

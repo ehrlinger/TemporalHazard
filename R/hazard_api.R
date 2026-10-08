@@ -3017,6 +3017,7 @@ print.hazard <- function(x, ...) {
 #'   the standard error of `log(mu)`; it is not tested against 0.
 #' @examples
 #' # -- Single-phase Weibull summary ------------------------------------
+#' set.seed(1)
 #' fit <- hazard(time = rexp(30, 0.5), status = rep(1L, 30),
 #'               theta = c(0.3, 1.0), dist = "weibull", fit = TRUE)
 #' summary(fit)
@@ -3278,6 +3279,7 @@ print.summary.hazard <- function(x, ...) {
 #' @param object A `hazard` object.
 #' @param ... Unused; for S3 compatibility.
 #' @examples
+#' set.seed(1)
 #' fit <- hazard(time = rexp(30, 0.5), status = rep(1L, 30),
 #'               theta = c(0.3, 1.0), dist = "weibull", fit = TRUE)
 #' coef(fit)
@@ -3298,6 +3300,7 @@ coef.hazard <- function(object, ...) {
 #' @param object A `hazard` object.
 #' @param ... Unused; for S3 compatibility.
 #' @examples
+#' set.seed(1)
 #' fit <- hazard(time = rexp(30, 0.5), status = rep(1L, 30),
 #'               theta = c(0.3, 1.0), dist = "weibull", fit = TRUE)
 #' vcov(fit)
