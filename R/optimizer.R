@@ -548,7 +548,7 @@ NULL
       se_reason <- "numDeriv not installed and no analytic Hessian"
     } else {
       hess_result <- tryCatch(
-        numDeriv::hessian(objective, result$par),
+        .hzr_numeric_hessian(objective, result$par),
         error = function(e) {
           warning("numDeriv::hessian() failed, so standard errors are ",
                   "unavailable: ", conditionMessage(e), call. = FALSE)
