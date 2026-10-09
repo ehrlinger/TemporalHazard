@@ -74,6 +74,11 @@ weighted fit both counts carry the case weights, since such a fit conserves
 weighted events. Both follow \code{\link[=hzr_gof]{hzr_gof()}}. The horizon therefore only
 stratifies subjects into risk groups; it does not restrict or exclude any
 subject, and the expected/observed totals are independent of it.
+
+A multiphase fit that dropped the rows where a phase covariate was missing
+is refused with an error, as \code{\link[=hzr_gof]{hzr_gof()}} refuses it: its design matrices
+hold fewer rows than there are subjects, so no subject's predicted
+cumulative hazard can be formed. Refit it on complete cases.
 }
 \examples{
 \donttest{

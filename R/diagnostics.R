@@ -24,6 +24,11 @@ NULL
 #' stratifies subjects into risk groups; it does not restrict or exclude any
 #' subject, and the expected/observed totals are independent of it.
 #'
+#' A multiphase fit that dropped the rows where a phase covariate was missing
+#' is refused with an error, as [hzr_gof()] refuses it: its design matrices
+#' hold fewer rows than there are subjects, so no subject's predicted
+#' cumulative hazard can be formed. Refit it on complete cases.
+#'
 #' @param object A fitted `hazard` object (with `fit = TRUE`).
 #' @param time Numeric scalar: the horizon at which predicted survival is used
 #'   to **rank subjects into risk groups** (e.g. `time = 12` ranks by 12-month
@@ -129,6 +134,8 @@ hzr_deciles <- function(object, time, groups = 10L,
     stop("'status'/'event_time' lengths must match the fitted data length (",
          n_model, ").", call. = FALSE)
   }
+
+  .hzr_refuse_short_phase_design(object, "hzr_deciles()")
 
   # --- Per-observation predicted cumulative hazard --------------------------
   # SAS %DECILES method (Blackstone/Naftel HAZARD): the "expected events" in a
@@ -373,6 +380,38 @@ print.hzr_deciles <- function(x, digits = 3, ...) {
 # hzr_gof -- Observed vs. expected goodness-of-fit
 # =========================================================================
 
+#' Refuse a multiphase fit whose phase designs are shorter than its data
+#'
+#' A multiphase fit drops rows with a missing phase covariate from that
+#' phase's design matrix but keeps every row's time and status. A
+#' per-subject prediction would then recycle the shorter design across the
+#' subjects, so hzr_gof() and hzr_deciles() refuse rather than tally over it.
+#' One check, shared, so the two cannot drift.
+#'
+#' @param object A fitted `hazard` object.
+#' @param caller The calling function's name, for the message.
+#' @return `NULL`, invisibly; called for its error.
+#' @keywords internal
+#' @noRd
+.hzr_refuse_short_phase_design <- function(object, caller) {
+  if (!identical(object$spec$dist, "multiphase")) return(invisible(NULL))
+  n_total <- length(object$data$time)
+  short <- vapply(object$fit$x_list, function(m) {
+    !is.null(m) && NROW(m) != n_total
+  }, logical(1))
+  if (any(short)) {
+    stop(caller, " needs one design row per subject, but the fit dropped ",
+         "the rows where any covariate was missing, from every phase: ",
+         ngettext(sum(short), "phase ", "phases "),
+         paste0("'", names(short)[short], "'", collapse = ", "),
+         ngettext(sum(short), " has", " have"),
+         " fewer rows than the data. Refit on complete cases, dropping ",
+         "those rows from every input (data, or time, status and x).",
+         call. = FALSE)
+  }
+  invisible(NULL)
+}
+
 #' Goodness-of-fit: observed vs. predicted events
 #'
 #' Compare a fitted hazard model with the data two ways: its survival curve
@@ -614,23 +653,7 @@ hzr_gof <- function(object, time_grid = NULL) {
     object$fit$x_list, function(m) !is.null(m) && ncol(m) > 0, logical(1)
   ))
 
-  # A multiphase fit drops rows with a missing phase covariate from that
-  # phase's design matrix but keeps every row's time and status. A
-  # per-subject prediction would then recycle the shorter design across the
-  # subjects, so refuse rather than tally over it.
-  short <- vapply(object$fit$x_list, function(m) {
-    !is.null(m) && NROW(m) != n_total
-  }, logical(1))
-  if (is_multiphase && any(short)) {
-    stop("hzr_gof() needs one design row per subject, but the fit dropped ",
-         "the rows where any covariate was missing, from every phase: ",
-         ngettext(sum(short), "phase ", "phases "),
-         paste0("'", names(short)[short], "'", collapse = ", "),
-         ngettext(sum(short), " has", " have"),
-         " fewer rows than the data. Refit on complete cases, dropping ",
-         "those rows from every input (data, or time, status and x).",
-         call. = FALSE)
-  }
+  .hzr_refuse_short_phase_design(object, "hzr_gof()")
 
   curve_obj <- object
   if (has_phase_x) {
@@ -1746,7 +1769,11 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     (a refit whose reported objective is still the sentinel), or
 #'     `"refit did not converge (converged = FALSE)"` (a refit that reports
 #'     `converged = FALSE`, including one stopped on a score that is not
-#'     finite, #518).
+#'     finite, #518), or, in select mode,
+#'     `"base refit did not converge"` (a base refit with a non-finite
+#'     objective) or `"base refit did not converge (converged = FALSE)"` (a
+#'     base refit that reports `converged = FALSE`: the screen measures its
+#'     candidates against the base, so the replicate is not screened).
 #'     It sums to `n_failed`, and
 #'     is an empty named integer vector, never `NULL`, when none failed. When
 #'     every replicate fails, `hzr_bootstrap()` also warns, naming the most
@@ -2407,6 +2434,17 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           if (!is.null(not_a_fit)) stop(not_a_fit)
           if (!is.finite(base_boot$fit$objective)) {
             stop("base refit did not converge")
+          }
+          # The screen measures every candidate against this base, so a base
+          # that stopped short is a failed replicate, as a final fit that
+          # did not converge is below (#518). Under AIC each candidate
+          # finished the climb the base did not, and was credited with it.
+          # Under a forward Wald screen, which tolerates such a base, a
+          # replicate that entered nothing returned the base as its final
+          # fit and failed below while one that entered something passed,
+          # so the survivors were biased towards selection.
+          if (isFALSE(base_boot$fit$converged)) {
+            stop("base refit did not converge (converged = FALSE)")
           }
           do.call(hzr_stepwise, c(
             list(
