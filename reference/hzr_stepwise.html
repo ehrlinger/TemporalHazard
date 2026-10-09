@@ -182,7 +182,10 @@ criterion</strong> section.</p></dd>
 p-value thresholds (<code>slentry</code> / <code>slstay</code>) but score entry candidates
 differently, and can therefore select different variable sets; <code>"score"</code>
 reproduces C/SAS HAZARD and needs no per-candidate refit.  <code>"aic"</code> adds or
-drops whenever it lowers the AIC.  See the <strong>Selection direction and
+drops whenever it lowers the AIC.  <code>"score"</code> and <code>"aic"</code> refuse a base
+fit that did not converge, since both measure candidates against it, and
+so does <code>"wald"</code> unless <code>direction = "forward"</code>, since a removal is
+tested on the base's own estimates.  See the <strong>Selection direction and
 criterion</strong> section.</p></dd>
 
 

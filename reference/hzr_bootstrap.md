@@ -173,9 +173,14 @@ A list with class `"hzr_bootstrap"` containing:
   refit whose reported objective is still the sentinel), or
   `"refit did not converge (converged = FALSE)"` (a refit that reports
   `converged = FALSE`, including one stopped on a score that is not
-  finite, \#518). It sums to `n_failed`, and is an empty named integer
-  vector, never `NULL`, when none failed. When every replicate fails,
-  `hzr_bootstrap()` also warns, naming the most common reason.
+  finite, \#518), or, in select mode, `"base refit did not converge"` (a
+  base refit with a non-finite objective) or
+  `"base refit did not converge (converged = FALSE)"` (a base refit that
+  reports `converged = FALSE`: the screen measures its candidates
+  against the base, so the replicate is not screened). It sums to
+  `n_failed`, and is an empty named integer vector, never `NULL`, when
+  none failed. When every replicate fails, `hzr_bootstrap()` also warns,
+  naming the most common reason.
 
 - n_uncomputable_replicates:
 

@@ -114,6 +114,13 @@ The horizon therefore only stratifies subjects into risk groups; it does
 not restrict or exclude any subject, and the expected/observed totals
 are independent of it.
 
+A multiphase fit that dropped the rows where a phase covariate was
+missing is refused with an error, as
+[`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
+refuses it: its design matrices hold fewer rows than there are subjects,
+so no subject's predicted cumulative hazard can be formed. Refit it on
+complete cases.
+
 ## See also
 
 [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
