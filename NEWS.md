@@ -833,27 +833,28 @@
   macro reference in `PARMS` could carry a value or flag that changes
   `SETG1`'s case, the note says the rewrite holds only if it does not.
 
-* **A `PROC HAZPRED` grid translated by `hzr_translate_sas()` now respects
-  SAS macro scope (#621, #625).** A `DATA PRED;` step inside a
-  `%MACRO ... %MEND`
-  definition was read as if it ran where it stands. A job that built
-  `PRED` with `AGE=50` and then defined a macro rebuilding it with
-  `AGE=70` got predictions at 70, with no `$untranslated` row, although
-  the macro was never called and SAS predicted at 50. A step inside a
-  definition no longer defines the grid where it stands. A `PROC HAZPRED`
-  inside a definition is refused, with an `$untranslated` row: SAS runs it
-  where the macro is called, so its grid depends on what came before that
-  call. Calling a macro whose body writes the grid, with a `DATA PRED;`
-  step or by sorting it in place (`PROC SORT DATA=PRED NODUPKEY;`), refuses
-  the grid, as a macro's `OUT=` already did; such a sort used to go unseen,
-  so the emitted grid kept the rows SAS removes. An `%INCLUDE`, a call of a
-  macro the file does not define, or a sort in a macro body with no
-  `DATA=`, between the grid's DATA step and the `PROC HAZPRED`, may rewrite
-  the grid out of sight: the grid the job shows is still emitted, and each
-  such call has an `$untranslated` row saying so. Jobs with no macros
-  translate as before. On the public corpus, the only change is the reason
-  given for two grids that were already refused, whose `PROC HAZPRED`
-  stands inside a macro definition.
+* **A `PROC HAZPRED` grid is emitted only when `hzr_translate_sas()` reads
+  every statement that can write it (#621, #625, #628).** The grid is
+  rebuilt from the job's DATA steps under an allow-list: global statements
+  (`TITLE`, `OPTIONS`, `LIBNAME` and the like), `%LET` and `%PUT`,
+  procedures whose output datasets are all named by an option or statement
+  the translator reads, DATA steps it translates, and a `PROC SORT` with
+  only `DATA=`, `OUT=` and an ascending `BY`. Anything else between a step
+  the grid uses and the `PROC HAZPRED` refuses the grid, with an
+  `$untranslated` row naming the statement: a `WHERE` or `NODUPKEY` in that
+  sort, an `%INCLUDE`, a call of a macro the file does not define or whose
+  body writes the grid (with a DATA step, a sort in place, or `PROC
+  DATASETS`), open-code `%IF` or `%DO`, and a macro call with no semicolon,
+  which swallows the statement after it. SAS macro scope is respected: a
+  step inside a `%MACRO ... %MEND` definition does not define the grid where
+  it stands, and a `PROC HAZPRED` inside a definition is refused, because
+  SAS runs it where the macro is called. A call before the grid's first
+  step cannot write a dataset the grid reads, but it may change session
+  state the grid depends on, such as `OPTIONS OBS=`: the grid is emitted,
+  and the call has an `$untranslated` row saying so. A statement the
+  translator cannot place outside any step, or `OPTIONS OBS=` itself,
+  refuses the grid wherever it stands. On the public corpus, four jobs gain
+  two such rows each, for an `%INCLUDE` and a macro call before the grid.
 
 * **A stepwise screen on a Weibull fit whose scale cannot be represented
   failed every candidate refit, and a selection-mode `hzr_bootstrap()`
@@ -891,6 +892,45 @@
   `D[[".hzr_status"]] <- with(D, ...)`, so the column keeps its name on
   every R version, including when the chunk runs again on data that already
   carries `.hzr_status` (#609).
+
+* **A `PROC HAZPRED` `TIME` statement with more than one variable now stops
+  the block, as `PROC HAZPRED` does (#628).** `TIME` takes exactly one name, and a
+  second is a syntax error on which the procedure stops. `hzr_translate_sas()`
+  took the first name and emitted the predictions. It now emits a `stop()`
+  and an `$untranslated` row, as it does for a multi-operand `TIME` in
+  `PROC HAZARD`.
+
+* **A grid `DATA` step with `SET;` and no dataset name, or a numeric
+  `LENGTH` below 8 bytes, now refuses the grid (#628).** `SET;` reads the most
+  recent dataset, and was read as no `SET` at all; a short numeric length
+  stores fewer digits than the emitted grid holds.
+
+* A select-mode `hzr_bootstrap()` replicate whose base refit did not converge
+  is now counted as failed (#627), with the reason "base refit did not converge
+  (converged = FALSE)". The rule that a replicate which does not converge
+  fails applied only to the final fit, so under `criterion = "aic"` each
+  candidate warm-started from the base's unfinished point, reached the real
+  maximum and was credited with the base's shortfall. Under a forward Wald
+  screen a replicate that entered nothing failed while one that entered
+  something passed, so the replicates kept were biased towards selection. On 300 Weibull rows
+  with two pure-noise columns, a base that converged on the full data but not
+  on any resample gave 19 of 30 successful replicates with no warning, and
+  selected the noise columns in 12 and 8 of them.
+
+* `hzr_stepwise(criterion = "aic")` now refuses a base fit that did not
+  converge (#627), as `criterion = "score"` already did. A candidate's delta AIC is
+  measured against the base's log-likelihood, so a base that stopped short
+  entered pure noise at delta AIC -16.5 with no warning. `criterion = "wald"`
+  refuses one too unless `direction = "forward"`: a Wald entry is tested at
+  the candidate's own converged refit, but a removal is tested on the base's
+  own estimates and variance.
+
+* `hzr_deciles()` now refuses a multiphase fit that dropped the rows where a
+  phase covariate was missing (#627), with the same check and message as
+  `hzr_gof()`. It predicted each subject's cumulative hazard from the shorter
+  design, recycled onto the wrong subjects, and reported every subject
+  included: on `avc` with half the covariate missing, 70 observed events
+  against 159 expected and p < 2e-16, with no warning.
 
 ## Packaging and documentation
 
@@ -4309,7 +4349,6 @@
   that fails is recorded in `$criteria$refit_failures` and warned about
   rather than leaving a row indistinguishable from one never refit.
 
-
 # TemporalHazard 1.2.6
 
 ## Bug fixes
@@ -4401,7 +4440,6 @@
   single `.hzr_logl_interval()`. Behavior under the default is unchanged and
   bit-identical, log-likelihood and gradient alike.
 
-
 # TemporalHazard 1.2.3
 
 ## Bug fixes
@@ -4428,7 +4466,6 @@
   character column named in an explicit `scope`, which the score criterion
   still cannot expand. Its refusal used to say switching criterion would not
   help, and now points at it instead.
-
 
 # TemporalHazard 1.2.2
 
@@ -4793,7 +4830,6 @@
   indistinguishable from a start that merely optimized badly, which is how the
   defect above stayed hidden.
 
-
 # TemporalHazard 1.2.1
 
 ## Breaking changes
@@ -5059,7 +5095,6 @@ selects.
   `Suggests` here as elsewhere: when it is absent this now stops and names both
   it and `criterion = "wald"`, rather than returning a screen that tested
   nothing.
-
 
 * **`hzr_stepwise(scope = NULL)` still failed on a formula passed by
   variable.** The fix for that defect reached `.hzr_refit_with_scope()` but
