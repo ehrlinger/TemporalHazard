@@ -2345,9 +2345,9 @@
 #'   `.hzr_parse_grid()` refuses the grid when one stands between a step the
 #'   grid uses and the point that reads it. Before that step it cannot write
 #'   a dataset the grid reads, because the step builds its dataset afresh.
-#'   It is not refused there, so a call that changes session state the grid
-#'   depends on (an `OPTIONS OBS=` in an `%INCLUDE`d file) is not seen: every
-#'   corpus grid has an `%INCLUDE` or a macro call before its steps.
+#'   It may still set session state the grid reads (an `OPTIONS OBS=` in an
+#'   `%INCLUDE`d file), so there the grid is emitted and the call recorded in
+#'   `$untranslated`, saying so.
 #' * **unread**: the parser has lost its place, or the statement changes how
 #'   every later step reads: a statement outside every step that is none of
 #'   the above (as when a macro call with no semicolon swallows the `DATA`
@@ -3412,6 +3412,21 @@
     return(refuse(paste0(
       "`", cl$what, "` ", cl$why, ". It stands after the step that builds ", nms,
       " and before ", nms, " is read for this PROC HAZPRED, so it may rewrite ", nms)))
+  }
+  # A call before the grid's first step cannot write a dataset the grid
+  # reads, because the grid's steps build those afresh, but it may set
+  # session state they read. The grid is emitted and the call recorded
+  # (maintainer decision, 2026-10-09). The windows of the steps the grid uses
+  # run without a gap from its first step to the PROC HAZPRED, so every
+  # other call before it was refused above.
+  first <- min(vapply(ks, function(j) events[[j]]$pos, numeric(1L)))
+  for (cl in Filter(function(e) identical(e$kind, "call") && e$pos < first, events)) {
+    untr <- rbind(untr, .hzr_untranslated_frame(NA_integer_, cl$what, paste0(
+      "This statement ", cl$why, ". It runs before the first step that builds the ",
+      "grid for DATA=", name, ", so it writes no dataset the grid reads, but it may ",
+      "change session state the grid depends on, such as OPTIONS OBS= or ",
+      "FIRSTOBS=. The grid emitted is the one the job's DATA steps show, which is ",
+      "SAS's only if this statement leaves that state alone.")))
   }
   warn <- unlist(lapply(parts, function(x) x$warn))
   W <- as.name(name)

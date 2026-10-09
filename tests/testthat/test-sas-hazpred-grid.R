@@ -542,7 +542,10 @@ test_that("calling a macro whose body writes the grid refuses the grid", {
   expect_match(refused_494(job), "PRED is written by %ALTGRID", fixed = TRUE)
 })
 
-test_that("a call before the grid's step, or macro statements, add no row", {
+test_that("a call before the grid's step is recorded; macro statements add no row", {
+  # Approved change (2026-10-09): the calls before the grid's step each get a
+  # row, since they may set session state the grid reads. %LET, %PUT and a
+  # macro whose body writes nothing add none.
   job <- translate_494(c(
     "%INCLUDE 'lib.sas'; %MAKEGRID;",
     fit_macro_grid,
@@ -551,7 +554,7 @@ test_that("a call before the grid's step, or macro statements, add no row", {
     "%QUIET;",
     hazpred_macro_grid
   ))
-  expect_equal(nrow(macro_rows(job)), 0L)
+  expect_equal(macro_rows(job)$construct, c("%INCLUDE 'LIB.SAS'", "%MAKEGRID"))
   expect_equal(grid_494(job)$AGE, c(50, 50, 50))
 })
 
@@ -886,7 +889,9 @@ test_that("statements the allow-list reads leave the grid as it was (control)", 
   expect_equal(grid_494(job)$AGE, c(50, 50, 50))
   expect_equal(grid_494(job)$time, c(1, 2, 3))
   expect_equal(nrow(grid_rows_allow(job)), 0L)
-  expect_equal(nrow(macro_rows(job)), 0L)
+  # Only the two calls before the grid's step are recorded (2026-10-09).
+  expect_equal(macro_rows(job)$construct,
+               c("%INCLUDE 'LIB.SAS'", "%PLOT( ID L=\"X\", END; LABELX L=\"Y\", END; )"))
 })
 
 test_that("a numeric LENGTH below 8 in the grid's step refuses it", {
@@ -940,4 +945,24 @@ test_that("option and programming statements in a listed procedure leave the gri
   ))
   expect_equal(grid_494(job)$AGE, c(50, 50, 50))
   expect_equal(nrow(grid_rows_allow(job)), 0L)
+})
+
+test_that("a call before the grid's first step keeps the grid and records a row", {
+  # Maintainer decision (2026-10-09). The call cannot write a dataset the
+  # grid reads, because the grid's steps build them afresh, but it may set
+  # session state they read (OPTIONS OBS=). The grid is emitted, and the row
+  # says it is SAS's grid only if the call leaves that state alone.
+  for (call in c("%INCLUDE 'setup.sas';", "%SETUP;")) {
+    job <- translate_494(c(call, fit_macro_grid, hazpred_macro_grid))
+    expect_equal(grid_494(job)$AGE, c(50, 50, 50), info = call)
+    rows <- macro_rows(job)
+    expect_equal(nrow(rows), 1L, info = call)
+    expect_equal(rows$construct, sub(";$", "", toupper(call)), info = call)
+    expect_match(rows$reason, "session state", fixed = TRUE, info = call)
+    expect_match(rows$reason, "OPTIONS OBS=", fixed = TRUE, info = call)
+    expect_match(rows$reason, "DATA=PRED", fixed = TRUE, info = call)
+  }
+  # Control: no call before the grid, no row.
+  job <- translate_494(c(fit_macro_grid, hazpred_macro_grid))
+  expect_equal(nrow(job$untranslated), 0L)
 })

@@ -15,10 +15,14 @@
   `PROC SORT` with only `DATA=`, `OUT=` and an ascending `BY`. Anything else
   between a step the grid uses and the `PROC HAZPRED` refuses the grid. That
   includes an `%INCLUDE` or a call of a macro the file does not define,
-  which until now was recorded with the grid still emitted. A statement the
-  translator cannot place outside any step, or `OPTIONS OBS=`, refuses the
-  grid wherever it stands. The 15 grids the public corpus emits are
-  unchanged.
+  which until now was recorded with the grid still emitted. Such a call
+  before the grid's first step cannot write a dataset the grid reads, but it
+  may change session state the grid depends on, such as `OPTIONS OBS=`: the
+  grid is emitted, and the call now has an `$untranslated` row saying so. A
+  statement the translator cannot place outside any step, or `OPTIONS OBS=`
+  itself, refuses the grid wherever it stands. The 15 grids the public corpus
+  emits are unchanged; four of its jobs gain two such rows each, for an
+  `%INCLUDE` and a macro call before the grid.
 
 * **A `PROC HAZPRED` `TIME` statement with more than one variable now stops
   the block, as `PROC HAZPRED` does.** `TIME` takes exactly one name, and a
