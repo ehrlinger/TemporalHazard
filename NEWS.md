@@ -811,15 +811,21 @@
   definition was read as if it ran where it stands. A job that built
   `PRED` with `AGE=50` and then defined a macro rebuilding it with
   `AGE=70` got predictions at 70, with no `$untranslated` row, although
-  the macro was never called and SAS predicted at 50. A definition's
-  steps now count only for a `PROC HAZPRED` inside the same definition.
-  Calling a macro whose body writes the grid refuses the grid, as a
-  macro's `OUT=` already did. An `%INCLUDE`, or a call of a macro the file
-  does not define, between the grid's DATA step and the `PROC HAZPRED`
-  may rewrite the grid out of sight: the grid the job shows is still
-  emitted, and each such call now has an `$untranslated` row saying so.
-  Jobs with no macros translate as before; the public corpus's calls and
-  `$untranslated` rows are unchanged.
+  the macro was never called and SAS predicted at 50. A step inside a
+  definition no longer defines the grid where it stands. A `PROC HAZPRED`
+  inside a definition is refused, with an `$untranslated` row: SAS runs it
+  where the macro is called, so its grid depends on what came before that
+  call. Calling a macro whose body writes the grid, with a `DATA PRED;`
+  step or by sorting it in place (`PROC SORT DATA=PRED NODUPKEY;`), refuses
+  the grid, as a macro's `OUT=` already did; such a sort used to go unseen,
+  so the emitted grid kept the rows SAS removes. An `%INCLUDE`, a call of a
+  macro the file does not define, or a sort in a macro body with no
+  `DATA=`, between the grid's DATA step and the `PROC HAZPRED`, may rewrite
+  the grid out of sight: the grid the job shows is still emitted, and each
+  such call has an `$untranslated` row saying so. Jobs with no macros
+  translate as before. On the public corpus, the only change is the reason
+  given for two grids that were already refused, whose `PROC HAZPRED`
+  stands inside a macro definition.
 
 * **A stepwise screen on a Weibull fit whose scale cannot be represented
   failed every candidate refit, and a selection-mode `hzr_bootstrap()`
@@ -850,10 +856,12 @@
 
 * `hzr_translate_sas()` code failed on R before 4.4 when a phase statement
   named a variable that is not a syntactic R name, such as `_X1`: the fit
-  stopped with "object '_X1' not found". The emitted status chunk adds its
-  column with `transform()`, which renamed `_X1` to `X_X1` before R 4.4. The
-  chunk now passes `check.names = FALSE`, so the column keeps its name on
-  every R version (#609).
+  stopped with "object '_X1' not found". The emitted status chunk added its
+  column with `transform()`, which renamed `_X1` to `X_X1` before R 4.4.
+  The chunk now assigns each derived column directly,
+  `D[[".hzr_status"]] <- with(D, ...)`, so the column keeps its name on
+  every R version, including when the chunk runs again on data that already
+  carries `.hzr_status` (#609).
 
 ## Packaging and documentation
 
