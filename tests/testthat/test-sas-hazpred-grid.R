@@ -579,15 +579,133 @@ test_that("a job with no macros records no macro row", {
   expect_equal(grid_494(job)$AGE, c(50, 50, 50))
 })
 
-test_that("a PROC HAZPRED inside a macro reads the grid built in that macro", {
-  # The step and the procedure run together when the macro is called, so
-  # the definition's own DATA step is the grid for its own PROC HAZPRED.
+test_that("a PROC HAZPRED inside a macro definition is refused", {
+  # SAS runs the procedure where the macro is called, so its grid is
+  # whatever PRED holds at the call. Here the call follows a second DATA
+  # PRED with AGE = 70; main read the grid where the text stands and
+  # emitted AGE = 50 with no row. The translation does not follow calls, so
+  # it refuses. Approved change to #621's test, which asserted the grid
+  # built inside the macro, and emitted it for a macro never called.
   job <- translate_494(c(
     fit_macro_grid,
-    "%MACRO ALTPRED; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+    "%MACRO P;",
     hazpred_macro_grid,
-    "%MEND ALTPRED;"
+    "%MEND P;",
+    "DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+    "%P;"
   ))
-  expect_equal(grid_494(job)$AGE, c(70, 70, 70))
+  expect_match(refused_494(job), "inside a %MACRO definition", fixed = TRUE)
+  expect_false(any(grepl("^grid", names(job$calls))))
+
+  # The same when the definition builds the grid itself, and when the macro
+  # is never called: the refusal does not depend on what the body holds.
+  for (call in c("%ALTPRED;", "")) {
+    job <- translate_494(c(
+      fit_macro_grid,
+      "%MACRO ALTPRED; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+      hazpred_macro_grid,
+      "%MEND ALTPRED;",
+      call
+    ))
+    expect_match(refused_494(job), "inside a %MACRO definition", fixed = TRUE)
+  }
+})
+
+test_that("a PROC HAZPRED outside a definition still emits the grid (control)", {
+  # The definition above holds no PROC HAZPRED, so nothing is refused for
+  # scope, and the uncalled macro's DATA step is not the grid.
+  job <- translate_494(c(
+    fit_macro_grid,
+    "%MACRO P; %PUT HELLO; %MEND P;",
+    "%P;",
+    hazpred_macro_grid
+  ))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+  expect_false(any(grepl("%MACRO", job$untranslated$reason, fixed = TRUE)))
+})
+
+# A macro that sorts the grid in place rewrites it, as a DATA step in the
+# body does: PROC SORT NODUPKEY drops the duplicate INT_DEAD = 1 row, and SAS
+# predicts on 1, 2, 3. Main counted only DATA names and OUT= in a body, so
+# the grid was emitted with all four rows and no row.
+fit_sort_grid <- c(fit_macro_grid[1:3],
+                   "DATA PRED; AGE=50; DO INT_DEAD=1,1,2,3; OUTPUT; END; RUN;")
+
+test_that("calling a macro that sorts the grid in place refuses the grid", {
+  job <- translate_494(c(
+    fit_sort_grid,
+    "%MACRO S; PROC SORT DATA=PRED NODUPKEY; BY INT_DEAD; RUN; %MEND S;",
+    "%S;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "PRED is written by %S", fixed = TRUE)
+  # A plain sort refuses too: the call is opaque, as a DATA step in it is.
+  job <- translate_494(c(
+    fit_sort_grid,
+    "%MACRO S; PROC SORT DATA=WORK.PRED; BY DESCENDING INT_DEAD; RUN; %MEND S;",
+    "%S;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "PRED is written by %S", fixed = TRUE)
+})
+
+test_that("a macro sort that writes elsewhere, or is never called, leaves the grid", {
+  # OUT= names the dataset written; DATA= is then only read.
+  job <- translate_494(c(
+    fit_sort_grid,
+    "%MACRO S; PROC SORT DATA=PRED OUT=SORTED NODUPKEY; BY INT_DEAD; RUN; %MEND S;",
+    "%S;",
+    hazpred_macro_grid
+  ))
+  expect_equal(grid_494(job)$INT_DEAD, c(1, 1, 2, 3))
   expect_equal(nrow(macro_rows(job)), 0L)
+  # An uncalled macro sorts nothing.
+  job <- translate_494(c(
+    fit_sort_grid,
+    "%MACRO S; PROC SORT DATA=PRED NODUPKEY; BY INT_DEAD; RUN; %MEND S;",
+    hazpred_macro_grid
+  ))
+  expect_equal(grid_494(job)$INT_DEAD, c(1, 1, 2, 3))
+  expect_equal(nrow(macro_rows(job)), 0L)
+  # A sort of another dataset is no write of the grid.
+  job <- translate_494(c(
+    fit_sort_grid,
+    "%MACRO S; PROC SORT DATA=OTHER NODUPKEY; BY INT_DEAD; RUN; %MEND S;",
+    "%S;",
+    hazpred_macro_grid
+  ))
+  expect_equal(grid_494(job)$INT_DEAD, c(1, 1, 2, 3))
+  expect_equal(nrow(macro_rows(job)), 0L)
+})
+
+test_that("a macro sort with no DATA= is recorded, not refused", {
+  # PROC SORT without DATA= sorts the most recent dataset, which depends on
+  # where the macro is called. This cannot say which, so the call is recorded
+  # as a call that may rewrite the grid, as an %INCLUDE is.
+  job <- translate_494(c(
+    fit_sort_grid,
+    "%MACRO S; PROC SORT NODUPKEY; BY INT_DEAD; RUN; %MEND S;",
+    "%S;",
+    hazpred_macro_grid
+  ))
+  rows <- macro_rows(job)
+  expect_equal(rows$construct, "%S")
+  expect_match(rows$reason, "may rewrite PRED", fixed = TRUE)
+})
+
+test_that("an open-code sort of the grid is unchanged by the macro rule (control)", {
+  # Outside a macro, a plain BY sort is translated and NODUPKEY is refused,
+  # as before.
+  job <- translate_494(c(
+    fit_sort_grid,
+    "PROC SORT DATA=PRED; BY AGE INT_DEAD; RUN;",
+    hazpred_macro_grid
+  ))
+  expect_equal(grid_494(job)$INT_DEAD, c(1, 1, 2, 3))
+  job <- translate_494(c(
+    fit_sort_grid,
+    "PROC SORT DATA=PRED NODUPKEY; BY INT_DEAD; RUN;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "PRED is written by PROC SORT", fixed = TRUE)
 })
