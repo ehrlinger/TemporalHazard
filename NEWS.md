@@ -17,6 +17,27 @@
   `withr` moves from `Suggests` to `Imports`; it depends only on base R.
   This restores the 1.0.2 behaviour, which 1.0.3 removed.
 
+* **Estimates from earlier versions may change when refitted.** Three
+  fixes change what a fit returns, not only what it reports: multiphase fits
+  under Conservation of Events, which could stop short of the maximum
+  (#565); fits with a `"hazard"` phase far past saturation (#578); and
+  multiphase stepwise selections and `hzr_bootstrap()` select-mode
+  frequencies, whose candidate refits never started from the current model
+  (#551). Refit models fitted with earlier versions; the entries under Bug
+  fixes give the details.
+
+* **Some calls that returned a value now stop, or return something
+  different.**
+    - `hazard()` refuses a `control$maxit` below 1 (#541), and a Weibull
+      `mu` or `nu` in `theta` too small to hold as a normal double, such as
+      `1e-310`, which 1.2.12 fitted (#566).
+    - `summary()$log_lik` is `NA` for an `objective = "sas"` fit that read
+      an interval-censored row, whose objective is not a log-likelihood
+      (#544).
+    - `hzr_decompos()` returns a fourth element, `log_surv` (#578).
+    - `hzr_stepwise()` refuses a `data` whose rows are not the fit's rows in
+      the fit's order (#487, #515).
+
 ## Bug fixes
 
 * **Standard errors computed numerically could be far too small, with no
@@ -697,8 +718,8 @@
 
 * **`predict()` with a `newdata` of only a `time` column now warns when the
   model has covariates (#522).** Such a `newdata` evaluates every covariate
-  at 0. For `hazard(Surv(int_dead, dead) ~ age + mal, data = avc, dist =
-  "weibull")` that returned survival 0.7713 and 0.6908 at 12 and 60 months,
+  at 0. For a Weibull fit of `Surv(int_dead, dead) ~ age + mal` on
+  `na.omit(avc)` that returned survival 0.7713 and 0.6908 at 12 and 60 months,
   the prediction for a patient of age 0, with no warning; a `newdata` that
   gave some covariates but not all was already refused. The values are
   unchanged, but `predict()` now warns, once per call and with class
@@ -807,7 +828,8 @@
   `SETG1`'s case, the note says the rewrite holds only if it does not.
 
 * **A `PROC HAZPRED` grid translated by `hzr_translate_sas()` now respects
-  SAS macro scope.** A `DATA PRED;` step inside a `%MACRO ... %MEND`
+  SAS macro scope (#621, #625).** A `DATA PRED;` step inside a
+  `%MACRO ... %MEND`
   definition was read as if it ran where it stands. A job that built
   `PRED` with `AGE=50` and then defined a macro rebuilding it with
   `AGE=70` got predictions at 70, with no `$untranslated` row, although
@@ -846,7 +868,8 @@
   unaffected without qualification.
 
 * **`hzr_bootstrap()` pooled replicates that stopped on `nlm()` code 4 or 5
-  and failed the relative-gradient test, with no count and no warning.**
+  and failed the relative-gradient test, with no count and no warning
+  (#622).**
   `hazard()` warns about such a fit, but replicates run with their warnings
   suppressed, and the count for #531 leaves those codes out because
   `hazard()` warns for them. `hzr_bootstrap()` now reads the base refit and
