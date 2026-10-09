@@ -84,7 +84,9 @@ jobs:
           # Bump the two together. This is the only place the pin lives.
           # "hard" skips the Suggests tree -- roxygenise() only needs Imports
           # loadable, and every Suggests use in R/ is behind requireNamespace().
-          extra-packages: any::roxygen2@8.1.0
+          # The ref must be cran::, not any::. pak drops the @version from an
+          # any:: ref, so any::roxygen2@8.1.0 installed 8.1.1 the day it shipped.
+          extra-packages: cran::roxygen2@8.1.0
           dependencies: '"hard"'
 
       - name: Documentation is current
