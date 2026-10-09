@@ -37,6 +37,12 @@
     - `hzr_decompos()` returns a fourth element, `log_surv` (#578).
     - `hzr_stepwise()` refuses a `data` whose rows are not the fit's rows in
       the fit's order (#487, #515).
+    - `hzr_stepwise()` refuses a base model that did not converge under
+      `criterion = "aic"`, and under `"wald"` with `direction = "backward"`
+      or `"both"`; select-mode `hzr_bootstrap()` refuses such a base up
+      front, and fails a replicate whose base refit did not converge (#627).
+    - `hzr_deciles()` refuses a multiphase fit whose design dropped rows, as
+      `hzr_gof()` already did (#627).
 
 ## Bug fixes
 
