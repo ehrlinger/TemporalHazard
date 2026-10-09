@@ -907,3 +907,37 @@ test_that("a numeric LENGTH below 8 in the grid's step refuses it", {
   ))
   expect_equal(grid_494(job)$INT_DEAD, c(0.1, 0.2))
 })
+
+test_that("OPTIONS OBS= set by a macro refuses the grid, wherever it is called", {
+  # The option holds for every later step, so a call before the grid's step
+  # changes the rows PROC HAZPRED reads as surely as one after it.
+  job <- translate_494(c(
+    "%MACRO LIM; OPTIONS OBS=2; %MEND LIM;",
+    "%LIM;",
+    fit_macro_grid,
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "`%LIM` calls a macro whose body holds", fixed = TRUE)
+})
+
+test_that("PROC CONTENTS OUT2= writes the dataset it names", {
+  job <- translate_494(c(
+    fit_macro_grid,
+    "PROC CONTENTS DATA=X OUT2=PRED; RUN;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "PRED is written by PROC CONTENTS", fixed = TRUE)
+})
+
+test_that("option and programming statements in a listed procedure leave the grid", {
+  # PROC IMPORT's GETNAMES= and PROC PHREG's programming statements are
+  # assignments inside a procedure, not a lost DATA step.
+  job <- translate_494(c(
+    "PROC IMPORT DATAFILE='a.csv' OUT=X DBMS=CSV REPLACE; GETNAMES=YES; RUN;",
+    "PROC PHREG DATA=X; MODEL T*D(0)=A2; A2=A*A; RUN;",
+    fit_macro_grid,
+    hazpred_macro_grid
+  ))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+  expect_equal(nrow(grid_rows_allow(job)), 0L)
+})

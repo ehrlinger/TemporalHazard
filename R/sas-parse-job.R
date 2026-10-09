@@ -2243,7 +2243,7 @@
                           "LIBRARY", "LIB", "NOLIST", "KILL", "MEMTYPE")))
   }
   m <- regmatches(stmt, gregexpr(
-    paste0("(^|[^A-Z0-9_])(OUT[A-Z]*|BASE|CNTLOUT) *= *[A-Z_][A-Z0-9_.]*|",
+    paste0("(^|[^A-Z0-9_])(OUT[A-Z0-9]*|BASE|CNTLOUT) *= *[A-Z_][A-Z0-9_.]*|",
            "(CREATE +(TABLE|VIEW)|INSERT +INTO|DELETE +FROM|ALTER +TABLE|",
            "DROP +(TABLE|VIEW)|^UPDATE) +[A-Z_][A-Z0-9_.]*"),
     stmt))[[1L]]
@@ -2313,8 +2313,8 @@
 #' The grid allow-list: what a job may hold before a PROC HAZPRED whose grid
 #' is translated.
 #'
-#' A grid is emitted only when every statement that can change it is one this
-#' translation reads. Until the 1.2.13 release review the rule ran the other
+#' A grid is emitted only when every statement that can write a dataset it
+#' reads is one this translation reads. Until the 1.2.13 release review the rule ran the other
 #' way: a short list of constructs that rewrite a dataset was refused and
 #' everything else was assumed harmless, and three reviews in a row each found
 #' a construct that emitted a wrong grid with no `$untranslated` row. Each
@@ -2343,8 +2343,11 @@
 #'   name, and a DATA step statement that runs other SAS code (`CALL
 #'   EXECUTE`, `DOSUBL()`, `RESOLVE()`, `CALL SYSTEM`, a hash `OUTPUT()`).
 #'   `.hzr_parse_grid()` refuses the grid when one stands between a step the
-#'   grid uses and the point that reads it. Before that step it can change
-#'   nothing the grid reads, because the step builds its dataset afresh.
+#'   grid uses and the point that reads it. Before that step it cannot write
+#'   a dataset the grid reads, because the step builds its dataset afresh.
+#'   It is not refused there, so a call that changes session state the grid
+#'   depends on (an `OPTIONS OBS=` in an `%INCLUDE`d file) is not seen: every
+#'   corpus grid has an `%INCLUDE` or a macro call before its steps.
 #' * **unread**: the parser has lost its place, or the statement changes how
 #'   every later step reads: a statement outside every step that is none of
 #'   the above (as when a macro call with no semicolon swallows the `DATA`
@@ -2615,8 +2618,11 @@
           add(p, nm, "opaque", what = paste0("%", mac))
         }
         bad <- Filter(function(e) e$kind %in% c("call", "unread") || isTRUE(e$cond), bev)
+        # An unread statement in the body is unread at the call: OPTIONS
+        # OBS= set by a macro changes every later step, wherever it is called.
+        kind <- if (any(vapply(bad, function(e) identical(e$kind, "unread"), TRUE))) "unread" else "call"
         if (length(bad)) {
-          flag(p, "call", call_text, paste0(
+          flag(p, kind, call_text, paste0(
             "calls a macro whose body holds `", bad[[1L]]$what %||% bad[[1L]]$name,
             "`, which hzr_translate_sas() cannot read"))
         }
@@ -2700,14 +2706,6 @@
         next
       }
       if (identical(proc$kind, "UNKNOWN")) next
-      # No procedure on the list has an assignment statement: one here is a
-      # DATA step whose DATA statement this lost.
-      if (grepl("^[A-Z_][A-Z0-9_]* *=", t)) {
-        flag(p, "unread", t, paste(
-          "is an assignment inside", proc$what, "so this translation has lost",
-          "its place in the job"))
-        next
-      }
       if (grepl("&", t) && !grepl(.hzr_sas_global_ok, t)) {
         flag(p, "call", t, "names a dataset through a macro variable, which this translation cannot resolve")
       }

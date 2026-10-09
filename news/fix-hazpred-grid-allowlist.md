@@ -1,5 +1,5 @@
 * **`hzr_translate_sas()` now emits a `PROC HAZPRED` grid only when it reads
-  every statement that can change it.** It used to refuse a list of
+  every statement that can write it.** It used to refuse a list of
   constructs known to rewrite a dataset and assume everything else was
   harmless, and each of three release reviews found another construct that
   produced a wrong grid with no `$untranslated` row. Four did so on the
