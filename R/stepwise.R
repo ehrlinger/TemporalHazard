@@ -568,7 +568,8 @@ hzr_stepwise <- function(fit,
   if (criterion == "score" && base_unfitted) {
     stop("criterion = 'score' requires a converged base model with fitted ",
          "coefficients; this fit did not converge. Supply theta starting ",
-         "values to hazard(), or use criterion = 'wald'.",
+         "values to hazard(), or use criterion = 'wald' with ",
+         "direction = 'forward'.",
          call. = FALSE)
   }
   # An AIC entry is the candidate's AIC minus the base's, so a base that

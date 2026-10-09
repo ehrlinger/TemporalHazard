@@ -302,3 +302,23 @@ test_that("a select-mode bootstrap with a converging base refit is unchanged", {
   expect_length(p1, 10L)
   expect_gt(stats::sd(p1), 0)
 })
+
+test_that("a forward Wald bootstrap fails replicates whose base refit did not converge", {
+  # hzr_stepwise() accepts such a base under a forward Wald screen, so only
+  # the bootstrap's own check stops it. Before, a replicate that entered
+  # nothing returned the unconverged base and failed, while one that entered
+  # something passed: 7 of 10 passed, noise selected in 6 of the 7.
+  skip_on_cran()
+  d <- .bs_base_data()
+  b <- .bs_base_fit(d, maxit = 8)
+  expect_identical(b$fit$converged, TRUE)
+  bs <- suppressWarnings(hzr_bootstrap(b, n_boot = 10, seed = 1,
+                                       scope = ~ noise + noise2,
+                                       criterion = "wald",
+                                       direction = "forward"))
+  expect_identical(bs$n_success, 0L)
+  expect_identical(
+    bs$failure_reasons,
+    c("base refit did not converge (converged = FALSE)" = 10L)
+  )
+})

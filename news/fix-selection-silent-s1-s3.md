@@ -3,7 +3,9 @@
   (converged = FALSE)". The rule that a replicate which does not converge
   fails applied only to the final fit, so under `criterion = "aic"` each
   candidate warm-started from the base's unfinished point, reached the real
-  maximum and was credited with the base's shortfall. On 300 Weibull rows
+  maximum and was credited with the base's shortfall. Under a forward Wald
+  screen a replicate that entered nothing failed while one that entered
+  something passed, so the replicates kept were biased towards selection. On 300 Weibull rows
   with two pure-noise columns, a base that converged on the full data but not
   on any resample gave 19 of 30 successful replicates with no warning, and
   selected the noise columns in 12 and 8 of them.

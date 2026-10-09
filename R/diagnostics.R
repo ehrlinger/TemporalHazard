@@ -1769,7 +1769,11 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     (a refit whose reported objective is still the sentinel), or
 #'     `"refit did not converge (converged = FALSE)"` (a refit that reports
 #'     `converged = FALSE`, including one stopped on a score that is not
-#'     finite, #518).
+#'     finite, #518), or, in select mode,
+#'     `"base refit did not converge"` (a base refit with a non-finite
+#'     objective) or `"base refit did not converge (converged = FALSE)"` (a
+#'     base refit that reports `converged = FALSE`: the screen measures its
+#'     candidates against the base, so the replicate is not screened).
 #'     It sums to `n_failed`, and
 #'     is an empty named integer vector, never `NULL`, when none failed. When
 #'     every replicate fails, `hzr_bootstrap()` also warns, naming the most
@@ -2433,8 +2437,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
           }
           # The screen measures every candidate against this base, so a base
           # that stopped short is a failed replicate, as a final fit that
-          # did not converge is below (#518). Otherwise each candidate
+          # did not converge is below (#518). Under AIC each candidate
           # finished the climb the base did not, and was credited with it.
+          # Under a forward Wald screen, which tolerates such a base, a
+          # replicate that entered nothing returned the base as its final
+          # fit and failed below while one that entered something passed,
+          # so the survivors were biased towards selection.
           if (isFALSE(base_boot$fit$converged)) {
             stop("base refit did not converge (converged = FALSE)")
           }

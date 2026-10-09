@@ -215,7 +215,7 @@ test_that("a phase covariate with missing values is refused, not recycled", {
     fit <- suppressWarnings(hazard(f, data = d, dist = "multiphase",
                                    phases = phases, fit = TRUE))
     expect_identical(nrow(fit$fit$x_list$early), nrow(d) - 5L)
-    expect_error(hzr_gof(fit), "one design row per subject")
+    expect_error(hzr_gof(fit), "hzr_gof\\(\\) needs one design row per subject")
   }
 })
 
