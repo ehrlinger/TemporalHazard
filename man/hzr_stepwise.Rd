@@ -102,7 +102,10 @@ criterion} section.}
 p-value thresholds (\code{slentry} / \code{slstay}) but score entry candidates
 differently, and can therefore select different variable sets; \code{"score"}
 reproduces C/SAS HAZARD and needs no per-candidate refit.  \code{"aic"} adds or
-drops whenever it lowers the AIC.  See the \strong{Selection direction and
+drops whenever it lowers the AIC.  \code{"score"} and \code{"aic"} refuse a base
+fit that did not converge, since both measure candidates against it, and
+so does \code{"wald"} unless \code{direction = "forward"}, since a removal is
+tested on the base's own estimates.  See the \strong{Selection direction and
 criterion} section.}
 
 \item{slentry}{Entry p-value threshold for the score / Wald criteria.

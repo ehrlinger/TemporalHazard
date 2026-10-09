@@ -126,7 +126,11 @@ defined, #486), or
 (a refit whose reported objective is still the sentinel), or
 \code{"refit did not converge (converged = FALSE)"} (a refit that reports
 \code{converged = FALSE}, including one stopped on a score that is not
-finite, #518).
+finite, #518), or, in select mode,
+\code{"base refit did not converge"} (a base refit with a non-finite
+objective) or \code{"base refit did not converge (converged = FALSE)"} (a
+base refit that reports \code{converged = FALSE}: the screen measures its
+candidates against the base, so the replicate is not screened).
 It sums to \code{n_failed}, and
 is an empty named integer vector, never \code{NULL}, when none failed. When
 every replicate fails, \code{hzr_bootstrap()} also warns, naming the most

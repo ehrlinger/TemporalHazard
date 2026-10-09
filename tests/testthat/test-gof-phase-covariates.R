@@ -215,8 +215,38 @@ test_that("a phase covariate with missing values is refused, not recycled", {
     fit <- suppressWarnings(hazard(f, data = d, dist = "multiphase",
                                    phases = phases, fit = TRUE))
     expect_identical(nrow(fit$fit$x_list$early), nrow(d) - 5L)
-    expect_error(hzr_gof(fit), "one design row per subject")
+    expect_error(hzr_gof(fit), "hzr_gof\\(\\) needs one design row per subject")
   }
+})
+
+test_that("hzr_deciles() refuses a phase design that dropped rows, as hzr_gof() does", {
+  # hzr_deciles() predicted every subject's cumulative hazard from the
+  # shorter design, recycled onto the wrong subjects, and reported all
+  # subjects included with a calibration p-value over the result.
+  d <- .gof_pc_avc
+  phases <- list(
+    early    = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                         fixed = "shapes", formula = ~ mal),
+    constant = hzr_phase("constant")
+  )
+  d_na <- d
+  d_na$mal[1:5] <- NA
+  fit <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1,
+                                 data = d_na, dist = "multiphase",
+                                 phases = phases, fit = TRUE))
+  # Premise: the design really is shorter than the data.
+  expect_identical(length(fit$data$time), nrow(d_na))
+  expect_identical(nrow(fit$fit$x_list$early), nrow(d_na) - 5L)
+  expect_error(hzr_deciles(fit, time = 5, groups = 5),
+               "hzr_deciles\\(\\) needs one design row per subject")
+
+  # Control: the same model on complete data is calibrated over every row.
+  fit_ok <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1,
+                                    data = d, dist = "multiphase",
+                                    phases = phases, fit = TRUE))
+  expect_identical(nrow(fit_ok$fit$x_list$early), nrow(d))
+  dec <- hzr_deciles(fit_ok, time = 5, groups = 5)
+  expect_identical(sum(dec$n), nrow(d))
 })
 
 test_that("time_windows: a phase formula whose columns share the window names", {

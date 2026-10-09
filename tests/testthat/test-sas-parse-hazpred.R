@@ -520,3 +520,33 @@ test_that("an empty INHAZ= before another option is named, not the option after 
   expect_false("OUT=" %in% job$untranslated$construct)
   expect_error(eval(job$calls$pred), "INHAZ= has no dataset name", fixed = TRUE)
 })
+
+test_that("a HAZPRED TIME with more than one name stops the block (T4)", {
+  # `timestmt : TIME NAME` (hazpred/hazpred_y.y:80): a second name is a
+  # syntax error (common/yyerror.c:19) and PROC HAZPRED stops
+  # (hazpred/initprz.c:53-55), so SAS predicts nothing. Main took the first
+  # name and emitted the predictions with no row.
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c(
+    "DATA PRED; AGE=50; DO T=1,2; U=T*12; OUTPUT; END; RUN;",
+    "%HAZPRED( PROC HAZPRED DATA=PRED INHAZ=E.H OUT=P; TIME T U; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  heads <- vapply(job$calls, function(x) as.character(x[[1L]])[[1L]], "")
+  expect_false("predict" %in% heads)
+  row <- job$untranslated[job$untranslated$construct == "TIME T U", ]
+  expect_equal(nrow(row), 1L)
+  expect_match(row$reason, "hazpred_y.y:80", fixed = TRUE)
+  stops <- job$calls[heads == "stop"]
+  expect_true(length(stops) >= 1L)
+  expect_match(stops[[1L]][[2L]], "TIME T U", fixed = TRUE)
+
+  # One name is the control: predictions are emitted.
+  writeLines(c(
+    "DATA PRED; AGE=50; DO T=1,2; U=T*12; OUTPUT; END; RUN;",
+    "%HAZPRED( PROC HAZPRED DATA=PRED INHAZ=E.H OUT=P; TIME U; );"
+  ), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  heads <- vapply(job$calls, function(x) as.character(x[[1L]])[[1L]], "")
+  expect_true("predict" %in% heads)
+})
