@@ -696,7 +696,7 @@ if (!exists("AVCS")) {
 }
 
 # chunk: status
-AVCS <- transform(AVCS, .hzr_status = {
+AVCS[[".hzr_status"]] <- with(AVCS, {
   if (any(is.na(DEAD) | DEAD < 0)) {
     stop("This job has rows where the EVENT count (DEAD) is missing or ",
          "negative. ...")   # message trimmed here; see below

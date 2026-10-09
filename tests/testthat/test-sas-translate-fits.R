@@ -1743,6 +1743,105 @@ test_that("a renamed underscore column fails loudly, it does not fit a smaller m
   expect_match(err, "not columns of D", fixed = TRUE)
 })
 
+# --- #609 follow-up: the status chunk on a dataset that already carries it ---
+
+# Before R 4.4.0, transform.data.frame() ran data.frame(`_data`) with
+# check.names = TRUE whenever a tag it was given already named a column, so
+# `_X1` became `X_X1` and the fit stopped with "object '_X1' not found". The
+# tag exists whenever the status chunk runs a second time on the same data:
+# two PROC HAZARD steps on one DATA=, or the same document run twice. #609's
+# check.names = FALSE reached only the branch for new tags. These tests run
+# on every R version, but only R < 4.4 can show the defect itself; the
+# reconstruction below is the pre-4.4 body (R NEWS 4.4.0, PR#17890), bound
+# where the emitted code looks `transform` up.
+.transform_pre44 <- function(`_data`, ...) {
+  e <- eval(substitute(list(...)), `_data`, parent.frame())
+  tags <- names(e)
+  inx <- match(tags, names(`_data`))
+  matched <- !is.na(inx)
+  if (any(matched)) {
+    `_data`[inx[matched]] <- e[matched]
+    `_data` <- data.frame(`_data`)
+  }
+  if (!all(matched)) do.call("data.frame", c(list(`_data`), e[!matched])) else `_data`
+}
+
+.status_twice <- function(lines, D, parent = .render_parent()) {
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(lines, f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  env <- new.env(parent = parent)
+  env$D <- D
+  for (pass in 1:2) {
+    for (nm in grep("^status", names(job$calls), value = TRUE)) {
+      suppressWarnings(eval(job$calls[[nm]], env))
+    }
+  }
+  list(job = job, D = env$D)
+}
+
+.underscore_data <- function(n = 30) {
+  D <- data.frame(T = seq_len(n), E = rep(c(1, 0, 0), length.out = n),
+                  C3 = rep(c(0, 0, 1), length.out = n),
+                  TL = seq_len(n) / 2, AGE = sin(seq_len(n)))
+  D[["_X1"]] <- cos(seq_len(n))
+  D
+}
+
+test_that("a status chunk run twice keeps a non-syntactic column (#609)", {
+  lines <- c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
+             " PARMS MUE=0.2 THALF=1 NU=1 M=1 MUC=0.01;",
+             " EARLY AGE=0.1, _X1=0.1; );")
+  D <- .underscore_data()
+  # The second pass is the case: .hzr_status already exists.
+  out <- .status_twice(lines, D)
+  expect_true("_X1" %in% names(out$D))
+  expect_false("X_X1" %in% names(out$D))
+  expect_identical(out$D[["_X1"]], D[["_X1"]])
+  expect_identical(out$D$.hzr_status, as.numeric(D$E > 0))
+
+  # Under the pre-4.4 transform() the emitted chunk must still keep the name.
+  pre44 <- new.env(parent = .render_parent())
+  pre44$transform <- .transform_pre44
+  out <- .status_twice(lines, D, pre44)
+  expect_true("_X1" %in% names(out$D))
+  expect_false("X_X1" %in% names(out$D))
+
+  # The ICENSOR chunk writes three reserved columns; each is a tag that
+  # already exists on the second pass.
+  icens <- c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E; ICENSOR C3 = TL;",
+             " PARMS MUE=0.2 THALF=1 NU=1 M=1 MUC=0.01;",
+             " EARLY AGE=0.1, _X1=0.1; );")
+  out <- .status_twice(icens, D, pre44)
+  expect_true(all(c("_X1", ".hzr_status", ".hzr_keep", ".hzr_icensor_event") %in%
+                    names(out$D)))
+  expect_false("X_X1" %in% names(out$D))
+  expect_identical(out$D[["_X1"]], D[["_X1"]])
+  expect_identical(out$D$.hzr_status, ifelse(D$E > 0, 1, ifelse(D$C3 > 0, 2, 0)))
+})
+
+test_that("two PROC HAZARD steps on one DATA= with `_X1` both fit (#609)", {
+  skip_on_cran()
+  set.seed(7)
+  n <- 120
+  D <- data.frame(T = stats::rexp(n, 0.2), E = rep(c(1, 1, 0), length.out = n),
+                  AGE = stats::rnorm(n))
+  D[["_X1"]] <- stats::rnorm(n)
+  step <- c("%HAZARD( PROC HAZARD DATA=D; TIME T; EVENT E;",
+            " PARMS MUE=0.2 THALF=1 NU=1 M=1 MUC=0.01;",
+            " EARLY AGE=0.1, _X1=0.1; );")
+  f <- withr::local_tempfile(fileext = ".sas")
+  writeLines(c(step, step), f)
+  job <- suppressWarnings(hzr_translate_sas(f))
+  res <- suppressWarnings(render_sim(job, list(D = D)))
+  expect_true(res$ok, info = paste(res$results, collapse = "; "))
+  fits <- grep("^fit", names(job$calls), value = TRUE)
+  expect_length(fits, 2L)
+  for (nm in fits) {
+    expect_true("phase_1.`_X1`" %in% names(stats::coef(res$env[[nm]])), info = nm)
+  }
+})
+
 test_that(".hzr_sas_covar_formula() refuses an empty name vector (#411)", {
   # Reduce() over an empty list is NULL and `~NULL` is a hollow formula: a
   # phase fitted with no covariates, and nothing would error.

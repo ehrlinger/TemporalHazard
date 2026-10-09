@@ -1462,44 +1462,17 @@
   # ambiguity warning. Derived as a column, the mask resolves to the value
   # this chunk just wrote, so it cannot be shadowed at all. `.hzr_` is this
   # package's reserved prefix, so overwriting a column of that name is the
-  # intended consequence, not collateral damage. transform() masks exactly
-  # as with() did, so the expression's column names still resolve against
-  # the dataset. A job with no DATA= was refused above (#497), so there is
-  # always a dataset here.
-  derive <- as.call(list(quote(transform), as.name(data_name),
-                         cens$status_expr))
-  names(derive) <- c("", "", as.character(cens$status_name))
-  # Degenerate ICENSOR bounds (readct.c, see .hzr_censor_spec()): the fit
-  # reads only the rows PROC HAZARD keeps (`args$data` below), and this
-  # column says how many rows each rule touched. The count is raised inside
-  # the transform(), so the chunk keeps its `<data> <- transform(<data>,
-  # ...)` shape, and local() binds nothing in the reader's session. The
-  # caller's data frame keeps every row.
-  if (!is.null(cens$keep_expr)) {
-    derive$.hzr_keep <- bquote(local({
-      .keep <- .(cens$keep_expr)
-      .n_event <- sum(.(cens$degenerate_expr))
-      .n_drop <- sum(!.keep)
-      if (.n_event > 0 || .n_drop > 0) {
-        warning("Degenerate ICENSOR intervals, resolved as PROC HAZARD ",
-                "does (readct.c): ", .n_event,
-                if (.n_event == 1) " row" else " rows",
-                " with CTIME equal to TIME fitted as exact events ",
-                "(readct.c:18-23), and ", .n_drop,
-                if (.n_drop == 1) " row" else " rows",
-                " with CTIME missing, negative or after TIME dropped from ",
-                "the fit (readct.c:9-17).", call. = FALSE)
-      }
-      .keep
-    }))
-    derive$.hzr_icensor_event <- cens$degenerate_expr
-  }
-  # transform() renames a non-syntactic column (`_X1` becomes `X_X1`) before
-  # R 4.4.0, which then sets check.names = FALSE itself. Pass it explicitly so
-  # the phase formula still finds the column it names on older R (#609). It
-  # goes last so the status expression keeps its position, read below.
-  derive$check.names <- FALSE
-  status_call <- call("<-", as.name(data_name), derive)
+  # intended consequence, not collateral damage. Each column is assigned
+  # directly, `<data>[["<col>"]] <- with(<data>, <expr>)`: with() masks
+  # exactly as the earlier transform() did, so the expression's
+  # column names still resolve against the dataset. Not transform(): before
+  # R 4.4.0 it ran data.frame(<data>) with check.names = TRUE whenever a
+  # column it was given already existed, as these do the second time the
+  # chunk runs on the same data, renaming `_X1` to `X_X1` (#609 follow-up).
+  # `[[<-` never checks names on any R version. A job with no DATA= was
+  # refused above (#497), so there is always a dataset here.
+  dsym <- as.name(data_name)
+  set_col <- function(col, expr) call("<-", call("[[", dsym, col), call("with", dsym, expr))
   # Variables in some fitted phase formula: hazard() drops their missing rows
   # itself. Read by the listwise guard and the column check below.
   modelled <- unique(unlist(lapply(as.list(parms$phases)[-1L], function(ph) {
@@ -1509,6 +1482,7 @@
   # rows in PROC HAZARD (see .hzr_parse_parms()), and hazard() cannot see
   # them. Stop in the status chunk, ahead of the fit, rather than fit more
   # rows than SAS did.
+  status_expr <- cens$status_expr
   if (length(parms$listwise_only)) {
     lw <- lapply(parms$listwise_only, as.name)
     any_na <- Reduce(function(a, b) call("|", a, b),
@@ -1533,11 +1507,36 @@
       "model it fits does not contain the variable. Drop the rows before",
       "fitting, subsetting to complete values of those variables."
     )
-    guarded <- bquote({
+    status_expr <- bquote({
       if (any(.(any_na))) stop(.(msg), call. = FALSE)
-      .(cens$status_expr)
+      .(status_expr)
     })
-    status_call[[3L]][[3L]] <- guarded
+  }
+  derive <- list(set_col(as.character(cens$status_name), status_expr))
+  # Degenerate ICENSOR bounds (readct.c, see .hzr_censor_spec()): the fit
+  # reads only the rows PROC HAZARD keeps (`args$data` below), and this
+  # column says how many rows each rule touched. The count is raised inside
+  # the column's with(), and local() binds nothing in the reader's session.
+  # The caller's data frame keeps every row.
+  if (!is.null(cens$keep_expr)) {
+    keep <- bquote(local({
+      .keep <- .(cens$keep_expr)
+      .n_event <- sum(.(cens$degenerate_expr))
+      .n_drop <- sum(!.keep)
+      if (.n_event > 0 || .n_drop > 0) {
+        warning("Degenerate ICENSOR intervals, resolved as PROC HAZARD ",
+                "does (readct.c): ", .n_event,
+                if (.n_event == 1) " row" else " rows",
+                " with CTIME equal to TIME fitted as exact events ",
+                "(readct.c:18-23), and ", .n_drop,
+                if (.n_drop == 1) " row" else " rows",
+                " with CTIME missing, negative or after TIME dropped from ",
+                "the fit (readct.c:9-17).", call. = FALSE)
+      }
+      .keep
+    }))
+    derive <- c(derive, list(set_col(".hzr_keep", keep),
+                             set_col(".hzr_icensor_event", cens$degenerate_expr)))
   }
   # A phase variable the dataset does not contain failed deep inside the
   # chunk as "object 'ZZ' not found", naming neither the statement nor the
@@ -1568,12 +1567,12 @@
              call. = FALSE)
       }
     })
-    # Ahead of transform(), not inside it: inside, a column named like the
+    # Ahead of with(), not inside it: inside, a column named like the
     # dataset masks it, names() of that column is NULL, and the check refused
     # a job whose variables were all present (#396 review).
-    status_call <- as.call(c(as.name("{"), as.list(present)[-1L],
-                             list(status_call)))
+    derive <- c(as.list(present)[-1L], derive)
   }
+  status_call <- if (length(derive) == 1L) derive[[1L]] else as.call(c(as.name("{"), derive))
   # Degenerate ICENSOR bounds (readct.c, see .hzr_censor_spec()): the fit
   # reads only the rows PROC HAZARD keeps, and the status chunk says how
   # many rows each rule touched. The caller's data frame keeps every row.
@@ -2310,8 +2309,9 @@
 }
 
 #' The datasets a macro body names as written, and whether it may write
-#' others: through a macro variable (`DATA &DS;`), or by calling a macro or
-#' an `%INCLUDE` of its own.
+#' others: through a macro variable (`DATA &DS;`), by sorting in place with
+#' no readable `DATA=`, or by calling a macro or an `%INCLUDE` of its own.
+#' A `PROC SORT` with no `OUT=` writes its `DATA=` dataset.
 #' @noRd
 .hzr_sas_body_writes <- function(body) {
   nms <- character(0)
@@ -2323,6 +2323,13 @@
     } else {
       nms <- c(nms, .hzr_sas_written_names(t))
       if (!is.null(.hzr_sas_macro_call(t))) unknown <- TRUE
+      # A PROC SORT with no OUT= rewrites the dataset it sorts, in place:
+      # DATA=, or with no readable DATA= the last one written before the
+      # call, which this cannot name.
+      if (grepl("^PROC SORT( |$)", t) && is.null(.hzr_sas_opt_name(t, "OUT"))) {
+        from <- .hzr_sas_opt_name(t, "DATA")
+        if (is.null(from)) unknown <- TRUE else nms <- c(nms, from)
+      }
     }
     if (grepl("&", t) && grepl("^DATA |(OUT[A-Z]*|BASE) *= *&", t)) unknown <- TRUE
   }
@@ -2343,11 +2350,12 @@
 #' A `%MACRO ... %MEND` body is a definition: SAS runs its statements where
 #' the macro is called, not where they stand. Each event carries `scope`,
 #' the definition it stands in (0 outside every one), and
-#' `.hzr_parse_grid()` reads a definition's events only for a PROC HAZPRED
-#' in the same definition. A call of a macro defined in the file is an
+#' `.hzr_parse_grid()` reads only the events outside every definition, and
+#' refuses a PROC HAZPRED that stands inside one. A call of a macro defined in the file is an
 #' `opaque` event for each dataset its body names as written. The fifth
 #' kind, `call`, has no dataset: an `%INCLUDE`, a call of a macro the file does not define, or of
-#' one whose body writes through a macro variable or runs code of its own.
+#' one whose body writes through a macro variable, sorts with no readable
+#' `DATA=`, or runs code of its own.
 #' It may rewrite any dataset and this cannot say which, so
 #' `.hzr_parse_grid()` records it rather than refusing.
 #' @noRd
@@ -3048,13 +3056,21 @@
       "the block has no TIME statement, which PROC HAZPRED requires",
       "(hazpred/timeprc.c:10-14), so there is no time to predict at")))
   }
+  # A PROC HAZPRED inside a %MACRO definition runs where the macro is
+  # called, and its grid is whatever the dataset holds at that call. This
+  # translation does not follow calls, so it refuses rather than read the
+  # grid where the text stands.
+  st <- .hzr_sas_statements(txt)
+  if (.hzr_sas_scope_at(st, .hzr_sas_macro_defs(st$text), before) != 0L) {
+    return(refuse(paste0(
+      "this PROC HAZPRED stands inside a %MACRO definition, so SAS runs it ",
+      "where the macro is called and its grid is whatever ", name,
+      " holds at that call, which this translation cannot follow")))
+  }
   events <- .hzr_sas_dataset_events(txt, blocks)
   # A step inside a %MACRO definition runs where the macro is called, so it
-  # builds nothing where it stands, except for a PROC HAZPRED in the same
-  # definition, which runs with it.
-  st <- .hzr_sas_statements(txt)
-  here <- .hzr_sas_scope_at(st, .hzr_sas_macro_defs(st$text), before)
-  events <- Filter(function(e) e$scope %in% c(0L, here), events)
+  # builds nothing where it stands.
+  events <- Filter(function(e) e$scope == 0L, events)
   memo <- list()
   built <- integer(0)
   # The offset at which each definition is last read: a call after the
