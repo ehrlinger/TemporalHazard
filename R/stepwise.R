@@ -158,7 +158,10 @@
 #'   p-value thresholds (`slentry` / `slstay`) but score entry candidates
 #'   differently, and can therefore select different variable sets; `"score"`
 #'   reproduces C/SAS HAZARD and needs no per-candidate refit.  `"aic"` adds or
-#'   drops whenever it lowers the AIC.  See the **Selection direction and
+#'   drops whenever it lowers the AIC.  `"score"` and `"aic"` refuse a base
+#'   fit that did not converge, since both measure candidates against it, and
+#'   so does `"wald"` unless `direction = "forward"`, since a removal is
+#'   tested on the base's own estimates.  See the **Selection direction and
 #'   criterion** section.
 #' @param slentry Entry p-value threshold for the score / Wald criteria.
 #'   Default `0.30` matches SAS `SLENTRY`.
@@ -560,13 +563,36 @@ hzr_stepwise <- function(fit,
   # base that did not converge (or was never fitted, leaving an empty theta)
   # has nothing to score.  Catch that here with an actionable message rather
   # than letting the internal `.hzr_score_free_idx()` guard fire deep in the
-  # candidate loop.  `wald` and `aic` refit each candidate from the call and
-  # legitimately tolerate a non-converged base, so they are left alone.
-  if (criterion == "score" &&
-        (!isTRUE(fit$fit$converged) || length(fit$fit$theta) == 0L)) {
+  # candidate loop.
+  base_unfitted <- !isTRUE(fit$fit$converged) || length(fit$fit$theta) == 0L
+  if (criterion == "score" && base_unfitted) {
     stop("criterion = 'score' requires a converged base model with fitted ",
          "coefficients; this fit did not converge. Supply theta starting ",
          "values to hazard(), or use criterion = 'wald'.",
+         call. = FALSE)
+  }
+  # An AIC entry is the candidate's AIC minus the base's, so a base that
+  # stopped short of its maximum credits every candidate with the shortfall:
+  # each warm-starts from the base's point and finishes the climb the base
+  # did not. Pure noise entered that way, with no warning.
+  if (criterion == "aic" && base_unfitted) {
+    stop("criterion = 'aic' requires a converged base model with fitted ",
+         "coefficients; this fit did not converge, and each candidate's ",
+         "delta AIC is measured against its log-likelihood. Supply theta ",
+         "starting values to hazard(), or use criterion = 'wald' with ",
+         "direction = 'forward'.",
+         call. = FALSE)
+  }
+  # A Wald entry is tested at the candidate's own converged refit, so a
+  # forward Wald screen does not read the base's estimates and tolerates a
+  # base that stopped short. A removal is tested on the current model's own
+  # estimates and variance, which at the first step are the base's.
+  if (criterion == "wald" && direction != "forward" && base_unfitted) {
+    stop("criterion = 'wald' with direction = '", direction, "' requires a ",
+         "converged base model with fitted coefficients; this fit did not ",
+         "converge, and a removal is tested on its estimates and variance. ",
+         "Supply theta starting values to hazard(), or use ",
+         "direction = 'forward'.",
          call. = FALSE)
   }
 

@@ -231,3 +231,74 @@ test_that("a select-mode bootstrap counts a code-5 stop in the BASE refit", {
   expect_length(hit, 1L)
   expect_match(hit, paste0("^", n_ok, " of ", n_ok, " successful replicates"))
 })
+
+# A select-mode replicate refits the base on its resample, then screens from
+# it. The base was checked only for a finite objective, so one that stopped
+# short was screened from: under criterion = "aic" each candidate warm-starts
+# from the base's unfinished point, reaches the real maximum, and is credited
+# with the base's shortfall as its own delta AIC. #518 failed a final fit
+# that did not converge, never the base under it.
+.bs_base_data <- function() {
+  set.seed(5)
+  n <- 300
+  noise <- stats::rnorm(n)
+  noise2 <- stats::rnorm(n)
+  t <- stats::rweibull(n, shape = 1.5, scale = 2)
+  data.frame(time = pmin(t, 3), dead = as.integer(t <= 3),
+             noise = noise, noise2 = noise2)
+}
+.bs_base_fit <- function(d, maxit) {
+  suppressWarnings(hazard(survival::Surv(time, dead) ~ 1, data = d,
+                          dist = "weibull", theta = c(3, 0.7),
+                          control = list(maxit = maxit), fit = TRUE))
+}
+
+test_that("a select-mode replicate whose base refit did not converge fails", {
+  skip_on_cran()
+  d <- .bs_base_data()
+  b <- .bs_base_fit(d, maxit = 8)
+  # Premises: the fit being bootstrapped converged, and the same call on a
+  # resample does not. Resamples drawn here, independent of the bootstrap.
+  expect_identical(b$fit$converged, TRUE)
+  conv <- withr::with_seed(11, vapply(1:5, function(i) {
+    idx <- sample.int(nrow(d), nrow(d), replace = TRUE)
+    isTRUE(.bs_base_fit(d[idx, ], maxit = 8)$fit$converged)
+  }, logical(1)))
+  expect_identical(conv, rep(FALSE, 5L))
+
+  msgs <- character()
+  bs <- withCallingHandlers(
+    hzr_bootstrap(b, n_boot = 10, seed = 1, scope = ~ noise + noise2,
+                  criterion = "aic", direction = "forward"),
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_true(any(grepl("no replicate succeeded", msgs, fixed = TRUE)))
+  # Before: 7 successes, each a screen run from an unfinished base, and the
+  # noise columns selected in most of them.
+  expect_identical(bs$n_success, 0L)
+  expect_identical(bs$n_failed, 10L)
+  expect_identical(
+    bs$failure_reasons,
+    c("base refit did not converge (converged = FALSE)" = 10L)
+  )
+})
+
+test_that("a select-mode bootstrap with a converging base refit is unchanged", {
+  skip_on_cran()
+  d <- .bs_base_data()
+  b <- .bs_base_fit(d, maxit = 50)
+  expect_identical(b$fit$converged, TRUE)
+  bs <- suppressWarnings(hzr_bootstrap(b, n_boot = 10, seed = 1,
+                                       scope = ~ noise + noise2,
+                                       criterion = "aic",
+                                       direction = "forward"))
+  expect_identical(bs$n_failed, 0L)
+  expect_identical(bs$n_success, 10L)
+  # The replicates are ten different fits, not one fit ten times.
+  p1 <- bs$replicates$estimate[bs$replicates$parameter == "param_1"]
+  expect_length(p1, 10L)
+  expect_gt(stats::sd(p1), 0)
+})
