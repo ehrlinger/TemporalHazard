@@ -101,7 +101,9 @@ criterion} section.}
 \code{"wald"}, or \code{"aic"}.  \code{"score"} and \code{"wald"} both apply SAS-style
 p-value thresholds (\code{slentry} / \code{slstay}) but score entry candidates
 differently, and can therefore select different variable sets; \code{"score"}
-reproduces C/SAS HAZARD and needs no per-candidate refit.  \code{"aic"} adds or
+reproduces C/SAS HAZARD and needs no per-candidate refit, except at a
+step whose information cannot be formed, where it falls back to
+refitting and Wald-testing each candidate.  \code{"aic"} adds or
 drops whenever it lowers the AIC.  \code{"score"} and \code{"aic"} refuse a base
 fit that did not converge, since both measure candidates against it, and
 so does \code{"wald"} unless \code{direction = "forward"}, since a removal is

@@ -1,22 +1,3 @@
-# TemporalHazard (unreleased)
-
-* Articles on the pkgdown site put the table of contents on the left and use
-  the full width of the window, through `pkgdown/extra.css`. The installed
-  vignettes are unchanged: the Quarto vignette engine renders them in its own
-  minimal format, which has no sidebar layout.
-
-* `hzr_bootstrap(seed = )` no longer resets your random number stream. It
-  seeded the global generator with `set.seed()` and left it there, so a
-  script that called `set.seed()` once at the top lost that seed at its first
-  seeded bootstrap, and every draw after it followed from the bootstrap's
-  seed instead. The seed now holds for the call only, through
-  `withr::local_seed()`, and your stream is restored on return. The
-  replicates for a given `seed` are unchanged. `withr` moves from `Suggests`
-  to `Imports`; it depends only on base R.
-
-* `DESCRIPTION` now declares the Quarto command line tool in
-  `SystemRequirements`. The vignettes have always needed it to build; the
-  field makes that visible to installers and to `R CMD check`.
 # TemporalHazard 1.2.13
 
 ## Breaking changes
@@ -35,6 +16,51 @@
   `seed = 1`, and `NA` failed with a message that did not name `seed`.
   `withr` moves from `Suggests` to `Imports`; it depends only on base R.
   This restores the 1.0.2 behaviour, which 1.0.3 removed.
+
+* **Estimates and selections from earlier versions may change when
+  refitted.** Several fixes change what a fit or a screen returns, not only
+  what it reports: multiphase fits under Conservation of Events, which could
+  stop short of the maximum (#565); fits with a `"hazard"` phase far past
+  saturation (#578); multiphase fits whose search passed a very small
+  `t_half` (#574); multiphase stepwise selections and `hzr_bootstrap()`
+  select-mode frequencies, whose candidate refits never started from the
+  current model (#551); score-criterion selections at a step whose
+  information cannot be formed, which now refit and test their candidates
+  instead of stopping (#570); Wald selections, which no longer enter a
+  candidate whose refit ended below the base (#538); and multiphase AIC
+  selections over a candidate with missing values (#488). Refit models and
+  rerun screens from earlier versions; the entries under Bug fixes give the
+  details.
+
+* **Some calls that returned a value now stop, or return something
+  different.**
+    - `hazard()` refuses a `control$maxit` below 1 or not a number (`"200"`
+      was accepted) (#541), and `hazard()`, `hzr_evaluate()` and `predict()`
+      refuse a Weibull `mu` or `nu` too small to hold as a normal double,
+      such as `1e-310`, which 1.2.12 fitted and evaluated (#566).
+    - `summary()$log_lik` is `NA` for an `objective = "sas"` fit that read
+      an interval-censored row, whose objective is not a log-likelihood
+      (#544).
+    - `hzr_decompos()` returns a fourth element, `log_surv` (#578).
+    - `hzr_stepwise()` refuses a `data` whose rows are not the fit's rows in
+      the fit's order (#487, #515), and any `data` with a duplicated column
+      name, whether or not that column is in the scope (#515).
+    - `hzr_stepwise()` refuses a base model that did not converge under
+      `criterion = "aic"`, and under `"wald"` with `direction = "backward"`
+      or `"both"`; select-mode `hzr_bootstrap()` refuses such a base up
+      front, and fails a replicate whose base refit did not converge (#627).
+    - `hzr_deciles()` refuses a multiphase fit whose design dropped rows, as
+      `hzr_gof()` already did (#627).
+
+* **Some returned objects have new elements, and one moves others.** A
+  Weibull fit's `fit$fit` gains `log_scale` before `vcov`, so `vcov`,
+  `rcond`, `pd`, `counts`, `message`, `rel_gradient`,
+  `rel_gradient_reason` and `polish_code` move position: read them by name
+  (#566). `hzr_decompos()` returns `log_surv` (#578); a stepwise result's
+  `$steps`, and `as.data.frame()` of it, gain `n_rows` (#519);
+  `attr(hzr_gof(), "summary")` gains `n_tallied` (#492); `hzr_evaluate()`
+  returns `$objective`, and `summary()` gains `objective` and
+  `objective_value` (#544, #556).
 
 ## Bug fixes
 
@@ -320,9 +346,12 @@
       model. `summary()` shows it as a `log(mu)` row under `mu`. `coef()`
       shows `mu` as it is, and `vcov()` gives `NA` for its row and column,
       with the reason in the fit's `degraded_causes`.
-    - `hzr_evaluate()` and `predict()` still refuse a `theta` given with such
-      a `mu`, which carries no `log(mu)` to read. This includes an
-      intercept-only fit, whose parameters `predict()` did not check before.
+    - `hzr_evaluate()` and `predict()` refuse a `theta` given with such a
+      `mu`, which carries no `log(mu)` to read. They already refused a `mu`
+      of 0 or `Inf`; a subnormal `mu` (one too small to hold as a normal
+      double, such as `1e-310`) was evaluated, and is now refused too. This
+      includes an intercept-only fit, whose parameters `predict()` did not
+      check before.
     - `hzr_bootstrap()` warns with the number of replicates whose `mu`
       cannot be represented; the summary of `mu` is not usable there.
     - A finite `mu` whose product with a large time overflowed gave a
@@ -716,8 +745,8 @@
 
 * **`predict()` with a `newdata` of only a `time` column now warns when the
   model has covariates (#522).** Such a `newdata` evaluates every covariate
-  at 0. For `hazard(Surv(int_dead, dead) ~ age + mal, data = avc, dist =
-  "weibull")` that returned survival 0.7713 and 0.6908 at 12 and 60 months,
+  at 0. For a Weibull fit of `Surv(int_dead, dead) ~ age + mal` on
+  `na.omit(avc)` that returned survival 0.7713 and 0.6908 at 12 and 60 months,
   the prediction for a patient of age 0, with no warning; a `newdata` that
   gave some covariates but not all was already refused. The values are
   unchanged, but `predict()` now warns, once per call and with class
@@ -824,6 +853,148 @@
   `PROC HAZARD` never reaches. When a
   macro reference in `PARMS` could carry a value or flag that changes
   `SETG1`'s case, the note says the rewrite holds only if it does not.
+
+* **A `PROC HAZPRED` grid is emitted only when `hzr_translate_sas()` reads
+  every statement that can write it (#621, #625, #628).** The grid is
+  rebuilt from the job's DATA steps under an allow-list: global statements
+  (`TITLE`, `OPTIONS`, `LIBNAME` and the like), `%LET` and `%PUT`,
+  procedures whose output datasets are all named by an option or statement
+  the translator reads, DATA steps it translates, and a `PROC SORT` with
+  only `DATA=`, `OUT=` and an ascending `BY`. Anything else between a step
+  the grid uses and the `PROC HAZPRED` refuses the grid, with an
+  `$untranslated` row naming the statement: a `WHERE` or `NODUPKEY` in that
+  sort, an `%INCLUDE`, a call of a macro the file does not define or whose
+  body writes the grid (with a DATA step, a sort in place, or `PROC
+  DATASETS`), open-code `%IF` or `%DO`, and a macro call with no semicolon,
+  which swallows the statement after it. SAS macro scope is respected: a
+  step inside a `%MACRO ... %MEND` definition does not define the grid where
+  it stands, and a `PROC HAZPRED` inside a definition is refused, because
+  SAS runs it where the macro is called. A call before the grid's first
+  step cannot write a dataset the grid reads, but it may change session
+  state the grid depends on, such as `OPTIONS OBS=`: the grid is emitted,
+  and the call has an `$untranslated` row saying so. A statement the
+  translator cannot place outside any step, or `OPTIONS OBS=` itself,
+  refuses the grid wherever it stands. On the public corpus, four jobs gain
+  two such rows each, for an `%INCLUDE` and a macro call before the grid.
+
+* **A stepwise screen on a Weibull fit whose scale cannot be represented
+  failed every candidate refit, and a selection-mode `hzr_bootstrap()`
+  pooled such replicates as successes (#566).** The refit's warm start
+  copied `mu`, which is 0, `Inf` or subnormal on such a fit, and `hazard()`
+  refuses that as a starting value. `hzr_stepwise()` said so, but
+  `hzr_bootstrap()` did not read it: on 400 rows with a covariate near 1000,
+  20 replicates all counted as successes and `z`, a true effect, was
+  selected in 75% of them, against 100% for the same model with the
+  covariate centered. The warm start now takes `log(mu)` from the fit,
+  moved into the range a number can hold, and carries the difference
+  through the coefficients. The same 20 replicates now select what the
+  centered fit selects, replicate for replicate. Separately,
+  `hzr_bootstrap()` now counts the selection-mode replicates in which a
+  candidate refit failed, for any reason, and warns once: such a candidate
+  was never tested. Those replicates are still pooled. The warning about a
+  `mu` that cannot be represented no longer says the other parameters are
+  unaffected without qualification.
+
+* **`hzr_bootstrap()` pooled replicates that stopped on `nlm()` code 4 or 5
+  and failed the relative-gradient test, with no count and no warning
+  (#622).**
+  `hazard()` warns about such a fit, but replicates run with their warnings
+  suppressed, and the count for #531 leaves those codes out because
+  `hazard()` warns for them. `hzr_bootstrap()` now reads the base refit and
+  the final fit of each replicate and warns once with the number of
+  replicates affected. Their estimates are still pooled. A stepwise refit
+  that was not kept is not read, since the screen does not return it.
+
+* `hzr_translate_sas()` code failed on R before 4.4 when a phase statement
+  named a variable that is not a syntactic R name, such as `_X1`: the fit
+  stopped with "object '_X1' not found". The emitted status chunk added its
+  column with `transform()`, which renamed `_X1` to `X_X1` before R 4.4.
+  The chunk now assigns each derived column directly,
+  `D[[".hzr_status"]] <- with(D, ...)`, so the column keeps its name on
+  every R version, including when the chunk runs again on data that already
+  carries `.hzr_status` (#609).
+
+* **A `PROC HAZPRED` `TIME` statement with more than one variable now stops
+  the block, as `PROC HAZPRED` does (#628).** `TIME` takes exactly one name, and a
+  second is a syntax error on which the procedure stops. `hzr_translate_sas()`
+  took the first name and emitted the predictions. It now emits a `stop()`
+  and an `$untranslated` row, as it does for a multi-operand `TIME` in
+  `PROC HAZARD`.
+
+* **A grid `DATA` step with `SET;` and no dataset name, or a numeric
+  `LENGTH` below 8 bytes, now refuses the grid (#628).** `SET;` reads the most
+  recent dataset, and was read as no `SET` at all; a short numeric length
+  stores fewer digits than the emitted grid holds.
+
+* A select-mode `hzr_bootstrap()` replicate whose base refit did not converge
+  is now counted as failed (#627), with the reason "base refit did not converge
+  (converged = FALSE)". The rule that a replicate which does not converge
+  fails applied only to the final fit, so under `criterion = "aic"` each
+  candidate warm-started from the base's unfinished point, reached the real
+  maximum and was credited with the base's shortfall. Under a forward Wald
+  screen a replicate that entered nothing failed while one that entered
+  something passed, so the replicates kept were biased towards selection. On 300 Weibull rows
+  with two pure-noise columns, a base that converged on the full data but not
+  on any resample gave 19 of 30 successful replicates with no warning, and
+  selected the noise columns in 12 and 8 of them.
+
+* `hzr_stepwise(criterion = "aic")` now refuses a base fit that did not
+  converge (#627), as `criterion = "score"` already did. A candidate's delta AIC is
+  measured against the base's log-likelihood, so a base that stopped short
+  entered pure noise at delta AIC -16.5 with no warning. `criterion = "wald"`
+  refuses one too unless `direction = "forward"`: a Wald entry is tested at
+  the candidate's own converged refit, but a removal is tested on the base's
+  own estimates and variance.
+
+* `hzr_deciles()` now refuses a multiphase fit that dropped the rows where a
+  phase covariate was missing (#627), with the same check and message as
+  `hzr_gof()`. It predicted each subject's cumulative hazard from the shorter
+  design, recycled onto the wrong subjects, and reported every subject
+  included: on `avc` with half the covariate missing, 70 observed events
+  against 159 expected and p < 2e-16, with no warning.
+
+* **`hzr_translate_sas()` could emit a PROC HAZPRED grid in an order SAS
+  does not use, with no `$untranslated` row (#630).** A `PROC SORT` with no `DATA=`
+  sorts SAS's most recent dataset, `_LAST_`. The translator took that to be
+  the dataset the job last named, but `DATA;`, an `OUTPUT` statement with no
+  `OUT=` (PROC MEANS, SUMMARY, REG and others), `OPTIONS _LAST_=` and a macro
+  whose body does one of these all change it unseen. A grid of 12, 6, 1
+  followed by `DATA; ... PROC SORT; BY MONTHS;` was emitted as 1, 6, 12. A
+  `PROC SORT` with no `DATA=` now refuses the grid when it sorts a dataset
+  the grid reads or stands between a step the grid uses and the PROC
+  HAZPRED, `OPTIONS _LAST_=` refuses it wherever it stands, and `DATA;` and
+  an `OUTPUT` with no `OUT=` are recorded as writing an unnamed dataset.
+
+* **A grid sorted by a character variable could come out in an order SAS
+  does not use (#630).** SAS compares character values in ASCII order and at the
+  column's fixed length, which its first assignment sets: after `G='B'`,
+  the values `'AB'` and `'AA'` are both stored as `'A'` and keep their input
+  order, where R sorted the full strings, and in the session's locale.
+  `OPTIONS SORTSEQ=` changed SAS's order unseen too. The emitted grid code
+  now stops when a `PROC SORT` it reproduces is by a character variable, and
+  `OPTIONS SORTSEQ=` or `NOSORTEQUALS` refuses the grid. Numeric sorts are
+  unchanged; on the public corpus no emitted grid sorts by a character
+  variable.
+
+* **A DATA step between the grid and the PROC HAZPRED could rename or
+  delete the grid through a function, and the grid was still emitted (#630).** Any
+  `CALL` routine, and functions such as `RENAME()`, `FDELETE()`, `SYSTEM()`,
+  `OPEN()` and `FETCH()`, now refuse a grid the step stands inside.
+
+* **A `DATA PGM=` statement between the grid and the PROC HAZPRED no longer
+  passes unseen (#630).** It runs or stores a compiled DATA step program, which may
+  rewrite the grid, and now refuses a grid it stands inside.
+
+## Packaging and documentation
+
+* Articles on the pkgdown site put the table of contents on the left and use
+  the full width of the window, through `pkgdown/extra.css`. The installed
+  vignettes are unchanged: the Quarto vignette engine renders them in its own
+  minimal format, which has no sidebar layout.
+
+* `DESCRIPTION` now declares the Quarto command line tool in
+  `SystemRequirements`. The vignettes have always needed it to build; the
+  field makes that visible to installers and to `R CMD check`.
 
 # TemporalHazard 1.2.12
 
@@ -4231,7 +4402,6 @@
   that fails is recorded in `$criteria$refit_failures` and warned about
   rather than leaving a row indistinguishable from one never refit.
 
-
 # TemporalHazard 1.2.6
 
 ## Bug fixes
@@ -4323,7 +4493,6 @@
   single `.hzr_logl_interval()`. Behavior under the default is unchanged and
   bit-identical, log-likelihood and gradient alike.
 
-
 # TemporalHazard 1.2.3
 
 ## Bug fixes
@@ -4350,7 +4519,6 @@
   character column named in an explicit `scope`, which the score criterion
   still cannot expand. Its refusal used to say switching criterion would not
   help, and now points at it instead.
-
 
 # TemporalHazard 1.2.2
 
@@ -4715,7 +4883,6 @@
   indistinguishable from a start that merely optimized badly, which is how the
   defect above stayed hidden.
 
-
 # TemporalHazard 1.2.1
 
 ## Breaking changes
@@ -4981,7 +5148,6 @@ selects.
   `Suggests` here as elsewhere: when it is absent this now stops and names both
   it and `criterion = "wald"`, rather than returning a screen that tested
   nothing.
-
 
 * **`hzr_stepwise(scope = NULL)` still failed on a formula passed by
   variable.** The fix for that defect reached `.hzr_refit_with_scope()` but
