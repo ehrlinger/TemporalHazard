@@ -2326,22 +2326,28 @@
 #'   `%LET`, `%PUT`, `%GLOBAL`, `%LOCAL` and `%SYMDEL` are read too, unless
 #'   their text calls a macro or a function that can run code
 #'   (`.hzr_sas_macro_text_ok()`). A procedure on `.hzr_sas_known_procs` is read:
-#'   every dataset it writes is named by an `OUT=`-style option or, in PROC
-#'   SQL, PROC APPEND and PROC DATASETS, by a statement this reads
-#'   (`.hzr_sas_written_names()`), so each one is an event and the grid refuses
-#'   if it depends on it. A call of a macro the file defines is read when every
-#'   statement of its body is, and stands for the datasets the body writes.
-#'   Statements inside a DATA step are the step's: the grid's own steps are
-#'   checked by `.hzr_sas_translate_step()`, which translates exactly what it
-#'   lists and refuses the rest, and any other step writes only the datasets
-#'   its `DATA` statement names.
+#'   every dataset it writes is either named by an `OUT=`-style option or, in
+#'   PROC SQL, PROC APPEND and PROC DATASETS, by a statement this reads
+#'   (`.hzr_sas_written_names()`), or is a new `DATAn` dataset no step can name
+#'   (see `.hzr_sas_known_procs`), recorded as `_DATA_`. Each one is an event
+#'   and the grid refuses if it depends on it. A call of a macro the file
+#'   defines is read when every statement of its body is, and stands for the
+#'   datasets the body writes. Statements inside a DATA step are the step's:
+#'   the grid's own steps are checked by `.hzr_sas_translate_step()`, which
+#'   translates exactly what it lists and refuses the rest. Any other step
+#'   writes the datasets its `DATA` statement names (`_DATA_` for `DATA;`),
+#'   unless it calls a function or CALL routine that can rename, delete or
+#'   write a dataset or file, or run other code (`RENAME()`, `FDELETE()`,
+#'   `OPEN()`, `SYSTEM()`, any `CALL`, ...); such a statement is a `call`.
 #' * **call**: it may write a dataset this cannot name. An `%INCLUDE`, a call
 #'   of a macro the file does not define or whose body is not all read, a
 #'   macro control statement (`%IF`, `%DO`, `%END`, ...), a procedure not on
 #'   the list, a dataset named through a macro variable, `X`, `DM`, `ENDSAS`,
-#'   `ODS OUTPUT`, a `PROC SORT` with no `DATA=` whose input this cannot
-#'   name, and a DATA step statement that runs other SAS code (`CALL
-#'   EXECUTE`, `DOSUBL()`, `RESOLVE()`, `CALL SYSTEM`, a hash `OUTPUT()`).
+#'   `ODS OUTPUT`, a `DATA PGM=` statement, which runs or stores a compiled
+#'   program, a `PROC SORT` with no `DATA=` whose input this cannot
+#'   name, and a DATA step statement that runs other SAS code or can touch a
+#'   dataset or file (any `CALL` routine, `DOSUBL()`, `RESOLVE()`,
+#'   `SYSTEM()`, `RENAME()`, `FDELETE()`, `OPEN()`, a hash `OUTPUT()`, ...).
 #'   `.hzr_parse_grid()` refuses the grid when one stands between a step the
 #'   grid uses and the point that reads it. Before that step it cannot write
 #'   a dataset the grid reads, because the step builds its dataset afresh.
@@ -2352,12 +2358,27 @@
 #'   every later step reads: a statement outside every step that is none of
 #'   the above (as when a macro call with no semicolon swallows the `DATA`
 #'   statement after it, `%SETUP DATA PRED`), a macro call with text after
-#'   it, and `OPTIONS OBS=` or `FIRSTOBS=`. Any of these before the PROC
-#'   HAZPRED refuses the grid, wherever it stands.
+#'   it, and `OPTIONS OBS=`, `FIRSTOBS=`, `_LAST_=`, `SORTSEQ=` or
+#'   `NOSORTEQUALS`. Any of these before the
+#'   PROC HAZPRED refuses the grid, wherever it stands.
+#'
+#' A `PROC SORT` with no `DATA=` (or `DATA=_LAST_`) sorts SAS's `_LAST_`
+#' dataset, the one most recently created (Base SAS documentation, PROC SORT
+#' and the `_LAST_=` system option; not in `hazard/src`). Which dataset that
+#' is depends on statements this reads only partly, so such a sort refuses
+#' the grid wherever it could touch it: when the dataset it is taken to sort
+#' is one the grid reads, and when it stands between a step the grid uses and
+#' the point that reads it, whatever dataset it is taken to sort. Before the
+#' grid's first step it changes nothing the grid reads.
 #'
 #' Inside a `PROC SORT` only `DATA=`, `OUT=` and an ascending `BY` of plain
 #' names are read; any other option or statement (`NODUPKEY`, `WHERE`,
-#' `DESCENDING`) makes the sort an `opaque` write of its output.
+#' `DESCENDING`) makes the sort an `opaque` write of its output. The
+#' emitted sort stops when a `BY` variable is character: SAS compares
+#' character values at the column's fixed length, which its first assignment
+#' sets, and in the session's collating sequence, and the translation
+#' reproduces neither. Column types are known only when the code runs, so
+#' the check is in the emitted code, not here.
 #'
 #' A step inside an open-code `%IF ... %DO` or `%DO` block carries `cond`,
 #' and a grid that uses it is refused: SAS may run the block once, many times
@@ -2368,10 +2389,14 @@
   "SYMBOL[0-9]*|AXIS[0-9]*|LEGEND[0-9]*|PATTERN[0-9]*|NOTE[0-9]*|PAGE|SKIP|",
   "MISSING)( |$)")
 
-#' Procedures whose every output dataset `.hzr_sas_written_names()` can name:
-#' through an `OUT=`-style, `BASE=` or `CNTLOUT=` option, or a PROC SQL or
-#' PROC DATASETS statement. `STANDARD`, `RANK` and `TRANSPOSE` with no `OUT=`
-#' write a new `DATAn` dataset, which no step of the job can name.
+#' Procedures whose output datasets this reads. Each is named by an
+#' `OUT=`-style, `BASE=` or `CNTLOUT=` option, or a PROC SQL or PROC DATASETS
+#' statement (`.hzr_sas_written_names()`), except two kinds that write a new
+#' `DATAn` dataset no step of the job can name, and so are recorded as
+#' `_DATA_`: `STANDARD`, `RANK` and `TRANSPOSE` with no `OUT=`, and an
+#' `OUTPUT` statement with no `OUT=` (`MEANS`, `SUMMARY`, `UNIVARIATE`,
+#' `REG`, `PHREG`, `LOGISTIC`, `GLM`, ...). Either one becomes SAS's `_LAST_`
+#' dataset (Base SAS documentation, the DATAn naming convention).
 #' @noRd
 .hzr_sas_known_procs <- c(
   "PRINT", "PLOT", "GPLOT", "CHART", "GCHART", "G3D", "CONTENTS", "MEANS",
@@ -2430,15 +2455,18 @@
 #' Every point in a job where a dataset is (re)defined, in file order, and
 #' every statement the grid allow-list does not read.
 #'
-#' Seven kinds. `data`: a `DATA <name>;` step, carrying its statements.
+#' Eight kinds. `data`: a `DATA <name>;` step, carrying its statements.
 #' `hazpred`: a `PROC HAZPRED ... OUT=`, whose output has one row per row of
 #' its `DATA=` dataset (`hazpred/obsloop.c:17-26`, `:67`). `sort`: a
 #' `PROC SORT ... ; BY ...;`, which reorders its input. `opaque`: anything
 #' else that writes a named dataset (another procedure's or a macro's `OUT=`, a
-#' multi-dataset or optioned `DATA` statement), which this cannot read and so
+#' multi-dataset or optioned `DATA` statement, a `DATA;` or an `OUTPUT` with
+#' no `OUT=`, both recorded as `_DATA_`), which this cannot read and so
 #' refuses if a grid depends on it. `call` and `unread` have no dataset: they
 #' are the allow-list's verdicts (see `.hzr_sas_global_ok` above), each with
-#' `what` (the statement) and `why`.
+#' `what` (the statement) and `why`. `lastsort` has none either: it marks a
+#' `PROC SORT` with no `DATA=`, which refuses a grid it stands inside, as a
+#' `call` does, but records nothing before the grid's first step.
 #'
 #' A `%MACRO ... %MEND` body is a definition: SAS runs its statements where
 #' the macro is called, not where they stand. Each event carries `scope`,
@@ -2493,9 +2521,12 @@
   proc <- NULL
   # The dataset a PROC SORT with no DATA= sorts: SAS's most recent one, the
   # last event before it, when that is a single named dataset and no block,
-  # call or unread statement has run since.
+  # call or unread statement has run since. A sort with no DATA= leaves
+  # _LAST_ where it was, so its own mark does not count.
   last_name <- function(p) {
-    before <- Filter(function(x) x$pos < p && x$scope == scope_at(p), ev)
+    before <- Filter(function(x) {
+      x$pos < p && x$scope == scope_at(p) && !identical(x$kind, "lastsort")
+    }, ev)
     if (!length(before)) return(NULL)
     at <- max(vapply(before, function(x) x$pos, numeric(1L)))
     if (any(block_starts > at & block_starts < p)) return(NULL)
@@ -2509,11 +2540,21 @@
     }
     cur <<- NULL
     if (!is.null(proc) && identical(proc$kind, "SORT")) {
-      from <- if (is.null(proc$data)) last_name(proc$pos) else proc$data
+      no_data <- is.null(proc$data) || identical(proc$data, "_LAST_")
+      from <- if (no_data) last_name(proc$pos) else proc$data
       to <- if (is.null(proc$out)) from else proc$out
       if (is.null(to)) {
         flag(proc$pos, "call", proc$text, paste(
           "sorts the most recent dataset, which this translation cannot name"))
+      } else if (no_data) {
+        # SAS sorts its _LAST_ dataset, which the parser can mistake: a
+        # statement it does not follow may have reset it. The dataset taken to
+        # be sorted is recorded as written by a step this does not read, and the
+        # mark refuses any grid the sort stands inside, whatever it sorts.
+        add(proc$pos, to, "opaque", what = "PROC SORT with no DATA=")
+        flag(proc$pos, "lastsort", proc$text, paste(
+          "has no DATA=, so it sorts SAS's most recent dataset (_LAST_), which",
+          "this translation cannot be sure to name"))
       } else if (is.null(from) || length(proc$bad) || !length(proc$by)) {
         what <- if (length(proc$bad)) paste0("PROC SORT (", paste(proc$bad, collapse = "; "), ")")
         add(proc$pos, to, "opaque", what = if (is.null(what)) "PROC SORT" else what)
@@ -2526,8 +2567,17 @@
 
   ctrl <- c("IF", "ELSE", "DO", "END", "GOTO", "RETURN", "ABORT")
   lang_ok <- c("LET", "PUT", "GLOBAL", "LOCAL", "SYMDEL")
-  runs_code <- paste0("(^|[^A-Z0-9_])CALL +(EXECUTE|SYSTEM)( |[(])|",
-                      "(^|[^A-Z0-9_.])(DOSUBL|DOSUB|RESOLVE|SYSTEM) *[(]|[.]OUTPUT *[(]")
+  # A DATA step statement that runs other code, or can rename, delete, open
+  # or write a dataset or file (Base SAS documentation, DATA step functions
+  # and CALL routines). Broad on purpose: any CALL routine, and every
+  # function of the dataset, external file and directory families that can
+  # change or reach one. Read on the text outside quotes.
+  runs_code <- paste0(
+    "(^|[^A-Z0-9_])CALL +[A-Z_]|[.]OUTPUT *[(]|",
+    "(^|[^A-Z0-9_.])(DOSUBL|DOSUB|RESOLVE|SYSTEM|SYSEXEC|RENAME|DELETE|FDELETE|",
+    "FCOPY|FAPPEND|FWRITE|FPUT|FOPEN|FCLOSE|FILENAME|FILEREF|LIBNAME|DCREATE|",
+    "DOPEN|DCLOSE|DREAD|MOPEN|OPEN|CLOSE|FETCH|FETCHOBS|EXIST|ATTRN|ATTRC|",
+    "GETVARC|GETVARN|VARNUM|CUROBS|POINT|REWIND|NOTE|DROPNOTE|DSNAME) *[(]")
   skip_to <- 0L
   for (i in seq_len(nrow(st))) {
     if (i <= skip_to) next
@@ -2548,6 +2598,18 @@
       flag(p, "unread", t, paste(
         "sets which rows every later step reads, which this translation",
         "does not follow"))
+      next
+    }
+    if (grepl("^OPTIONS? ", t) && grepl("(^|[ ])(SORTSEQ *=|NOSORTEQUALS( |$))", t)) {
+      flag(p, "unread", t, paste(
+        "sets the order every later PROC SORT gives, which this translation",
+        "does not follow"))
+      next
+    }
+    if (grepl("^OPTIONS? ", t) && grepl("(^|[ ])_LAST_ *=", t)) {
+      flag(p, "unread", t, paste(
+        "sets which dataset every later step with no DATA= reads, which this",
+        "translation does not follow"))
       next
     }
     if (grepl("^(X|DM|ENDSAS|SYSTASK|WAITFOR)( |'|\"|$)", t)) {
@@ -2617,7 +2679,9 @@
         for (nm in unique(stats::na.omit(vapply(bev, function(e) e$name, "")))) {
           add(p, nm, "opaque", what = paste0("%", mac))
         }
-        bad <- Filter(function(e) e$kind %in% c("call", "unread") || isTRUE(e$cond), bev)
+        bad <- Filter(function(e) {
+          e$kind %in% c("call", "unread", "lastsort") || isTRUE(e$cond)
+        }, bev)
         # An unread statement in the body is unread at the call: OPTIONS
         # OBS= set by a macro changes every later step, wherever it is called.
         kind <- if (any(vapply(bad, function(e) identical(e$kind, "unread"), TRUE))) "unread" else "call"
@@ -2633,12 +2697,23 @@
     if (grepl("^DATA( |$)", t) && !grepl("^DATA *=", t)) {
       close_all()
       rest <- .hzr_sas_ds(trimws(sub("^DATA", "", t)))
+      if (grepl("(^|[ /])PGM *=", rest)) {
+        flag(p, "call", t, paste(
+          "runs or stores a compiled DATA step program, which this translation",
+          "cannot read"))
+      }
       if (grepl("&", rest)) {
         flag(p, "call", t, "names its dataset through a macro variable, which this translation cannot resolve")
       }
-      if (grepl("^[A-Z_][A-Z0-9_]*$", rest) && !identical(rest, "_NULL_")) {
+      if (grepl("^[A-Z_][A-Z0-9_]*$", rest) && !rest %in% c("_NULL_", "_DATA_")) {
         cur <- list(pos = p, name = rest, stmts = character(0))
       } else {
+        # `DATA;` and `DATA _DATA_;` write a new DATAn dataset, which becomes
+        # _LAST_ and which no step of the job can name.
+        if (!nzchar(rest) || grepl("^_DATA_( |[(]|$)", rest)) {
+          add(p, "_DATA_", "opaque", what = paste0("DATA ", rest))
+          rest <- sub("^_DATA_", "", rest)
+        }
         # `DATA A B;`, `DATA A(KEEP=...)`, `DATA LIB.A;`: every name it writes
         # is recorded as unreadable, and the step's statements are swallowed.
         nms <- strsplit(gsub("[(][^)]*[)]", " ", rest), " +")[[1L]]
@@ -2686,8 +2761,10 @@
       next
     }
     if (!is.null(cur)) {
-      if (grepl(runs_code, t)) {
-        flag(p, "call", t, "runs other SAS code, which this translation cannot read")
+      if (grepl(runs_code, gsub("'[^']*'|\"[^\"]*\"", "", t))) {
+        flag(p, "call", t, paste(
+          "runs other SAS code, or can rename, delete or write a dataset or file,",
+          "which this translation cannot read"))
       }
       cur$stmts <- c(cur$stmts, t)
       next
@@ -2712,6 +2789,10 @@
       in_datasets <- identical(proc$what, "PROC DATASETS")
       for (out in .hzr_sas_written_names(t, in_datasets)) {
         add(p, out, "opaque", what = proc$what)
+      }
+      # An OUTPUT statement with no OUT= writes a new DATAn dataset.
+      if (grepl("^OUTPUT( |$)", t) && is.null(.hzr_sas_opt_name(t, "OUT"))) {
+        add(p, "_DATA_", "opaque", what = paste(proc$what, "OUTPUT with no OUT="))
       }
       next
     }
@@ -3370,9 +3451,27 @@
           from <- as.name(ev$from)
           # SAS orders a numeric missing value below every number, so an
           # ascending sort puts it first. DESCENDING is refused as a sort.
+          # SAS sorts character values in ASCII order (Base SAS documentation,
+          # PROC SORT); "radix" is the C-locale byte order on every platform,
+          # where the default follows the session's locale. For numbers the
+          # two agree, and both keep ties in input order, as SAS's default
+          # EQUALS does.
+          # SAS compares character values padded to the column's fixed
+          # length, which its first assignment sets ('B' makes 'AB' into 'A'),
+          # and in the session's SORTSEQ; this translation reproduces
+          # neither, so a character BY variable stops the emitted code.
+          chr <- as.call(c(quote(c), lapply(ev$by, function(b) {
+            call("is.character", call("$", from, as.name(b)))
+          })))
+          msg <- paste0(
+            "PROC SORT of ", ev$from, " is by a character variable. SAS compares ",
+            "character values at the column's fixed length and in its collating ",
+            "sequence, which this translation does not reproduce, so it cannot ",
+            "give the order SAS does")
           ord <- as.call(c(quote(order), lapply(ev$by, function(b) call("$", from, as.name(b))),
-                           list(na.last = FALSE)))
-          list(code = list(bquote(.(as.name(ev$name)) <- .(from)[.(ord), , drop = FALSE])),
+                           list(na.last = FALSE, method = "radix")))
+          list(code = list(bquote(if (any(.(chr))) stop(.(msg), call. = FALSE)),
+                           bquote(.(as.name(ev$name)) <- .(from)[.(ord), , drop = FALSE])),
                cols = r$cols, untr = empty, warn = character(0))
         }
       },
@@ -3405,7 +3504,7 @@
   # definition it can change nothing the grid reads, because the definition
   # builds its dataset afresh. Until the 1.2.13 release review such a call
   # was recorded and the grid emitted; a refusal is loud where that was not.
-  for (cl in Filter(function(e) identical(e$kind, "call"), events)) {
+  for (cl in Filter(function(e) e$kind %in% c("call", "lastsort"), events)) {
     hit <- vapply(ks, function(j) events[[j]]$pos < cl$pos && cl$pos < until[[j]], logical(1L))
     if (!any(hit)) next
     nms <- paste(unique(vapply(ks[hit], function(j) events[[j]]$name, "")), collapse = " and ")

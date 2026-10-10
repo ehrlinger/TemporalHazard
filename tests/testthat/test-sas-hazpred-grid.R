@@ -966,3 +966,179 @@ test_that("a call before the grid's first step keeps the grid and records a row"
   job <- translate_494(c(fit_macro_grid, hazpred_macro_grid))
   expect_equal(nrow(job$untranslated), 0L)
 })
+
+# 1.2.13 rollup review, N1. PROC SORT with no DATA= sorts SAS's _LAST_
+# dataset, the most recently created one (Base SAS documentation, PROC SORT
+# DATA= option and the _LAST_= system option; not in hazard/src). Several
+# statements make a new _LAST_ without naming it: DATA with no name or
+# DATA _DATA_ (a DATAn dataset), a procedure's OUTPUT statement with no OUT=
+# (also DATAn), OPTIONS _LAST_=, and a macro whose body does one of these.
+# Each probe below gave the grid 1, 6, 12 where SAS keeps 12, 6, 1 (or the
+# reverse for OPTIONS _LAST_=), with no $untranslated row.
+lastsort_grid <- "DATA PRED; DO MONTHS=12,6,1; OUTPUT; END; RUN;"
+
+test_that("a PROC SORT with no DATA= after the grid refuses it (N1)", {
+  probes <- list(
+    data_noname = c("DATA; MONTHS=5; RUN;", "PROC SORT; BY MONTHS; RUN;"),
+    data_data = c("DATA _DATA_; MONTHS=5; RUN;", "PROC SORT; BY MONTHS; RUN;"),
+    means = c("PROC MEANS DATA=PRED NOPRINT; VAR MONTHS; OUTPUT MEAN=MONTHS; RUN;",
+              "PROC SORT; BY MONTHS; RUN;"),
+    summary = c("PROC SUMMARY DATA=PRED; VAR MONTHS; OUTPUT MEAN=MONTHS; RUN;",
+                "PROC SORT; BY MONTHS; RUN;"),
+    reg = c("PROC REG DATA=PRED; MODEL MONTHS=MONTHS; OUTPUT P=MONTHS; RUN;",
+            "PROC SORT; BY MONTHS; RUN;"),
+    macro = c("%MACRO MK; DATA; MONTHS=2; RUN; %MEND MK;", "%MK;",
+              "PROC SORT; BY MONTHS; RUN;"),
+    # The sort is of PRED itself, which the parser names: still refused.
+    direct = "PROC SORT; BY MONTHS; RUN;",
+    last_kw = "PROC SORT DATA=_LAST_; BY MONTHS; RUN;",
+    named_other = c("DATA OTHER; MONTHS=5; RUN;", "PROC SORT; BY MONTHS; RUN;")
+  )
+  for (nm in names(probes)) {
+    job <- translate_494(c(lastsort_grid, probes[[nm]], hazpred_494("PRED")))
+    why <- refused_494(job)
+    expect_length(why, 1L)
+    expect_match(why, "PROC SORT", fixed = TRUE, info = nm)
+  }
+})
+
+test_that("OPTIONS _LAST_= refuses the grid wherever it stands (N1)", {
+  # SAS then sorts PRED (1, 6, 12) where the parser took OTHER to be sorted.
+  for (at in c("before", "after")) {
+    opt <- "OPTIONS _LAST_=PRED;"
+    job <- translate_494(c(
+      if (at == "before") opt,
+      lastsort_grid,
+      "DATA OTHER; MONTHS=5; RUN;",
+      if (at == "after") opt,
+      hazpred_494("PRED")
+    ))
+    expect_match(refused_494(job), "OPTIONS _LAST_=PRED", fixed = TRUE, info = at)
+  }
+})
+
+test_that("a statement that makes an unnamed dataset is _LAST_ to the parser (N1)", {
+  # DATA with no name, DATA _DATA_, and an OUTPUT with no OUT= in a listed
+  # procedure each write a DATAn dataset, which then becomes _LAST_.
+  ev_of <- function(lines) {
+    txt <- .hzr_sas_normalise(lines)
+    .hzr_sas_dataset_events(txt, .hzr_sas_blocks(txt))
+  }
+  for (mk in c("DATA; MONTHS=5; RUN;", "DATA _DATA_; MONTHS=5; RUN;",
+               "PROC MEANS DATA=PRED; OUTPUT MEAN=M; RUN;",
+               "PROC UNIVARIATE DATA=PRED; VAR MONTHS; OUTPUT MEAN=M; RUN;",
+               "PROC PHREG DATA=PRED; MODEL T*D(0)=A; OUTPUT XBETA=XB; RUN;",
+               "PROC LOGISTIC DATA=PRED; MODEL D=A; OUTPUT P=PP; RUN;",
+               "PROC GLM DATA=PRED; MODEL Y=A; OUTPUT P=PP; RUN;")) {
+    ev <- ev_of(c(lastsort_grid, mk, "PROC SORT; BY MONTHS; RUN;"))
+    named <- Filter(function(e) !is.na(e$name), ev)
+    expect_equal(vapply(named, function(e) e$name, ""), c("PRED", "_DATA_", "_DATA_"),
+                 info = mk)
+  }
+  # Control: an OUTPUT with OUT= names its dataset.
+  ev <- ev_of(c(lastsort_grid, "PROC MEANS DATA=PRED; OUTPUT OUT=M MEAN=X; RUN;"))
+  expect_equal(vapply(Filter(function(e) !is.na(e$name), ev), function(e) e$name, ""),
+               c("PRED", "M"))
+})
+
+test_that("a PROC SORT with no DATA= before the grid's first step leaves it (N1)", {
+  # It cannot touch a dataset the grid reads, which the grid's steps build
+  # afresh, so the grid is emitted with no row.
+  job <- translate_494(c("DATA OTHER; X=1; RUN;", "PROC SORT; BY X; RUN;",
+                         lastsort_grid, hazpred_494("PRED")))
+  expect_equal(grid_494(job)$time, c(12, 6, 1))
+  expect_equal(nrow(job$untranslated), 0L)
+})
+
+# N2. SAS sorts character values in ASCII order (Base SAS documentation,
+# PROC SORT, "Sorting Orders for Character Variables") and compares them at
+# the column's fixed length, which the first assignment sets: after G='B',
+# 'AB' and 'AA' are both stored as 'A', so SAS keeps them in input order.
+# R sorts the full strings, in the session locale unless method = "radix".
+# Neither the lengths nor OPTIONS SORTSEQ= are followed, so a character BY
+# variable stops the emitted code rather than give an order SAS does not.
+test_that("a sort by a character variable stops the emitted grid (N2)", {
+  probes <- list(
+    ascii = c("DATA A; G='B'; MONTHS=1; OUTPUT;", "DATA B; G='_'; MONTHS=2; OUTPUT;",
+              "DATA C; G='A'; MONTHS=3; OUTPUT;", "DATA PRED; SET A B C;"),
+    # SAS: 2, 3, 1 (B, then A, A in input order). R by full string: 3, 2, 1.
+    length = c("DATA PRED; G='B'; MONTHS=1; OUTPUT; G='AB'; MONTHS=2; OUTPUT;",
+               "G='AA'; MONTHS=3; OUTPUT;")
+  )
+  for (nm in names(probes)) {
+    job <- translate_494(c(probes[[nm]], "PROC SORT DATA=PRED; BY G;", hazpred_494("PRED")))
+    expect_error(grid_494(job), "PROC SORT of PRED is by a character variable", fixed = TRUE)
+  }
+  # Second key character, first numeric: still stops.
+  job <- translate_494(c("DATA PRED; G='B'; MONTHS=1; OUTPUT; G='A'; MONTHS=1; OUTPUT;",
+                         "PROC SORT DATA=PRED; BY MONTHS G;", hazpred_494("PRED")))
+  expect_error(grid_494(job), "by a character variable", fixed = TRUE)
+})
+
+test_that("a numeric sort with DATA= still emits the same code (N2 control)", {
+  job <- translate_494(c(
+    "DATA PRED; DO MONTHS=3,1,2; OUTPUT; END;",
+    "PROC SORT DATA=PRED; BY MONTHS;",
+    hazpred_494("PRED")
+  ))
+  expect_equal(grid_494(job)$time, c(1, 2, 3))
+  txt <- paste(deparse(job$calls$grid), collapse = " ")
+  expect_match(txt, "order(PRED$MONTHS, na.last = FALSE, method = \"radix\")", fixed = TRUE)
+})
+
+# L1. A DATA step can rename, delete or rewrite datasets through functions
+# and CALL routines (Base SAS documentation: RENAME, FDELETE, SYSTEM, OPEN,
+# CALL EXECUTE, ...). One between a step the grid uses and the PROC HAZPRED
+# may change what SAS reads.
+test_that("a DATA step calling a dataset or file function refuses the grid (L1)", {
+  stmts <- c(
+    rename = "RC=RENAME('WORK.PRED','OLD','DATA'); RC=RENAME('WORK.OTHER','PRED','DATA');",
+    delete = "RC=DELETE('PRED');",
+    fdelete = "RC=FDELETE('F');",
+    system = "RC=SYSTEM('rm x');",
+    call = "CALL SYMPUT('A', 1);",
+    open = "DSID=OPEN('PRED'); RC=FETCH(DSID); RC=CLOSE(DSID);",
+    sysfunc = "RC=%SYSFUNC(RENAME(PRED, OLD));"
+  )
+  for (nm in names(stmts)) {
+    job <- translate_494(c(lastsort_grid, "DATA OTHER; MONTHS=5; RUN;",
+                           paste("DATA _NULL_;", stmts[[nm]], "RUN;"),
+                           hazpred_494("PRED")))
+    expect_match(refused_494(job), "may rewrite PRED", fixed = TRUE, info = nm)
+  }
+  # Control: a quoted word is not a call, and the DELETE statement is not
+  # the function.
+  job <- translate_494(c(lastsort_grid,
+                         "DATA OTHER; SET PRED; LABEL X='CALL ME OPEN(1)'; IF X THEN DELETE; RUN;",
+                         hazpred_494("PRED")))
+  expect_equal(grid_494(job)$time, c(12, 6, 1))
+})
+
+# The rest of the 1.2.13 targeted review of N1/N2/L1: statements that change
+# the order a later PROC SORT gives, or run a stored program.
+test_that("OPTIONS SORTSEQ= or NOSORTEQUALS refuses the grid wherever it stands", {
+  for (opt in c("OPTIONS SORTSEQ=EBCDIC;", "OPTIONS NOSORTEQUALS;",
+                "OPTIONS NOCENTER NOSORTEQUALS;")) {
+    for (at in c("before", "after")) {
+      job <- translate_494(c(
+        if (at == "before") opt,
+        "DATA PRED; DO MONTHS=3,1,2; OUTPUT; END;",
+        if (at == "after") opt,
+        "PROC SORT DATA=PRED; BY MONTHS;",
+        hazpred_494("PRED")
+      ))
+      expect_match(refused_494(job), sub(";$", "", opt), fixed = TRUE, info = paste(opt, at))
+    }
+  }
+  # Control: SORTEQUALS is SAS's default and leaves the grid.
+  job <- translate_494(c("OPTIONS SORTEQUALS;", "DATA PRED; DO MONTHS=3,1,2; OUTPUT; END;",
+                         "PROC SORT DATA=PRED; BY MONTHS;", hazpred_494("PRED")))
+  expect_equal(grid_494(job)$time, c(1, 2, 3))
+})
+
+test_that("DATA PGM= between the grid and the PROC HAZPRED refuses it", {
+  for (stmt in c("DATA PGM=WORK.P; EXECUTE; RUN;", "DATA PGM = WORK.P; RUN;")) {
+    job <- translate_494(c(lastsort_grid, stmt, hazpred_494("PRED")))
+    expect_match(refused_494(job), "may rewrite PRED", fixed = TRUE, info = stmt)
+  }
+})
