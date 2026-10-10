@@ -2343,7 +2343,8 @@
 #'   of a macro the file does not define or whose body is not all read, a
 #'   macro control statement (`%IF`, `%DO`, `%END`, ...), a procedure not on
 #'   the list, a dataset named through a macro variable, `X`, `DM`, `ENDSAS`,
-#'   `ODS OUTPUT`, a `PROC SORT` with no `DATA=` whose input this cannot
+#'   `ODS OUTPUT`, a `DATA PGM=` statement, which runs or stores a compiled
+#'   program, a `PROC SORT` with no `DATA=` whose input this cannot
 #'   name, and a DATA step statement that runs other SAS code or can touch a
 #'   dataset or file (any `CALL` routine, `DOSUBL()`, `RESOLVE()`,
 #'   `SYSTEM()`, `RENAME()`, `FDELETE()`, `OPEN()`, a hash `OUTPUT()`, ...).
@@ -2357,7 +2358,8 @@
 #'   every later step reads: a statement outside every step that is none of
 #'   the above (as when a macro call with no semicolon swallows the `DATA`
 #'   statement after it, `%SETUP DATA PRED`), a macro call with text after
-#'   it, and `OPTIONS OBS=`, `FIRSTOBS=` or `_LAST_=`. Any of these before the
+#'   it, and `OPTIONS OBS=`, `FIRSTOBS=`, `_LAST_=`, `SORTSEQ=` or
+#'   `NOSORTEQUALS`. Any of these before the
 #'   PROC HAZPRED refuses the grid, wherever it stands.
 #'
 #' A `PROC SORT` with no `DATA=` (or `DATA=_LAST_`) sorts SAS's `_LAST_`
@@ -2371,7 +2373,12 @@
 #'
 #' Inside a `PROC SORT` only `DATA=`, `OUT=` and an ascending `BY` of plain
 #' names are read; any other option or statement (`NODUPKEY`, `WHERE`,
-#' `DESCENDING`) makes the sort an `opaque` write of its output.
+#' `DESCENDING`) makes the sort an `opaque` write of its output. The
+#' emitted sort stops when a `BY` variable is character: SAS compares
+#' character values at the column's fixed length, which its first assignment
+#' sets, and in the session's collating sequence, and the translation
+#' reproduces neither. Column types are known only when the code runs, so
+#' the check is in the emitted code, not here.
 #'
 #' A step inside an open-code `%IF ... %DO` or `%DO` block carries `cond`,
 #' and a grid that uses it is refused: SAS may run the block once, many times
@@ -2593,6 +2600,12 @@
         "does not follow"))
       next
     }
+    if (grepl("^OPTIONS? ", t) && grepl("(^|[ ])(SORTSEQ *=|NOSORTEQUALS( |$))", t)) {
+      flag(p, "unread", t, paste(
+        "sets the order every later PROC SORT gives, which this translation",
+        "does not follow"))
+      next
+    }
     if (grepl("^OPTIONS? ", t) && grepl("(^|[ ])_LAST_ *=", t)) {
       flag(p, "unread", t, paste(
         "sets which dataset every later step with no DATA= reads, which this",
@@ -2684,6 +2697,11 @@
     if (grepl("^DATA( |$)", t) && !grepl("^DATA *=", t)) {
       close_all()
       rest <- .hzr_sas_ds(trimws(sub("^DATA", "", t)))
+      if (grepl("(^|[ /])PGM *=", rest)) {
+        flag(p, "call", t, paste(
+          "runs or stores a compiled DATA step program, which this translation",
+          "cannot read"))
+      }
       if (grepl("&", rest)) {
         flag(p, "call", t, "names its dataset through a macro variable, which this translation cannot resolve")
       }
@@ -3438,9 +3456,22 @@
           # where the default follows the session's locale. For numbers the
           # two agree, and both keep ties in input order, as SAS's default
           # EQUALS does.
+          # SAS compares character values padded to the column's fixed
+          # length, which its first assignment sets ('B' makes 'AB' into 'A'),
+          # and in the session's SORTSEQ; this translation reproduces
+          # neither, so a character BY variable stops the emitted code.
+          chr <- as.call(c(quote(c), lapply(ev$by, function(b) {
+            call("is.character", call("$", from, as.name(b)))
+          })))
+          msg <- paste0(
+            "PROC SORT of ", ev$from, " is by a character variable. SAS compares ",
+            "character values at the column's fixed length and in its collating ",
+            "sequence, which this translation does not reproduce, so it cannot ",
+            "give the order SAS does")
           ord <- as.call(c(quote(order), lapply(ev$by, function(b) call("$", from, as.name(b))),
                            list(na.last = FALSE, method = "radix")))
-          list(code = list(bquote(.(as.name(ev$name)) <- .(from)[.(ord), , drop = FALSE])),
+          list(code = list(bquote(if (any(.(chr))) stop(.(msg), call. = FALSE)),
+                           bquote(.(as.name(ev$name)) <- .(from)[.(ord), , drop = FALSE])),
                cols = r$cols, untr = empty, warn = character(0))
         }
       },

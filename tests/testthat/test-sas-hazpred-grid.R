@@ -1051,31 +1051,28 @@ test_that("a PROC SORT with no DATA= before the grid's first step leaves it (N1)
 })
 
 # N2. SAS sorts character values in ASCII order (Base SAS documentation,
-# PROC SORT, "Sorting Orders for Character Variables"); R's order() sorts
-# them in the session locale unless method = "radix".
-test_that("a character BY sorts in ASCII order, not the locale's (N2)", {
-  # testthat runs each test with the C collation, which is ASCII order and so
-  # hides the defect. Sort in a locale that is not, when this machine has one.
-  loc <- suppressWarnings(Sys.setlocale("LC_COLLATE", "en_US.UTF-8"))
-  skip_if(!nzchar(loc), "no en_US.UTF-8 collation on this machine")
-  withr::defer(Sys.setlocale("LC_COLLATE", "C"))
-  # The known positive: this locale orders the three keys differently from
-  # ASCII, so the assertions below can fail.
-  expect_false(identical(order(c("B", "_", "A")), c(3L, 1L, 2L)))
-  job <- translate_494(c(
-    "DATA A; G='B'; MONTHS=1; OUTPUT;",
-    "DATA B; G='_'; MONTHS=2; OUTPUT;",
-    "DATA C; G='A'; MONTHS=3; OUTPUT;",
-    "DATA PRED; SET A B C;",
-    "PROC SORT DATA=PRED; BY G;",
-    hazpred_494("PRED")
-  ))
-  g <- grid_494(job)
-  # ASCII: 'A' (65) < 'B' (66) < '_' (95). en_US puts '_' first.
-  expect_equal(g$G, c("A", "B", "_"))
-  expect_equal(g$time, c(3, 1, 2))
-  expect_match(paste(deparse(job$calls$grid), collapse = " "), "method = \"radix\"",
-               fixed = TRUE)
+# PROC SORT, "Sorting Orders for Character Variables") and compares them at
+# the column's fixed length, which the first assignment sets: after G='B',
+# 'AB' and 'AA' are both stored as 'A', so SAS keeps them in input order.
+# R sorts the full strings, in the session locale unless method = "radix".
+# Neither the lengths nor OPTIONS SORTSEQ= are followed, so a character BY
+# variable stops the emitted code rather than give an order SAS does not.
+test_that("a sort by a character variable stops the emitted grid (N2)", {
+  probes <- list(
+    ascii = c("DATA A; G='B'; MONTHS=1; OUTPUT;", "DATA B; G='_'; MONTHS=2; OUTPUT;",
+              "DATA C; G='A'; MONTHS=3; OUTPUT;", "DATA PRED; SET A B C;"),
+    # SAS: 2, 3, 1 (B, then A, A in input order). R by full string: 3, 2, 1.
+    length = c("DATA PRED; G='B'; MONTHS=1; OUTPUT; G='AB'; MONTHS=2; OUTPUT;",
+               "G='AA'; MONTHS=3; OUTPUT;")
+  )
+  for (nm in names(probes)) {
+    job <- translate_494(c(probes[[nm]], "PROC SORT DATA=PRED; BY G;", hazpred_494("PRED")))
+    expect_error(grid_494(job), "PROC SORT of PRED is by a character variable", fixed = TRUE)
+  }
+  # Second key character, first numeric: still stops.
+  job <- translate_494(c("DATA PRED; G='B'; MONTHS=1; OUTPUT; G='A'; MONTHS=1; OUTPUT;",
+                         "PROC SORT DATA=PRED; BY MONTHS G;", hazpred_494("PRED")))
+  expect_error(grid_494(job), "by a character variable", fixed = TRUE)
 })
 
 test_that("a numeric sort with DATA= still emits the same code (N2 control)", {
@@ -1115,4 +1112,33 @@ test_that("a DATA step calling a dataset or file function refuses the grid (L1)"
                          "DATA OTHER; SET PRED; LABEL X='CALL ME OPEN(1)'; IF X THEN DELETE; RUN;",
                          hazpred_494("PRED")))
   expect_equal(grid_494(job)$time, c(12, 6, 1))
+})
+
+# The rest of the 1.2.13 targeted review of N1/N2/L1: statements that change
+# the order a later PROC SORT gives, or run a stored program.
+test_that("OPTIONS SORTSEQ= or NOSORTEQUALS refuses the grid wherever it stands", {
+  for (opt in c("OPTIONS SORTSEQ=EBCDIC;", "OPTIONS NOSORTEQUALS;",
+                "OPTIONS NOCENTER NOSORTEQUALS;")) {
+    for (at in c("before", "after")) {
+      job <- translate_494(c(
+        if (at == "before") opt,
+        "DATA PRED; DO MONTHS=3,1,2; OUTPUT; END;",
+        if (at == "after") opt,
+        "PROC SORT DATA=PRED; BY MONTHS;",
+        hazpred_494("PRED")
+      ))
+      expect_match(refused_494(job), sub(";$", "", opt), fixed = TRUE, info = paste(opt, at))
+    }
+  }
+  # Control: SORTEQUALS is SAS's default and leaves the grid.
+  job <- translate_494(c("OPTIONS SORTEQUALS;", "DATA PRED; DO MONTHS=3,1,2; OUTPUT; END;",
+                         "PROC SORT DATA=PRED; BY MONTHS;", hazpred_494("PRED")))
+  expect_equal(grid_494(job)$time, c(1, 2, 3))
+})
+
+test_that("DATA PGM= between the grid and the PROC HAZPRED refuses it", {
+  for (stmt in c("DATA PGM=WORK.P; EXECUTE; RUN;", "DATA PGM = WORK.P; RUN;")) {
+    job <- translate_494(c(lastsort_grid, stmt, hazpred_494("PRED")))
+    expect_match(refused_494(job), "may rewrite PRED", fixed = TRUE, info = stmt)
+  }
 })
