@@ -996,6 +996,17 @@
   `SystemRequirements`. The vignettes have always needed it to build; the
   field makes that visible to installers and to `R CMD check`.
 
+## Known limitations
+
+* **Multiphase fits are about two to three times slower than in 1.2.12
+  (#631).** The fixes that keep a saturated hazard phase's value (#578) and
+  difference the early-phase `t_half` derivative on the log scale (#574)
+  made each evaluation of the phase decomposition about four times as
+  costly. One multiphase fit of 5,880 rows took 0.7 seconds in 1.2.12 and
+  1.7 seconds now, and a 20-replicate `hzr_bootstrap()` of it 7 seconds and
+  23. Estimates are not affected by the slowdown. It is to be removed in
+  1.3.0 without changing any value.
+
 # TemporalHazard 1.2.12
 
 ## Breaking changes
