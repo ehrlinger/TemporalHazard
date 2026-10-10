@@ -17,32 +17,50 @@
   `withr` moves from `Suggests` to `Imports`; it depends only on base R.
   This restores the 1.0.2 behaviour, which 1.0.3 removed.
 
-* **Estimates from earlier versions may change when refitted.** Three
-  fixes change what a fit returns, not only what it reports: multiphase fits
-  under Conservation of Events, which could stop short of the maximum
-  (#565); fits with a `"hazard"` phase far past saturation (#578); and
-  multiphase stepwise selections and `hzr_bootstrap()` select-mode
-  frequencies, whose candidate refits never started from the current model
-  (#551). Refit models fitted with earlier versions; the entries under Bug
-  fixes give the details.
+* **Estimates and selections from earlier versions may change when
+  refitted.** Several fixes change what a fit or a screen returns, not only
+  what it reports: multiphase fits under Conservation of Events, which could
+  stop short of the maximum (#565); fits with a `"hazard"` phase far past
+  saturation (#578); multiphase fits whose search passed a very small
+  `t_half` (#574); multiphase stepwise selections and `hzr_bootstrap()`
+  select-mode frequencies, whose candidate refits never started from the
+  current model (#551); score-criterion selections at a step whose
+  information cannot be formed, which now refit and test their candidates
+  instead of stopping (#570); Wald selections, which no longer enter a
+  candidate whose refit ended below the base (#538); and multiphase AIC
+  selections over a candidate with missing values (#488). Refit models and
+  rerun screens from earlier versions; the entries under Bug fixes give the
+  details.
 
 * **Some calls that returned a value now stop, or return something
   different.**
-    - `hazard()` refuses a `control$maxit` below 1 (#541), and a Weibull
-      `mu` or `nu` in `theta` too small to hold as a normal double, such as
-      `1e-310`, which 1.2.12 fitted (#566).
+    - `hazard()` refuses a `control$maxit` below 1 or not a number (`"200"`
+      was accepted) (#541), and `hazard()`, `hzr_evaluate()` and `predict()`
+      refuse a Weibull `mu` or `nu` too small to hold as a normal double,
+      such as `1e-310`, which 1.2.12 fitted and evaluated (#566).
     - `summary()$log_lik` is `NA` for an `objective = "sas"` fit that read
       an interval-censored row, whose objective is not a log-likelihood
       (#544).
     - `hzr_decompos()` returns a fourth element, `log_surv` (#578).
     - `hzr_stepwise()` refuses a `data` whose rows are not the fit's rows in
-      the fit's order (#487, #515).
+      the fit's order (#487, #515), and any `data` with a duplicated column
+      name, whether or not that column is in the scope (#515).
     - `hzr_stepwise()` refuses a base model that did not converge under
       `criterion = "aic"`, and under `"wald"` with `direction = "backward"`
       or `"both"`; select-mode `hzr_bootstrap()` refuses such a base up
       front, and fails a replicate whose base refit did not converge (#627).
     - `hzr_deciles()` refuses a multiphase fit whose design dropped rows, as
       `hzr_gof()` already did (#627).
+
+* **Some returned objects have new elements, and one moves others.** A
+  Weibull fit's `fit$fit` gains `log_scale` before `vcov`, so `vcov`,
+  `rcond`, `pd`, `counts`, `message`, `rel_gradient`,
+  `rel_gradient_reason` and `polish_code` move position: read them by name
+  (#566). `hzr_decompos()` returns `log_surv` (#578); a stepwise result's
+  `$steps`, and `as.data.frame()` of it, gain `n_rows` (#519);
+  `attr(hzr_gof(), "summary")` gains `n_tallied` (#492); `hzr_evaluate()`
+  returns `$objective`, and `summary()` gains `objective` and
+  `objective_value` (#544, #556).
 
 ## Bug fixes
 
@@ -328,9 +346,12 @@
       model. `summary()` shows it as a `log(mu)` row under `mu`. `coef()`
       shows `mu` as it is, and `vcov()` gives `NA` for its row and column,
       with the reason in the fit's `degraded_causes`.
-    - `hzr_evaluate()` and `predict()` still refuse a `theta` given with such
-      a `mu`, which carries no `log(mu)` to read. This includes an
-      intercept-only fit, whose parameters `predict()` did not check before.
+    - `hzr_evaluate()` and `predict()` refuse a `theta` given with such a
+      `mu`, which carries no `log(mu)` to read. They already refused a `mu`
+      of 0 or `Inf`; a subnormal `mu` (one too small to hold as a normal
+      double, such as `1e-310`) was evaluated, and is now refused too. This
+      includes an intercept-only fit, whose parameters `predict()` did not
+      check before.
     - `hzr_bootstrap()` warns with the number of replicates whose `mu`
       cannot be represented; the summary of `mu` is not usable there.
     - A finite `mu` whose product with a large time overflowed gave a
