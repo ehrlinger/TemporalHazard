@@ -166,7 +166,8 @@ the common mistake of passing a bare `hzr_phase` instead of a list.
 ### Decomposition engine
 
 `hzr_decompos(time, t_half, nu, m)` is the mathematical core. It
-computes `G(t)` (CDF), `g(t)` (density), and `h(t)` (hazard) for the
+computes `G(t)` (CDF), `g(t)` (density), `h(t)` (hazard) and
+`log_surv`, the logarithm of `1 - G(t)`, for the
 three-parameter family across six valid sign combinations of `nu` and
 `m`. The phase-level helpers `hzr_phase_cumhaz()` and
 `hzr_phase_hazard()` wrap `hzr_decompos()` and apply the phase type

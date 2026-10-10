@@ -157,7 +157,9 @@
 #'   `"wald"`, or `"aic"`.  `"score"` and `"wald"` both apply SAS-style
 #'   p-value thresholds (`slentry` / `slstay`) but score entry candidates
 #'   differently, and can therefore select different variable sets; `"score"`
-#'   reproduces C/SAS HAZARD and needs no per-candidate refit.  `"aic"` adds or
+#'   reproduces C/SAS HAZARD and needs no per-candidate refit, except at a
+#'   step whose information cannot be formed, where it falls back to
+#'   refitting and Wald-testing each candidate.  `"aic"` adds or
 #'   drops whenever it lowers the AIC.  `"score"` and `"aic"` refuse a base
 #'   fit that did not converge, since both measure candidates against it, and
 #'   so does `"wald"` unless `direction = "forward"`, since a removal is
