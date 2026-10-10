@@ -405,13 +405,14 @@ distribution. The practical consequence is that any two runs can differ
 by more than a release cycle’s real growth, so read the dated series,
 not the last delta:
 
-| Measured   | Commit        | Overall | Tests |
-|------------|---------------|---------|-------|
-| 2026-08-22 | (not stamped) | 2m 52s  | 53s   |
-| 2026-08-23 | `c9f6c28`     | 3m 29s  | 84s   |
-| 2026-09-02 | `f790c73`     | 3m 33s  | 91s   |
-| 2026-09-05 | `fe57e60`     | 3m 32s  | 87s   |
-| 2026-09-09 | `bd75f9f`     | 3m 41s  | 90s   |
+| Measured   | Commit        | Overall           | Tests        |
+|------------|---------------|-------------------|--------------|
+| 2026-08-22 | (not stamped) | 2m 52s            | 53s          |
+| 2026-08-23 | `c9f6c28`     | 3m 29s            | 84s          |
+| 2026-09-02 | `f790c73`     | 3m 33s            | 91s          |
+| 2026-09-05 | `fe57e60`     | 3m 32s            | 87s          |
+| 2026-09-09 | `bd75f9f`     | 3m 41s            | 90s          |
+| 2026-10-10 | `1e3da809`    | 12m 0s to 12m 12s | 508s to 511s |
 
 Across those five the total moved about 49 seconds and the tests about
 37, nearly all of it in tests, over four release cycles. Real, slow, and
@@ -420,6 +421,16 @@ still a wide margin against CRAN. The 2026-08-23 entry read the
 46-second spread on unchanged code, a delta that size can be entirely
 the machine. The direction is what is worth watching, and it only shows
 against several dated points.
+
+⚠️ **The 2026-10-10 row is over CRAN’s ceiling, and it is the code, not
+the machine (#631).** The “five” above are the rows to 2026-09-09. At
+the 1.2.13 cut, three runs read 720s to 732s overall at a load of about
+2.7. The v1.2.12 copy of one test file, unchanged, took 39s against
+v1.2.12’s code and 120s against the cut’s:
+[`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
+costs about four times as much per call since \#578 and \#574. That is a
+3x code slowdown, far outside the 46-second spread, and it must come out
+before the 1.3.0 CRAN submission.
 
 ⚠️ **Assertion counts and seconds are two different measurements.
 Neither explains the other.** Track both, and keep the claims apart.

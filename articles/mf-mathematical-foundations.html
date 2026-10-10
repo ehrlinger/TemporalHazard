@@ -29,7 +29,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.12</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.13</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -729,9 +729,7 @@ Figure 3: Three-phase additive cumulative hazard: total = early + constant + la
 <ul>
 <li>Time is clamped above <code>.Machine$double.xmin</code> to avoid <span class="math inline">\(0^{\text{negative}}\)</span>
 </li>
-<li>
-<span class="math inline">\(1 - G(t)\)</span> is clamped above <code>.Machine$double.xmin</code> before computing the hazard <span class="math inline">\(h(t) = g(t)/(1 - G(t))\)</span>
-</li>
+<li>The hazard <span class="math inline">\(h(t) = g(t)/(1 - G(t))\)</span> is formed on the log scale, as <span class="math inline">\(\log g(t) - \log(1 - G(t))\)</span>, so it stays finite where <span class="math inline">\(G(t)\)</span> rounds to 1 and where <span class="math inline">\(g(t)\)</span> underflows to 0 (#578)</li>
 <li>Left- and interval-censored contributions use <code><a href="../reference/hzr_log1mexp.html">hzr_log1mexp()</a></code> to avoid <span class="math inline">\(\log(0)\)</span> when <span class="math inline">\(H(t)\)</span> is very small</li>
 </ul>
 <p>These guards remove the common sources of non-finite values, but not all of them: an infeasible trial point returns <span class="math inline">\(-\infty\)</span>. For those, <code>.hzr_optim_generic()</code> replaces a non-finite objective with a large finite value (<code>1e10</code>) and a non-finite gradient component with zero, so the search backs away from that region.</p>

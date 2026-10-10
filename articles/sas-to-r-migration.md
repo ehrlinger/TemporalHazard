@@ -296,10 +296,10 @@ which implements forward, backward, and two-way stepwise selection with
 SAS-style SLENTRY / SLSTAY thresholds, phase-specific entry for
 multiphase models, and a MOVE oscillation guard. It now defaults to
 `criterion = "score"`, which reproduces SAS’s `SELECTION` Q statistic (a
-score test at the current estimates, with no per-candidate refit), so
-entry decisions match SAS’s directly. Passing `criterion = "wald"`
-selects the older refit-based path, which fits each candidate before
-testing it. See
+score test at the current estimates, with no per-candidate refit except
+where the information cannot be formed), so entry decisions match SAS’s
+directly. Passing `criterion = "wald"` selects the older refit-based
+path, which fits each candidate before testing it. See
 [`?hzr_stepwise`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
 for the full option list.
 
@@ -998,9 +998,15 @@ enough in production jobs to know about going in:
   [`predict()`](https://rdrr.io/r/stats/predict.html) chunks stop, so
   build the `newdata` grid by hand and pass it to
   [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md).
-  On the public corpus, 15 of 36 `PROC HAZPRED` blocks now get a grid, 7
-  of them with a warning; before 1.2.13, 13 did, several of them missing
-  covariates or rows with nothing recorded.
+  The same happens when anything between a step the grid uses and the
+  `PROC HAZPRED` could rewrite the grid out of sight: an `%INCLUDE`, a
+  call of a macro the translator cannot read, open-code `%IF` or `%DO`,
+  or `OPTIONS OBS=`. Such a call before the grid’s first step keeps the
+  grid and is recorded as `UNTRANSLATED`, since it may change session
+  state the grid depends on. On the public corpus, 15 of 36
+  `PROC HAZPRED` blocks now get a grid, 7 of them with a warning; before
+  1.2.13, 13 did, several of them missing covariates or rows with
+  nothing recorded.
 - **An unresolved `INHAZ=` fails the render on purpose.** If a
   `PROC HAZPRED` job’s fitted-model dataset can’t be found (neither from
   another translated job’s `OUTHAZ=` nor from the `librefs=` argument
@@ -1028,11 +1034,14 @@ the following scope limits. Detailed status per feature is tracked in
 - **Not yet supported:** FAST-screening (Lawless-Singhal approximate
   Wald updates). Much of what it exists to save is already gone, though:
   the default `criterion = "score"` tests each candidate at the current
-  estimates and never refits to do it. `criterion = "wald"` still refits
-  once per *entry* candidate. Removals never did, under either
-  criterion: a drop is tested on the current model’s Wald p-value
-  against `slstay`, which is what SAS does, and only the accepted drop
-  is refitted.
+  estimates without refitting it, except at a step where the information
+  cannot be formed, where it refits and Wald-tests each candidate
+  instead. `criterion = "wald"` refits each *entry* candidate, twice for
+  a multiphase model, once from the default start and once from the
+  current model’s estimates, keeping the better. Removals never refit,
+  under either criterion: a drop is tested on the current model’s Wald
+  p-value against `slstay`, which is what SAS does, and only the
+  accepted drop is refitted.
 
 ### Per-phase time-varying windows
 

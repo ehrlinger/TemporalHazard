@@ -29,7 +29,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.12</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.13</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -253,7 +253,7 @@ hazard(dist='multiphase')
 </section><section class="level3" data-number="3.1.3"><h4 data-number="3.1.3" id="decomposition-engine">
 <span class="header-section-number">3.1.3</span> Decomposition engine<a class="anchor" aria-label="anchor" href="#decomposition-engine"></a>
 </h4>
-<p><code>hzr_decompos(time, t_half, nu, m)</code> is the mathematical core. It computes <code>G(t)</code> (CDF), <code>g(t)</code> (density), and <code>h(t)</code> (hazard) for the three-parameter family across six valid sign combinations of <code>nu</code> and <code>m</code>. The phase-level helpers <code><a href="../reference/hzr_phase_cumhaz.html">hzr_phase_cumhaz()</a></code> and <code><a href="../reference/hzr_phase_hazard.html">hzr_phase_hazard()</a></code> wrap <code><a href="../reference/hzr_decompos.html">hzr_decompos()</a></code> and apply the phase type mapping:</p>
+<p><code>hzr_decompos(time, t_half, nu, m)</code> is the mathematical core. It computes <code>G(t)</code> (CDF), <code>g(t)</code> (density), <code>h(t)</code> (hazard) and <code>log_surv</code>, the logarithm of <code>1 - G(t)</code>, for the three-parameter family across six valid sign combinations of <code>nu</code> and <code>m</code>. The phase-level helpers <code><a href="../reference/hzr_phase_cumhaz.html">hzr_phase_cumhaz()</a></code> and <code><a href="../reference/hzr_phase_hazard.html">hzr_phase_hazard()</a></code> wrap <code><a href="../reference/hzr_decompos.html">hzr_decompos()</a></code> and apply the phase type mapping:</p>
 <table class="table caption-top">
 <thead><tr class="header">
 <th style="text-align: left;">Phase type</th>

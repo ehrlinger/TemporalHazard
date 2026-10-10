@@ -603,8 +603,9 @@ The decomposition engine applies several guards:
 
 - Time is clamped above `.Machine$double.xmin` to avoid
   \\0^{\text{negative}}\\
-- \\1 - G(t)\\ is clamped above `.Machine$double.xmin` before computing
-  the hazard \\h(t) = g(t)/(1 - G(t))\\
+- The hazard \\h(t) = g(t)/(1 - G(t))\\ is formed on the log scale, as
+  \\\log g(t) - \log(1 - G(t))\\, so it stays finite where \\G(t)\\
+  rounds to 1 and where \\g(t)\\ underflows to 0 (#578)
 - Left- and interval-censored contributions use
   [`hzr_log1mexp()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_log1mexp.md)
   to avoid \\\log(0)\\ when \\H(t)\\ is very small
