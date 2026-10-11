@@ -907,6 +907,7 @@
                                       phases, covariate_counts, x_list,
                                       objective = c("likelihood", "sas"),
                                       sanitize = TRUE,
+                                      phase_cache = NULL,
                                       ...) {
   objective <- match.arg(objective)
   # A gradient that cannot be evaluated is zeros for the optimizer, which
@@ -984,69 +985,99 @@
   need_start <- !is.null(entry) && any(entry > 0)
   start_vec <- if (need_start) entry else NULL
 
-  for (j in seq_along(phases)) {
-    nm <- names(phases)[j]
-    pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
+  # The per-phase quantities depend on theta, the times and the entry times,
+  # not on status. Under Conservation of Events the gradient is evaluated
+  # twice at one theta, the second time with every status 0 (#565), and the
+  # CoE wrapper passes one `phase_cache` environment to both calls so the
+  # second reuses the first's (#631). The key is compared with identical(),
+  # so anything that differs is computed afresh.
+  cache_key <- list(theta = theta, time = time, start_vec = start_vec)
+  cached <- !is.null(phase_cache) && identical(phase_cache$key, cache_key)
+  if (cached) {
+    phase_mu          <- phase_cache$phase_mu
+    phase_Phi         <- phase_cache$phase_Phi
+    phase_phi         <- phase_cache$phase_phi
+    phase_deriv       <- phase_cache$phase_deriv
+    phase_Phi_start   <- phase_cache$phase_Phi_start
+    phase_deriv_start <- phase_cache$phase_deriv_start
+    H_t               <- phase_cache$H_t
+    h_t               <- phase_cache$h_t
+  } else {
+    for (j in seq_along(phases)) {
+      nm <- names(phases)[j]
+      pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
 
-    # mu_j(x_i) = exp(log_mu + x * beta)
-    if (length(pars$beta) > 0 && !is.null(x_list[[nm]])) {
-      eta_j <- pars$log_mu + as.numeric(x_list[[nm]] %*% pars$beta)
-    } else {
-      eta_j <- rep(pars$log_mu, n)
-    }
-    mu_j <- exp(eta_j)
-    phase_mu[[j]] <- mu_j
+      # mu_j(x_i) = exp(log_mu + x * beta)
+      if (length(pars$beta) > 0 && !is.null(x_list[[nm]])) {
+        eta_j <- pars$log_mu + as.numeric(x_list[[nm]] %*% pars$beta)
+      } else {
+        eta_j <- rep(pars$log_mu, n)
+      }
+      mu_j <- exp(eta_j)
+      phase_mu[[j]] <- mu_j
 
-    # Phi_j, phi_j, and shape derivatives at observation time
-    if (phases[[nm]]$type == "constant") {
-      phase_Phi[[j]] <- time
-      phase_phi[[j]] <- rep(1, n)
-      phase_deriv[[j]] <- NULL  # no shape params for constant
-    } else if (phases[[nm]]$type == "g3") {
-      tau_j <- exp(pars$log_tau)
-      d3 <- hzr_decompos_g3(time, tau = tau_j, gamma = pars$gamma,
-                              alpha = pars$alpha, eta = pars$eta)
-      phase_Phi[[j]] <- d3$G3
-      phase_phi[[j]] <- d3$g3
-      # G3 shape derivatives via finite differences (for now)
-      phase_deriv[[j]] <- .hzr_g3_phase_derivatives(
-        time, tau = tau_j, gamma = pars$gamma,
-        alpha = pars$alpha, eta = pars$eta)
-    } else {
-      t_half_j <- exp(pars$log_t_half)
-      pd <- .hzr_phase_derivatives(time, t_half = t_half_j, nu = pars$nu,
-                                    m = pars$m, type = phases[[nm]]$type)
-      phase_Phi[[j]]   <- pd$Phi
-      phase_phi[[j]]   <- pd$phi
-      phase_deriv[[j]] <- pd
-    }
-
-    # Matching quantities at start_vec -- only Phi_j and its shape
-    # derivatives matter for the H(start) gradient contribution.
-    if (need_start) {
+      # Phi_j, phi_j, and shape derivatives at observation time
       if (phases[[nm]]$type == "constant") {
-        phase_Phi_start[[j]] <- start_vec
-        phase_deriv_start[[j]] <- NULL
+        phase_Phi[[j]] <- time
+        phase_phi[[j]] <- rep(1, n)
+        phase_deriv[[j]] <- NULL  # no shape params for constant
       } else if (phases[[nm]]$type == "g3") {
         tau_j <- exp(pars$log_tau)
-        d3s <- hzr_decompos_g3(start_vec, tau = tau_j, gamma = pars$gamma,
-                                 alpha = pars$alpha, eta = pars$eta)
-        phase_Phi_start[[j]] <- d3s$G3
-        phase_deriv_start[[j]] <- .hzr_g3_phase_derivatives(
-          start_vec, tau = tau_j, gamma = pars$gamma,
+        d3 <- hzr_decompos_g3(time, tau = tau_j, gamma = pars$gamma,
+                                alpha = pars$alpha, eta = pars$eta)
+        phase_Phi[[j]] <- d3$G3
+        phase_phi[[j]] <- d3$g3
+        # G3 shape derivatives via finite differences (for now)
+        phase_deriv[[j]] <- .hzr_g3_phase_derivatives(
+          time, tau = tau_j, gamma = pars$gamma,
           alpha = pars$alpha, eta = pars$eta)
       } else {
         t_half_j <- exp(pars$log_t_half)
-        pds <- .hzr_phase_derivatives(start_vec, t_half = t_half_j,
-                                        nu = pars$nu, m = pars$m,
-                                        type = phases[[nm]]$type)
-        phase_Phi_start[[j]]   <- pds$Phi
-        phase_deriv_start[[j]] <- pds
+        pd <- .hzr_phase_derivatives(time, t_half = t_half_j, nu = pars$nu,
+                                      m = pars$m, type = phases[[nm]]$type)
+        phase_Phi[[j]]   <- pd$Phi
+        phase_phi[[j]]   <- pd$phi
+        phase_deriv[[j]] <- pd
       }
-    }
 
-    H_t <- H_t + mu_j * phase_Phi[[j]]
-    h_t <- h_t + mu_j * phase_phi[[j]]
+      # Matching quantities at start_vec -- only Phi_j and its shape
+      # derivatives matter for the H(start) gradient contribution.
+      if (need_start) {
+        if (phases[[nm]]$type == "constant") {
+          phase_Phi_start[[j]] <- start_vec
+          phase_deriv_start[[j]] <- NULL
+        } else if (phases[[nm]]$type == "g3") {
+          tau_j <- exp(pars$log_tau)
+          d3s <- hzr_decompos_g3(start_vec, tau = tau_j, gamma = pars$gamma,
+                                   alpha = pars$alpha, eta = pars$eta)
+          phase_Phi_start[[j]] <- d3s$G3
+          phase_deriv_start[[j]] <- .hzr_g3_phase_derivatives(
+            start_vec, tau = tau_j, gamma = pars$gamma,
+            alpha = pars$alpha, eta = pars$eta)
+        } else {
+          t_half_j <- exp(pars$log_t_half)
+          pds <- .hzr_phase_derivatives(start_vec, t_half = t_half_j,
+                                          nu = pars$nu, m = pars$m,
+                                          type = phases[[nm]]$type)
+          phase_Phi_start[[j]]   <- pds$Phi
+          phase_deriv_start[[j]] <- pds
+        }
+      }
+
+      H_t <- H_t + mu_j * phase_Phi[[j]]
+      h_t <- h_t + mu_j * phase_phi[[j]]
+    }
+    if (!is.null(phase_cache)) {
+      phase_cache$key               <- cache_key
+      phase_cache$phase_mu          <- phase_mu
+      phase_cache$phase_Phi         <- phase_Phi
+      phase_cache$phase_phi         <- phase_phi
+      phase_cache$phase_deriv       <- phase_deriv
+      phase_cache$phase_Phi_start   <- phase_Phi_start
+      phase_cache$phase_deriv_start <- phase_deriv_start
+      phase_cache$H_t               <- H_t
+      phase_cache$h_t               <- h_t
+    }
   }
 
   # Guard: if total hazard or cumhaz is non-finite, return zero gradient
@@ -2191,7 +2222,8 @@
       time_lower = time_lower, time_upper = time_upper, x = x,
       weights = weights,
       phases = phases, covariate_counts = covariate_counts, x_list = x_list,
-      objective = objective, sanitize = sanitize
+      objective = objective, sanitize = sanitize,
+      phase_cache = list(...)$phase_cache
     )
 
     # Fallback: if gradient is all zero (e.g. at infeasible point), try
@@ -2328,15 +2360,17 @@
           time, status, phases, covariate_counts, x_list, total_events,
           weights = weights, time_lower = time_lower, details = TRUE
         )
+        # One cache for the two calls below, which share theta (#631).
+        cache <- new.env(parent = emptyenv())
         g <- gradient_fn_pre_coe(coe$theta, time, status, time_lower,
                                  time_upper, x, weights = weights,
-                                 sanitize = sanitize, ...)
+                                 sanitize = sanitize, phase_cache = cache, ...)
         # Where there was nothing to solve, c stayed where it was and does
         # not move with phi: the partial score is the whole gradient.
         if (!coe$solved) return(g)
         g_s <- gradient_fn_pre_coe(coe$theta, time, 0 * status, time_lower,
                                    time_upper, x, weights = weights,
-                                   sanitize = sanitize, ...)
+                                   sanitize = sanitize, phase_cache = cache, ...)
         g - g[fixmu_pos] * g_s / g_s[fixmu_pos]
       }
     } else {
