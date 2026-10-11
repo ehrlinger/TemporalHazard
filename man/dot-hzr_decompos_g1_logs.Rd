@@ -18,7 +18,8 @@
 \value{
 List with \code{log_S} (\eqn{= -\log(\mathrm{btnu})/m}), \code{log_g},
 \code{a}, the softplus argument, so that \code{log(btnu) = log1pexp(a)}, and the
-terms \code{log_g} is built from (\code{e}, \code{log_bt}, \code{log_rho}).
+terms \code{log_g} is built from (\code{e}, \code{log_bt}, \code{log_rho}), and
+\code{log_btnu}, \code{log1pexp(a)} itself, so a caller need not form it again.
 }
 \description{
 Cases 1 (\code{nu > 0}) and 3 (\code{nu < 0}) evaluate the same intermediate

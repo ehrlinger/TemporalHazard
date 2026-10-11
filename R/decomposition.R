@@ -70,7 +70,8 @@
 #' @param m Positive scalar.
 #' @return List with `log_S` (\eqn{= -\log(\mathrm{btnu})/m}), `log_g`,
 #'   `a`, the softplus argument, so that `log(btnu) = log1pexp(a)`, and the
-#'   terms `log_g` is built from (`e`, `log_bt`, `log_rho`).
+#'   terms `log_g` is built from (`e`, `log_bt`, `log_rho`), and
+#'   `log_btnu`, `log1pexp(a)` itself, so a caller need not form it again.
 #' @keywords internal
 .hzr_decompos_g1_logs <- function(time, t_half, nu, m) {
   # log(2^m - 1) = x + log(1 - exp(-x)) for x = m*log(2).  Both tails are
@@ -101,7 +102,7 @@
 
   list(log_S = log_S,
        log_g = log_S - e - log(m) - log_bt - log_rho,
-       a = a, e = e, log_bt = log_bt, log_rho = log_rho)
+       a = a, e = e, log_bt = log_bt, log_rho = log_rho, log_btnu = log_btnu)
 }
 
 #' log(1 - exp(-x)) from L = log(x), for x > 0
@@ -147,22 +148,50 @@
   out
 }
 
+#' .hzr_log1mexp_of_log() and its excess from one pass
+#'
+#' The hazard form reads both, and each formed `hzr_log1mexp(exp(L))` on its
+#' own (#631). The expressions are those of the two functions above, so each
+#' result is identical to theirs.
+#' @param L Numeric vector, `log(x)`.
+#' @return `list(value, excess)`.
+#' @keywords internal
+#' @noRd
+.hzr_log1mexp_of_log_pair <- function(L) {
+  value <- rep(NA_real_, length(L))
+  excess <- rep(NA_real_, length(L))
+  tiny <- !is.na(L) & L < log(1e-5)
+  x <- exp(L[tiny])
+  value[tiny] <- L[tiny] - x / 2 + x^2 / 24
+  excess[tiny] <- -x / 2 + x^2 / 24
+  rest <- !is.na(L) & !tiny
+  r <- hzr_log1mexp(exp(L[rest]))
+  excess[rest] <- r - L[rest]
+  # Where exp(L) overflows, log(1 - G) is 0 (see .hzr_log1mexp_of_log()).
+  huge <- rest & !is.finite(exp(L))
+  value[huge] <- 0
+  big <- rest & !huge
+  value[big] <- r[big[rest]]
+  list(value = value, excess = excess)
+}
+
 #' log(log(1 + exp(a))) without underflow
 #'
 #' For very negative `a`, `log(1 + exp(a))` is `exp(a)` to first order and
 #' underflows to 0, where its log is still `a`.
 #' @param a Numeric vector.
+#' @param lp `hzr_log1pexp(a)`, when the caller has it already.
 #' @return Numeric vector.
 #' @keywords internal
 #' @noRd
-.hzr_log_log1pexp <- function(a) {
+.hzr_log_log1pexp <- function(a, lp = hzr_log1pexp(a)) {
   out <- rep(NA_real_, length(a))
   low <- !is.na(a) & a < -30
   e <- exp(a[low])
   # log(log1p(e)) = log(e) + log(1 - e/2 + e^2/3 - ...), to relative e^3
   out[low] <- a[low] + log1p(-e / 2 + e^2 / 3)
   rest <- !is.na(a) & !low
-  out[rest] <- log(hzr_log1pexp(a[rest]))
+  out[rest] <- log(lp[rest])
   out
 }
 
@@ -315,6 +344,46 @@ hzr_decompos <- function(time, t_half, nu, m) {
       is.numeric(m) && length(m) == 1L && is.finite(m)
   )
 
+  .hzr_decompos_impl(time, t_half, nu, m, cdf_only = FALSE)
+}
+
+#' G and g alone, for a phase that reads nothing else
+#'
+#' The cdf form of a phase reads only `G` and `g`. Forming `log(1 - G)` and
+#' the hazard on the log scale, which only the hazard form reads, is most of
+#' what [hzr_decompos()] costs since #578, and the cdf form paid for it on
+#' every evaluation (#631). `G` and `g` are computed by the same expressions as
+#' in [hzr_decompos()], so they are identical to its own; the list has no `h`
+#' or `log_surv`, so a caller that reads them gets `NULL`. Call it only where
+#' the phase is known to be of cdf form.
+#' @inheritParams hzr_decompos
+#' @return `list(G, g)`.
+#' @keywords internal
+#' @noRd
+.hzr_decompos_cdf <- function(time, t_half, nu, m) {
+
+  # --- Input validation ------------------------------------------------------
+  stopifnot(
+    "time must be numeric"   = is.numeric(time),
+    "t_half must be a positive scalar" =
+      is.numeric(t_half) && length(t_half) == 1L && t_half > 0,
+    "nu must be a numeric scalar" =
+      is.numeric(nu) && length(nu) == 1L && is.finite(nu),
+    "m must be a numeric scalar" =
+      is.numeric(m) && length(m) == 1L && is.finite(m)
+  )
+
+  .hzr_decompos_impl(time, t_half, nu, m, cdf_only = TRUE)
+}
+
+#' The body of hzr_decompos(), past its argument checks
+#'
+#' @inheritParams hzr_decompos
+#' @param cdf_only Return `list(G, g)` as soon as both are formed.
+#' @keywords internal
+#' @noRd
+.hzr_decompos_impl <- function(time, t_half, nu, m, cdf_only) {
+
   if (m < 0 && nu < 0) {
     stop("Decomposition undefined when both m < 0 and nu < 0 (m = ",
          m, ", nu = ", nu, ").", call. = FALSE)
@@ -339,21 +408,28 @@ hzr_decompos <- function(time, t_half, nu, m) {
     lg    <- .hzr_decompos_g1_logs(time, t_half, nu, m)
     G     <- exp(lg$log_S)
     g     <- exp(lg$log_g)
+    if (cdf_only) return(list(G = G, g = g))
     # -log(G) = log(btnu) / m, carried as its log (#578). log(btnu) is
     # log1pexp(a), which underflows to 0 far past saturation, where
     # log(1 - G) would read -Inf.
-    L        <- .hzr_log_log1pexp(lg$a) - log(m)
-    log_surv <- .hzr_log1mexp_of_log(L)
+    lp       <- lg$log_btnu
+    L        <- .hzr_log_log1pexp(lg$a, lp) - log(m)
+    lm       <- .hzr_log1mexp_of_log_pair(L)
+    log_surv <- lm$value
     log_g    <- lg$log_g
     # log(g) and log(1 - G) share the term a, which is huge for a tiny nu
     # (a = log(t_half / t) / nu + ...): their difference would lose the
     # hazard. Cancelled here: log_h = log_S + (a - log(log1pexp(a)))
     # - log1pexp(a) - log_bt - log_rho - excess(L) (Copilot, #583).
-    a_less_ll <- ifelse(lg$a < -30,
-                        -log1p(-exp(lg$a) / 2 + exp(lg$a)^2 / 3),
-                        lg$a - log(hzr_log1pexp(lg$a)))
-    log_h <- lg$log_S + a_less_ll - hzr_log1pexp(lg$a) - lg$log_bt -
-      lg$log_rho - .hzr_log1mexp_of_log_excess(L)
+    # Formed by index rather than ifelse(), which evaluates both branches
+    # over every row (#631). Where a is NA, ifelse() gave NA and this gives
+    # NA or NaN; either way log_h is not finite there and is replaced below.
+    a_less_ll <- lg$a - log(lp)
+    low <- which(lg$a < -30)
+    ea <- exp(lg$a[low])
+    a_less_ll[low] <- -log1p(-ea / 2 + ea^2 / 3)
+    log_h <- lg$log_S + a_less_ll - lp - lg$log_bt -
+      lg$log_rho - lm$excess
 
   } else if (m == 0 && nu > 0) {
     # Case 1L: Weibull-like (m -> 0 limit)
@@ -362,6 +438,7 @@ hzr_decompos <- function(time, t_half, nu, m) {
     btnu  <- bt^(-1 / nu)
     G     <- exp(-btnu)
     g     <- G * (bt^num1) / rho
+    if (cdf_only) return(list(G = G, g = g))
     # -log(G) = btnu = bt^(-1/nu), carried as its log (#578). Near t = 0,
     # or where bt underflows, that log overflows, and log(1 - G) is 0.
     L        <- -log(bt) / nu
@@ -387,6 +464,7 @@ hzr_decompos <- function(time, t_half, nu, m) {
     G     <- exp(-log_btnu / m)
     log_g <- mm1 * log_btnu + num1 * log_bt - log(-m) - log_rho
     g     <- exp(log_g)
+    if (cdf_only) return(list(G = G, g = g))
     # -log(G) = log_btnu / m, both negative; log_btnu = log(1 - e^-y) with
     # y = log_bt / nu, whose minus is carried as its log (#578).
     y        <- log_bt / nu
@@ -428,6 +506,7 @@ hzr_decompos <- function(time, t_half, nu, m) {
     # Divided in turn: m * rho overflows for |m| * rho > .Machine$double.xmax
     # (m from about -1015 at t_half = 1) and g read 0 (review, #583).
     g     <- -(btm^mm1) * bt / m / rho
+    if (cdf_only) return(list(G = G, g = g))
     # -log(G) = log(btm) / m with btm = 1 - e^(-t/rho). Far past saturation
     # btm rounds to 1 and G to 1; carried as a log, it does not (#578).
     # Here, unlike every other case, the large term is t / rho itself, not
@@ -467,6 +546,7 @@ hzr_decompos <- function(time, t_half, nu, m) {
     lg    <- .hzr_decompos_g1_logs(time, t_half, nu, m)
     G     <- -expm1(lg$log_S)
     g     <- exp(lg$log_g)
+    if (cdf_only) return(list(G = G, g = g))
     # 1 - G is exp(log_S) exactly (#578).
     log_surv <- lg$log_S
     log_g    <- lg$log_g
@@ -480,6 +560,7 @@ hzr_decompos <- function(time, t_half, nu, m) {
     btnu  <- bt^(-1 / nu)
     G     <- 1 - exp(-btnu)
     g     <- exp(-btnu) * (bt^num1) / rho
+    if (cdf_only) return(list(G = G, g = g))
     # 1 - G is exp(-btnu) exactly (#578).
     log_surv <- -btnu
     log_g    <- -btnu + num1 * log(bt) - log(rho)
@@ -506,7 +587,12 @@ hzr_decompos <- function(time, t_half, nu, m) {
   # Where a case's cancelled form is not finite (its own extremes), or the
   # case has none, the plain difference is used.
   if (is.null(log_h)) log_h <- log_g - log_surv
-  log_h <- ifelse(is.finite(log_h), log_h, log_g - log_surv)
+  # By index rather than ifelse() (#631), keeping ifelse()'s attributes, those
+  # of is.finite(): names and dims, but no other attribute or class of time.
+  fin <- is.finite(log_h)
+  bad <- which(!fin)
+  if (length(bad)) log_h[bad] <- (log_g - log_surv)[bad]
+  attributes(log_h) <- attributes(fin)
   h <- exp(log_h)
 
   list(G = G, g = g, h = h, log_surv = log_surv)
@@ -769,7 +855,11 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
     return(time)
   }
 
-  d <- hzr_decompos(time, t_half = t_half, nu = nu, m = m)
+  d <- if (type == "cdf") {
+    .hzr_decompos_cdf(time, t_half = t_half, nu = nu, m = m)
+  } else {
+    hzr_decompos(time, t_half = t_half, nu = nu, m = m)
+  }
 
   switch(type,
     cdf    = d$G,
@@ -840,8 +930,9 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
     ))
   }
 
-  # Base evaluation
-  d0 <- hzr_decompos(time, t_half = t_half, nu = nu, m = m)
+  # Base evaluation. The cdf form reads only G and g (#631).
+  decompos <- if (type == "cdf") .hzr_decompos_cdf else hzr_decompos
+  d0 <- decompos(time, t_half = t_half, nu = nu, m = m)
 
   # Extract Phi and phi from decomposition for the given phase type
   extract <- function(d, tp) {
@@ -866,7 +957,7 @@ hzr_phase_cumhaz <- function(time, t_half = 1, nu = 1, m = 0,
     if (m_val < 0 && n_val < 0) return(NULL)
     if (th <= 0) return(NULL)
     tryCatch(
-      hzr_decompos(time, t_half = th, nu = n_val, m = m_val),
+      decompos(time, t_half = th, nu = n_val, m = m_val),
       error = function(e) NULL
     )
   }
@@ -1044,7 +1135,11 @@ hzr_phase_hazard <- function(time, t_half = 1, nu = 1, m = 0,
     return(rep(1, length(time)))
   }
 
-  d <- hzr_decompos(time, t_half = t_half, nu = nu, m = m)
+  d <- if (type == "cdf") {
+    .hzr_decompos_cdf(time, t_half = t_half, nu = nu, m = m)
+  } else {
+    hzr_decompos(time, t_half = t_half, nu = nu, m = m)
+  }
 
   switch(type,
     cdf    = d$g,
