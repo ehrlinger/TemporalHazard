@@ -128,10 +128,15 @@ cardioversion_job <- function(dir) {
   # a false stop costs a deleted chunk and a miss fits the wrong data.
   # QUASI and CONDITION=, in both blocks, have no hazard() equivalent and are
   # recorded rather than emitted into control, which reads neither (#384).
+  # Between the blocks, the job's PROC HAZPRED of DIG stands inside
+  # `%macro final` (lines 98-171, called at line 172), so SAS builds its grid
+  # where the macro is called; the translator refuses that grid and records
+  # it (#625). Before #625 a grid was emitted from the text where it stands.
   # Nothing else may go missing.
   expect_warning(job <- hzr_translate_sas(path), "STEEPEST")
   block <- c("EVENTS changed after %repeat", "STEEPEST", "QUASINEWTON", "CONDITION")
-  expect_equal(job$untranslated$construct, c(block, block))
+  expect_equal(job$untranslated$construct, c(block, "DATA=DIG", block))
+  expect_match(job$untranslated$reason[[5L]], "inside a %MACRO definition", fixed = TRUE)
   job
 }
 
