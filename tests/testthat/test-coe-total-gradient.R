@@ -206,3 +206,32 @@ test_that("the default start reaches SAS's optimum on the avc model (#565)", {
   expect_equal(fit$fit$objective, -182.659, tolerance = 1e-5)
   expect_lte(fit$fit$rel_gradient, .Machine$double.eps^(1 / 3))
 })
+
+test_that("a shared phase cache is never read for a different model (#631)", {
+  # The CoE gradient passes one cache to its two score evaluations. The key
+  # must hold the model too: two designs at the same theta and times share
+  # nothing, and the second must get its own gradient, not the first's.
+  data("avc", package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  ph <- .hzr_validate_phases(list(
+    early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1),
+    constant = hzr_phase("constant")))
+  counts <- c(early = 1L, constant = 0L)
+  theta <- c(log(0.35), log(0.19), 1.44, 1, 0.01, log(0.03))
+  xa <- list(early = matrix(d$age, dimnames = list(NULL, "age")), constant = NULL)
+  xb <- list(early = matrix(d$opmos, dimnames = list(NULL, "age")), constant = NULL)
+  grad <- function(x_list, cache = NULL) {
+    .hzr_gradient_multiphase(theta, time = d$int_dead, status = d$dead,
+                             phases = ph, covariate_counts = counts,
+                             x_list = x_list, phase_cache = cache)
+  }
+  ga <- grad(xa)
+  gb <- grad(xb)
+  # The known positive: the two designs give different gradients.
+  expect_false(isTRUE(all.equal(ga, gb)))
+  cache <- new.env(parent = emptyenv())
+  expect_identical(grad(xa, cache), ga)
+  expect_identical(grad(xb, cache), gb)
+  # And a call that does match the key reuses the entry, to the bit.
+  expect_identical(grad(xb, cache), gb)
+})
