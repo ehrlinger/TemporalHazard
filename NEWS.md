@@ -1,3 +1,38 @@
+# TemporalHazard 1.2.14
+
+## Performance
+
+This release removes the slowdown 1.2.13 recorded as a known limitation
+(#631). Every estimate, standard error, prediction and bootstrap replicate is
+bit-identical to 1.2.13's; only the time to compute them changes. The
+package's own `R CMD check --as-cran` now takes about 400 seconds, where
+1.2.13's took about 730.
+
+* **Multiphase fits are about twice as fast again (#631).** Since #578,
+  each evaluation of a phase formed `log(1 - G)` and the hazard on the log
+  scale, which only a `"hazard"` phase reads, and formed some of it four
+  times over. A `"cdf"` phase now skips that work, and a `"hazard"` phase
+  with `m` and `nu` both positive forms each piece once. On the `cabgkul`
+  data a fixed-shape three-phase fit takes 1.0 seconds against 1.75, and a
+  5-replicate bootstrap of it 3.4 seconds against 8.1.
+
+* **Fits under Conservation of Events are a further 20 to 25% faster
+  (#631).** The gradient under CoE evaluates the score twice at each point
+  (#565), and the second evaluation now reuses the first's per-phase
+  quantities instead of recomputing them. `hzr_log1pexp()` forms each
+  branch only where it is taken, where it used `ifelse()`, which formed
+  both over every element; its values, attributes and `NA`s are unchanged
+  for every input.
+
+## Tests
+
+* The repeated-events parity test of the cardioversion job now expects the
+  `$untranslated` row for its `PROC HAZPRED`, which stands inside a
+  `%MACRO` definition and has been refused since #625. Its two fits had
+  failed since that change. The test needs the study datasets, which no CI
+  runner has, so the failure was not reported. The package's behaviour is
+  unchanged.
+
 # TemporalHazard 1.2.13
 
 ## Breaking changes
