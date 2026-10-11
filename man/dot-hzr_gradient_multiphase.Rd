@@ -53,11 +53,11 @@ rows are unaffected.}
 Used by SAS/C's acceptance test, which must not read a zero it could not
 compute as a small gradient.}
 
-\item{phase_cache}{\code{NULL}, or an environment shared by calls at one
-\code{theta}: the per-phase quantities, which do not read \code{status}, are kept
-there by the first call and reused by the next with the same \code{theta},
-times and entry times. The Conservation of Events gradient passes one to
-its two score evaluations (#631).}
+\item{phase_cache}{\code{NULL}, or an environment: the per-phase quantities,
+which do not read \code{status}, are kept there by the first call and reused
+by a later one with the same \code{theta}, times, entry times, \code{phases},
+\code{covariate_counts} and \code{x_list}. The Conservation of Events gradient
+passes one to its two score evaluations (#631).}
 
 \item{...}{Ignored.}
 }

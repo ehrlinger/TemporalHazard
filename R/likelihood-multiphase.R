@@ -900,11 +900,11 @@
 #' @param sanitize Logical; `FALSE` returns `NA` where the default returns 0.
 #'   Used by SAS/C's acceptance test, which must not read a zero it could not
 #'   compute as a small gradient.
-#' @param phase_cache `NULL`, or an environment shared by calls at one
-#'   `theta`: the per-phase quantities, which do not read `status`, are kept
-#'   there by the first call and reused by the next with the same `theta`,
-#'   times and entry times. The Conservation of Events gradient passes one to
-#'   its two score evaluations (#631).
+#' @param phase_cache `NULL`, or an environment: the per-phase quantities,
+#'   which do not read `status`, are kept there by the first call and reused
+#'   by a later one with the same `theta`, times, entry times, `phases`,
+#'   `covariate_counts` and `x_list`. The Conservation of Events gradient
+#'   passes one to its two score evaluations (#631).
 #' @keywords internal
 .hzr_gradient_multiphase <- function(theta, time, status,
                                       time_lower = NULL, time_upper = NULL,
@@ -990,13 +990,18 @@
   need_start <- !is.null(entry) && any(entry > 0)
   start_vec <- if (need_start) entry else NULL
 
-  # The per-phase quantities depend on theta, the times and the entry times,
-  # not on status. Under Conservation of Events the gradient is evaluated
-  # twice at one theta, the second time with every status 0 (#565), and the
-  # CoE wrapper passes one `phase_cache` environment to both calls so the
-  # second reuses the first's (#631). The key is compared with identical(),
-  # so anything that differs is computed afresh.
-  cache_key <- list(theta = theta, time = time, start_vec = start_vec)
+  # The per-phase quantities depend on theta, the times, the entry times and
+  # the model (phases, covariate counts and designs), not on status. Under
+  # Conservation of Events the gradient is evaluated twice at one theta, the
+  # second time with every status 0 (#565), and the CoE wrapper passes one
+  # `phase_cache` environment to both calls so the second reuses the first's
+  # (#631). The key holds every input the loop reads and is compared with
+  # identical(), so a call that differs in any of them is computed afresh.
+  # The two CoE calls pass the same model objects, which identical() accepts
+  # at once.
+  cache_key <- list(theta = theta, time = time, start_vec = start_vec,
+                    phases = phases, covariate_counts = covariate_counts,
+                    x_list = x_list)
   cached <- !is.null(phase_cache) && identical(phase_cache$key, cache_key)
   if (cached) {
     phase_mu          <- phase_cache$phase_mu
