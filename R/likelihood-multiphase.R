@@ -898,6 +898,11 @@
 #'   is 0, and so is the whole vector at an infeasible point (guards the
 #'   optimizer); with `sanitize = FALSE` those are `NA`.
 #' @param sanitize Logical; `FALSE` returns `NA` where the default returns 0.
+#' @param phase_cache `NULL`, or an environment shared by calls at one
+#'   `theta`: the per-phase quantities, which do not read `status`, are kept
+#'   there by the first call and reused by the next with the same `theta`,
+#'   times and entry times. The Conservation of Events gradient passes one to
+#'   its two score evaluations (#631).
 #'   Used by SAS/C's acceptance test, which must not read a zero it could not
 #'   compute as a small gradient.
 #' @keywords internal
