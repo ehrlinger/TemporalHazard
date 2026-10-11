@@ -587,8 +587,12 @@ hzr_decompos <- function(time, t_half, nu, m) {
   # Where a case's cancelled form is not finite (its own extremes), or the
   # case has none, the plain difference is used.
   if (is.null(log_h)) log_h <- log_g - log_surv
-  bad <- which(!is.finite(log_h))
+  # By index rather than ifelse() (#631), keeping ifelse()'s attributes, those
+  # of is.finite(): names and dims, but no other attribute or class of time.
+  fin <- is.finite(log_h)
+  bad <- which(!fin)
   if (length(bad)) log_h[bad] <- (log_g - log_surv)[bad]
+  attributes(log_h) <- attributes(fin)
   h <- exp(log_h)
 
   list(G = G, g = g, h = h, log_surv = log_surv)
