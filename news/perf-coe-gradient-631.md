@@ -5,7 +5,5 @@
   `hzr_log1pexp()` forms each branch only where it is taken, where it used
   `ifelse()`, which formed both over every element. A bootstrap of a
   three-phase fit runs about 15 to 25% faster than in the previous release.
-  Estimates, standard errors and bootstrap replicates are bit-identical.
-  `hzr_log1pexp()` returns the same values, attributes and NAs as before
-  on every vector, matrix and array; given a data frame, which it does not
-  take, it now stops instead of returning a malformed list.
+  Estimates, standard errors, bootstrap replicates and the values of
+  `hzr_log1pexp()` are bit-identical.

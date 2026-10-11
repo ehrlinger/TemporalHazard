@@ -49,15 +49,15 @@ means no entry (the mixed-interval layout); see
 see \code{.hzr_logl_interval()}. Exact-event, right-censored and left-censored
 rows are unaffected.}
 
-\item{sanitize}{Logical; \code{FALSE} returns \code{NA} where the default returns 0.}
+\item{sanitize}{Logical; \code{FALSE} returns \code{NA} where the default returns 0.
+Used by SAS/C's acceptance test, which must not read a zero it could not
+compute as a small gradient.}
 
 \item{phase_cache}{\code{NULL}, or an environment shared by calls at one
 \code{theta}: the per-phase quantities, which do not read \code{status}, are kept
 there by the first call and reused by the next with the same \code{theta},
 times and entry times. The Conservation of Events gradient passes one to
-its two score evaluations (#631).
-Used by SAS/C's acceptance test, which must not read a zero it could not
-compute as a small gradient.}
+its two score evaluations (#631).}
 
 \item{...}{Ignored.}
 }
