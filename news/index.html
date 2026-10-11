@@ -13,7 +13,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.13</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.14</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -55,6 +55,19 @@
       <small>Source: <a href="https://github.com/ehrlinger/TemporalHazard/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="1.2.14" id="temporalhazard-1214">TemporalHazard 1.2.14<a class="anchor" aria-label="anchor" href="#temporalhazard-1214"></a></h2>
+<div class="section level3">
+<h3 id="performance-1-2-14">Performance<a class="anchor" aria-label="anchor" href="#performance-1-2-14"></a></h3>
+<p>This release removes the slowdown 1.2.13 recorded as a known limitation (<a href="https://github.com/ehrlinger/TemporalHazard/issues/631" class="external-link">#631</a>). Every estimate, standard error, prediction and bootstrap replicate is bit-identical to 1.2.13’s; only the time to compute them changes. The package’s own <code>R CMD check --as-cran</code> now takes about 400 seconds, where 1.2.13’s took about 730.</p>
+<ul><li><p><strong>Multiphase fits are about twice as fast again (<a href="https://github.com/ehrlinger/TemporalHazard/issues/631" class="external-link">#631</a>).</strong> Since <a href="https://github.com/ehrlinger/TemporalHazard/issues/578" class="external-link">#578</a>, each evaluation of a phase formed <code>log(1 - G)</code> and the hazard on the log scale, which only a <code>"hazard"</code> phase reads, and formed some of it four times over. A <code>"cdf"</code> phase now skips that work, and a <code>"hazard"</code> phase with <code>m</code> and <code>nu</code> both positive forms each piece once. On the <code>cabgkul</code> data a fixed-shape three-phase fit takes 1.0 seconds against 1.75, and a 5-replicate bootstrap of it 3.4 seconds against 8.1.</p></li>
+<li><p><strong>Fits under Conservation of Events are a further 20 to 25% faster (<a href="https://github.com/ehrlinger/TemporalHazard/issues/631" class="external-link">#631</a>).</strong> The gradient under CoE evaluates the score twice at each point (<a href="https://github.com/ehrlinger/TemporalHazard/issues/565" class="external-link">#565</a>), and the second evaluation now reuses the first’s per-phase quantities instead of recomputing them. <code><a href="../reference/hzr_log1pexp.html">hzr_log1pexp()</a></code> forms each branch only where it is taken, where it used <code><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse()</a></code>, which formed both over every element; its values, attributes and <code>NA</code>s are unchanged for every input.</p></li>
+</ul></div>
+<div class="section level3">
+<h3 id="tests-1-2-14">Tests<a class="anchor" aria-label="anchor" href="#tests-1-2-14"></a></h3>
+<ul><li>The repeated-events parity test of the cardioversion job now expects the <code>$untranslated</code> row for its <code>PROC HAZPRED</code>, which stands inside a <code>%MACRO</code> definition and has been refused since <a href="https://github.com/ehrlinger/TemporalHazard/issues/625" class="external-link">#625</a>. Its two fits had failed since that change. The test needs the study datasets, which no CI runner has, so the failure was not reported. The package’s behaviour is unchanged.</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="1.2.13" id="temporalhazard-1213">TemporalHazard 1.2.13<a class="anchor" aria-label="anchor" href="#temporalhazard-1213"></a></h2>
 <div class="section level3">
