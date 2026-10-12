@@ -13,7 +13,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.14</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.15</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -55,6 +55,18 @@
       <small>Source: <a href="https://github.com/ehrlinger/TemporalHazard/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="1.2.15" id="temporalhazard-1215">TemporalHazard 1.2.15<a class="anchor" aria-label="anchor" href="#temporalhazard-1215"></a></h2>
+<div class="section level3">
+<h3 id="bug-fixes-1-2-15">Bug fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-1-2-15"></a></h3>
+<ul><li>
+<strong>A multiphase fit no longer selects a start that ran away to an underflow (<a href="https://github.com/ehrlinger/TemporalHazard/issues/600" class="external-link">#600</a>).</strong> For an early phase with <code>m = 0</code> and <code>nu &lt; 0</code>, <code><a href="../reference/hzr_decompos.html">hzr_decompos()</a></code> computed the CDF as <code>1 - exp(-x)</code>, which rounds to exactly 0 once <code>x</code> is below about <code>1e-16</code>, while the density, formed directly, stayed positive. Where that happened the cumulative hazard vanished and the hazard did not, so the likelihood had a false peak that rose without bound in <code>mu</code>. On the <code>avc</code> data, the <code>m</code>-fixed model started from <code>t_half = 0.5</code>, <code>nu = 1</code>, <code>mu = 1</code> with the default five starts climbed it to <code>log(mu)</code> 130 and a log-likelihood of +6380.86, and returned that start as the fit with <code>converged = TRUE</code>; three of the other four reach -214.875. The CDF is now <code>-expm1(-x)</code>, as the <code>m &gt; 0, nu &lt; 0</code> branch already had it, and the same call returns -214.875. The two forms round differently everywhere, not only near 0, so other fits with an <code>m = 0, nu &lt; 0</code> phase can change in their last digits (by about <code>1e-15</code> relative); fits without one are unchanged.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="tests-1-2-15">Tests<a class="anchor" aria-label="anchor" href="#tests-1-2-15"></a></h3>
+<ul><li>Two tests now pin the speed-up from 1.2.14’s CoE gradient cache (<a href="https://github.com/ehrlinger/TemporalHazard/issues/631" class="external-link">#631</a>). One counts the per-phase work and checks that a call matching the cache key does none, and that changing any one of <code>theta</code>, the times or the entry times alone forces it. The other runs a real CoE fit and checks that the second gradient evaluation at each point reuses the first’s cache and does no work. The existing test compared gradients, which a recomputed value matches too, so it passed with caching switched off, with <code>theta</code>, the times or the entry times dropped from the key, and with the CoE wrapper handing its second evaluation a fresh cache. The new tests fail on each of those.</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="1.2.14" id="temporalhazard-1214">TemporalHazard 1.2.14<a class="anchor" aria-label="anchor" href="#temporalhazard-1214"></a></h2>
 <div class="section level3">
