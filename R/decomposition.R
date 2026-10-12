@@ -558,7 +558,11 @@ hzr_decompos <- function(time, t_half, nu, m) {
     rho   <- -nu * t_half * (log(2)^nu)
     bt    <- -nu * time / rho
     btnu  <- bt^(-1 / nu)
-    G     <- 1 - exp(-btnu)
+    # -expm1(), not 1 - exp(): below btnu ~ 1e-16, exp(-btnu) rounds to 1 and
+    # G to exactly 0 while g, formed directly, does not. The cumulative hazard
+    # then vanished with the hazard positive, and a multiphase start climbed
+    # that seam to log mu 130 and a log-likelihood of +6380.86 (#600).
+    G     <- -expm1(-btnu)
     g     <- exp(-btnu) * (bt^num1) / rho
     if (cdf_only) return(list(G = G, g = g))
     # 1 - G is exp(-btnu) exactly (#578).
