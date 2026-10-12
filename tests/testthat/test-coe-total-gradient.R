@@ -235,3 +235,112 @@ test_that("a shared phase cache is never read for a different model (#631)", {
   # And a call that does match the key reuses the entry, to the bit.
   expect_identical(grad(xb, cache), gb)
 })
+
+test_that("the phase cache skips the per-phase work on a hit, and only then (#631)", {
+  # The test above cannot tell a hit from a recompute: both return the same
+  # gradient, so it passes with caching switched off. This one counts the
+  # per-phase loop's calls to .hzr_phase_derivatives() instead, so it pins the
+  # speed-up itself, and it varies each key input in turn, so dropping theta,
+  # time or the entry times from the key fails here.
+  data("avc", package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  ph <- .hzr_validate_phases(list(
+    early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1),
+    constant = hzr_phase("constant")))
+  counts <- c(early = 1L, constant = 0L)
+  theta <- c(log(0.35), log(0.19), 1.44, 1, 0.01, log(0.03))
+  base <- list(theta = theta, time = d$int_dead, status = d$dead,
+               time_lower = d$int_dead / 2, phases = ph,
+               covariate_counts = counts,
+               x_list = list(early = matrix(d$age, dimnames = list(NULL, "age")),
+                             constant = NULL))
+  n_calls <- 0L
+  real <- .hzr_phase_derivatives
+  local_mocked_bindings(.hzr_phase_derivatives = function(...) {
+    n_calls <<- n_calls + 1L
+    real(...)
+  })
+  work <- function(cache, ...) {
+    n_calls <<- 0L
+    do.call(.hzr_gradient_multiphase,
+            c(utils::modifyList(base, list(...)), list(phase_cache = cache)))
+    n_calls
+  }
+  cache <- new.env(parent = emptyenv())
+  # The known positive: a fresh cache does the work, at the exit and the
+  # entry times both.
+  expect_identical(work(cache), 2L)
+  # The CoE pattern: the same key with every status 0 is a hit.
+  expect_identical(work(cache, status = 0 * d$dead), 0L)
+  # Each key input changed alone is a miss, and then a hit once stored. The
+  # cache goes back to the base key first, so exactly one input differs from
+  # what is stored: changing two at once let a dropped key slip past, because
+  # the other difference forced the miss.
+  changes <- list(theta = list(theta = theta + c(0, 0, 0.01, 0, 0, 0)),
+                  time = list(time = d$int_dead * 1.01),
+                  entry = list(time_lower = d$int_dead / 3))
+  for (nm in names(changes)) {
+    work(cache)
+    expect_identical(do.call(work, c(list(cache), changes[[nm]])), 2L,
+                     info = paste(nm, "changed: a miss"))
+    expect_identical(do.call(work, c(list(cache), changes[[nm]])), 0L,
+                     info = paste(nm, "repeated: a hit"))
+  }
+  # No cache: every call does the work.
+  expect_identical(work(NULL), 2L)
+  expect_identical(work(NULL), 2L)
+})
+
+test_that("a CoE fit's second gradient evaluation reuses the first's cache (#631)", {
+  # The test above drives .hzr_gradient_multiphase() directly, so it cannot
+  # see whether the CoE wrapper in .hzr_optim_multiphase() shares one cache
+  # between its two evaluations; handing the second a fresh cache would lose
+  # the speed-up and pass it. This runs a real CoE fit and records each
+  # gradient call: the status-0 call the wrapper makes must get the same
+  # cache as the call before it, and do no per-phase work.
+  data("avc", package = "TemporalHazard", envir = environment())
+  a <- stats::na.omit(avc)
+  n_calls <- 0L
+  calls <- list()
+  real_pd <- .hzr_phase_derivatives
+  real_grad <- .hzr_gradient_multiphase
+  local_mocked_bindings(
+    .hzr_phase_derivatives = function(...) {
+      n_calls <<- n_calls + 1L
+      real_pd(...)
+    },
+    .hzr_gradient_multiphase = function(theta, time, status, ...,
+                                        phase_cache = NULL) {
+      before <- n_calls
+      g <- real_grad(theta, time, status, ..., phase_cache = phase_cache)
+      calls[[length(calls) + 1L]] <<- list(
+        all_zero = all(status == 0), cache = phase_cache,
+        work = n_calls - before)
+      g
+    }
+  )
+  fit <- hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = a, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.1512095, nu = 1.438652, m = 1,
+                        fixed = c("t_half", "nu", "m")),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE, control = list(n_starts = 1)
+  )
+  expect_true(fit$spec$control$conserve_applied)
+  zero <- which(vapply(calls, `[[`, logical(1), "all_zero"))
+  # The known positive: the wrapper made status-0 calls, and they follow a
+  # call that did the work.
+  expect_gt(length(zero), 0L)
+  expect_false(1L %in% zero)
+  # Whole vectors, not one expectation per call: how many calls a fit makes
+  # depends on the optimizer's path, and the suite's count should not.
+  work <- vapply(calls[zero], `[[`, integer(1), "work")
+  shared <- vapply(zero, function(k) {
+    is.environment(calls[[k]]$cache) &&
+      identical(calls[[k]]$cache, calls[[k - 1L]]$cache)
+  }, logical(1))
+  expect_identical(work, rep(0L, length(zero)))
+  expect_identical(shared, rep(TRUE, length(zero)))
+})
