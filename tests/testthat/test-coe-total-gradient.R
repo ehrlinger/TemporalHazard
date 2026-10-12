@@ -235,3 +235,58 @@ test_that("a shared phase cache is never read for a different model (#631)", {
   # And a call that does match the key reuses the entry, to the bit.
   expect_identical(grad(xb, cache), gb)
 })
+
+test_that("the phase cache skips the per-phase work on a hit, and only then (#631)", {
+  # The test above cannot tell a hit from a recompute: both return the same
+  # gradient, so it passes with caching switched off. This one counts the
+  # per-phase loop's calls to .hzr_phase_derivatives() instead, so it pins the
+  # speed-up itself, and it varies each key input in turn, so dropping theta,
+  # time or the entry times from the key fails here.
+  data("avc", package = "TemporalHazard", envir = environment())
+  d <- stats::na.omit(avc)
+  ph <- .hzr_validate_phases(list(
+    early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1),
+    constant = hzr_phase("constant")))
+  counts <- c(early = 1L, constant = 0L)
+  theta <- c(log(0.35), log(0.19), 1.44, 1, 0.01, log(0.03))
+  base <- list(theta = theta, time = d$int_dead, status = d$dead,
+               time_lower = d$int_dead / 2, phases = ph,
+               covariate_counts = counts,
+               x_list = list(early = matrix(d$age, dimnames = list(NULL, "age")),
+                             constant = NULL))
+  n_calls <- 0L
+  real <- .hzr_phase_derivatives
+  local_mocked_bindings(.hzr_phase_derivatives = function(...) {
+    n_calls <<- n_calls + 1L
+    real(...)
+  })
+  work <- function(cache, ...) {
+    n_calls <<- 0L
+    do.call(.hzr_gradient_multiphase,
+            c(utils::modifyList(base, list(...)), list(phase_cache = cache)))
+    n_calls
+  }
+  cache <- new.env(parent = emptyenv())
+  # The known positive: a fresh cache does the work, at the exit and the
+  # entry times both.
+  expect_identical(work(cache), 2L)
+  # The CoE pattern: the same key with every status 0 is a hit.
+  expect_identical(work(cache, status = 0 * d$dead), 0L)
+  # Each key input changed alone is a miss, and then a hit once stored. The
+  # cache goes back to the base key first, so exactly one input differs from
+  # what is stored: changing two at once let a dropped key slip past, because
+  # the other difference forced the miss.
+  changes <- list(theta = list(theta = theta + c(0, 0, 0.01, 0, 0, 0)),
+                  time = list(time = d$int_dead * 1.01),
+                  entry = list(time_lower = d$int_dead / 3))
+  for (nm in names(changes)) {
+    work(cache)
+    expect_identical(do.call(work, c(list(cache), changes[[nm]])), 2L,
+                     info = paste(nm, "changed: a miss"))
+    expect_identical(do.call(work, c(list(cache), changes[[nm]])), 0L,
+                     info = paste(nm, "repeated: a hit"))
+  }
+  # No cache: every call does the work.
+  expect_identical(work(NULL), 2L)
+  expect_identical(work(NULL), 2L)
+})
