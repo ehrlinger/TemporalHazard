@@ -121,7 +121,24 @@ main (X.Y.Z) accumulates, patch-bumping as fixes land
    `NEWS.md` missing those entries, and no check notices.
 3. `cran-comments.md` version heading matches `DESCRIPTION`; if a
    resubmission, each reviewer point is itemised with how it was addressed.
-4. `devtools::document()` is clean and `man/` is in sync.
+4. `devtools::document()` is clean and `man/` is in sync, **and the full local
+   suite passes with the study data in reach:**
+
+   ```sh
+   Rscript tools/release-suite.R
+   ```
+
+   Only a final `RELEASE SUITE PASSED` line means it passed. Step 6 does not
+   cover this: `R CMD check` runs with `NOT_CRAN` false, and no CI runner has
+   the study volume, so the two parity files that read the private study
+   datasets run nowhere else. The script refuses before running when either
+   data directory does not resolve, and after running unless both files ran
+   every test with none skipped and the suite has no failure or error. It asks
+   the tests' own resolvers where the data are, so on the server, or when the
+   share has remounted as `/Volumes/qhsstudies-1`, set
+   `HAZARD_MAZE_DATASETS` and `HAZARD_ACHALASIA_DIR` first. v1.2.13 shipped two
+   red cardioversion tests from a gate that ran with the volume unmounted, and
+   the skip count that said so was read past.
 5. **Adversarial review of the accumulated release diff.** Every PR is reviewed
    on its own; nobody reviews the release as a whole, and by submission time
    `main` is typically dozens of commits past the last release. Run the
