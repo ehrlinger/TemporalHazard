@@ -290,3 +290,57 @@ test_that("the phase cache skips the per-phase work on a hit, and only then (#63
   expect_identical(work(NULL), 2L)
   expect_identical(work(NULL), 2L)
 })
+
+test_that("a CoE fit's second gradient evaluation reuses the first's cache (#631)", {
+  # The test above drives .hzr_gradient_multiphase() directly, so it cannot
+  # see whether the CoE wrapper in .hzr_optim_multiphase() shares one cache
+  # between its two evaluations; handing the second a fresh cache would lose
+  # the speed-up and pass it. This runs a real CoE fit and records each
+  # gradient call: the status-0 call the wrapper makes must get the same
+  # cache as the call before it, and do no per-phase work.
+  data("avc", package = "TemporalHazard", envir = environment())
+  a <- stats::na.omit(avc)
+  n_calls <- 0L
+  calls <- list()
+  real_pd <- .hzr_phase_derivatives
+  real_grad <- .hzr_gradient_multiphase
+  local_mocked_bindings(
+    .hzr_phase_derivatives = function(...) {
+      n_calls <<- n_calls + 1L
+      real_pd(...)
+    },
+    .hzr_gradient_multiphase = function(theta, time, status, ...,
+                                        phase_cache = NULL) {
+      before <- n_calls
+      g <- real_grad(theta, time, status, ..., phase_cache = phase_cache)
+      calls[[length(calls) + 1L]] <<- list(
+        all_zero = all(status == 0), cache = phase_cache,
+        work = n_calls - before)
+      g
+    }
+  )
+  fit <- hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = a, dist = "multiphase",
+    phases = list(
+      early = hzr_phase("cdf", t_half = 0.1512095, nu = 1.438652, m = 1,
+                        fixed = c("t_half", "nu", "m")),
+      constant = hzr_phase("constant")
+    ),
+    fit = TRUE, control = list(n_starts = 1)
+  )
+  expect_true(fit$spec$control$conserve_applied)
+  zero <- which(vapply(calls, `[[`, logical(1), "all_zero"))
+  # The known positive: the wrapper made status-0 calls, and they follow a
+  # call that did the work.
+  expect_gt(length(zero), 0L)
+  expect_false(1L %in% zero)
+  # Whole vectors, not one expectation per call: how many calls a fit makes
+  # depends on the optimizer's path, and the suite's count should not.
+  work <- vapply(calls[zero], `[[`, integer(1), "work")
+  shared <- vapply(zero, function(k) {
+    is.environment(calls[[k]]$cache) &&
+      identical(calls[[k]]$cache, calls[[k - 1L]]$cache)
+  }, logical(1))
+  expect_identical(work, rep(0L, length(zero)))
+  expect_identical(shared, rep(TRUE, length(zero)))
+})
