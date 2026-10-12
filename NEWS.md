@@ -13,7 +13,10 @@
   climbed it to `log(mu)` 130 and a log-likelihood of +6380.86, and returned
   that start as the fit with `converged = TRUE`; three of the other four
   reach -214.875. The CDF is now `-expm1(-x)`, as the `m > 0, nu < 0`
-  branch already had it, and the same call returns -214.875.
+  branch already had it, and the same call returns -214.875. The two forms
+  round differently everywhere, not only near 0, so other fits with an
+  `m = 0, nu < 0` phase can change in their last digits (by about `1e-15`
+  relative); fits without one are unchanged.
 
 ## Tests
 
