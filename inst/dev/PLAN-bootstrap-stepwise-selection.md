@@ -767,10 +767,10 @@ git commit -m "docs: add NEWS.md entry for hzr_bootstrap(scope=)"
 
 ### Task 5 (separate project, not git-tracked): neo_therapy worked example
 
-**Location:** `/Volumes/qhsstudies/thoracic/esophagus/malignant/neo_therapy/analyses/` (not a git repository — no commit step; the deliverable is the saved script file).
+**Location:** `/Volumes/qhsstudies/<study>/analyses/` (not a git repository — no commit step; the deliverable is the saved script file).
 
 **Files:**
-- Create: `/Volumes/qhsstudies/thoracic/esophagus/malignant/neo_therapy/analyses/bh.dead_r_bootstrap.qmd`
+- Create: `/Volumes/qhsstudies/<study>/analyses/bh.dead_r_bootstrap.qmd`
 
 **Interfaces:**
 - Consumes: `hzr_bootstrap(object, scope = ..., slentry = ..., slstay = ..., ...)` from Task 2, installed from the `feature/bootstrap-stepwise-selection` branch (or `dev`, once this plan's commits are merged).
@@ -784,7 +784,7 @@ Expected: `TemporalHazard` installs with `hzr_bootstrap()` accepting `scope=`. C
 
 - [ ] **Step 2: Create the worked-example script**
 
-Create `/Volumes/qhsstudies/thoracic/esophagus/malignant/neo_therapy/analyses/bh.dead_r_bootstrap.qmd` with:
+Create `/Volumes/qhsstudies/<study>/analyses/bh.dead_r_bootstrap.qmd` with:
 
 ````markdown
 ---
@@ -865,7 +865,7 @@ bs$summary[order(-bs$summary$pct), ]
 
 - [ ] **Step 2: Run it and inspect the output**
 
-Run: `Rscript -e "quarto::quarto_render('/Volumes/qhsstudies/thoracic/esophagus/malignant/neo_therapy/analyses/bh.dead_r_bootstrap.qmd')"`
+Run: `Rscript -e "quarto::quarto_render('/Volumes/qhsstudies/<study>/analyses/bh.dead_r_bootstrap.qmd')"`
 Expected: Renders without error; `bh-bootstrap-screen` chunk completes in roughly 1-3 minutes (50 replicates x trimmed scope); the `screening-table` chunk prints a `summary` data frame with `pct` (selection frequency) descending. Report the rendered `pct` values back — variables entering in a small fraction of replicates are the ones `bh.dead.sas` would flag for screening out.
 
 No commit step: this directory is not a git repository (per `CLAUDE.md`'s "No PHI in code, notes, or repos" and the earlier scoping decision, this file and the real `bhblt.sas7bdat` data it reads stay local, never pushed to any git remote).
