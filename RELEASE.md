@@ -151,11 +151,11 @@ not worth that tax for ordinary incremental cycles.
     before running when either data directory does not resolve, and
     after running unless both files ran every test with none skipped and
     the suite has no failure or error. It asks the tests’ own resolvers
-    where the data are, so on the server, or when the share has
-    remounted as `/Volumes/qhsstudies-1`, set `HAZARD_MAZE_DATASETS` and
-    `HAZARD_ACHALASIA_DIR` first. v1.2.13 shipped two red cardioversion
-    tests from a gate that ran with the volume unmounted, and the skip
-    count that said so was read past.
+    where the data are, and they have no default path, so set
+    `HAZARD_MAZE_DATASETS` and `HAZARD_ACHALASIA_DIR` first (once, in
+    `~/.Renviron`). v1.2.13 shipped two red cardioversion tests from a
+    gate that ran with the volume unmounted, and the skip count that
+    said so was read past.
 
 5.  **Adversarial review of the accumulated release diff.** Every PR is
     reviewed on its own; nobody reviews the release as a whole, and by
