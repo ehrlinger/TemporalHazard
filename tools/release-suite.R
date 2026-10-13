@@ -21,8 +21,8 @@
 #
 # USAGE (from the package root)
 #   Rscript tools/release-suite.R [results.rds]
-#   Where the share is not at /Volumes/qhsstudies (the server, or a remount
-#   under another name), point the resolvers at the data first:
+#   The resolvers have no default path, so point them at the data first,
+#   once in ~/.Renviron or on the command line:
 #   HAZARD_MAZE_DATASETS=<dir> HAZARD_ACHALASIA_DIR=<dir> \
 #     Rscript tools/release-suite.R
 
@@ -52,10 +52,10 @@ dirs <- c(HAZARD_MAZE_DATASETS = resolvers$.hzr_maze_datasets_dir(),
 if (anyNA(dirs)) {
   refuse(
     "the study data do not resolve for ",
-    paste(names(dirs)[is.na(dirs)], collapse = " and "), ". The default ",
-    "path under /Volumes/qhsstudies is missing or unreadable; a stale mount ",
-    "reads as missing, so check for /Volumes/qhsstudies-1. Set the ",
-    "variable to the data directory and run again."
+    paste(names(dirs)[is.na(dirs)], collapse = " and "),
+    ". Set the variable to the data directory (once, in ~/.Renviron) ",
+    "and run again. A stale mount reads as missing, so check for ",
+    "/Volumes/qhsstudies-1."
   )
 }
 message("study data: ", paste(names(dirs), dirs, sep = " = ", collapse = "; "))
