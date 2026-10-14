@@ -95,11 +95,19 @@ jobs:
           # news/ fragments do not ship, so spell_check_package() skips them,
           # and a misspelling there surfaced only at the bump that collects
           # them into NEWS.md (#648). Check them on the PR that adds them.
+          # Allow what spell_check_package() allows: the package name, the
+          # Authors@R names, hunspell's en_stats and WORDLIST, in the
+          # DESCRIPTION language, so a fragment passes here exactly when it
+          # will pass once collected into NEWS.md.
           fragments <- Sys.glob("news/*.md")
           bad <- if (length(fragments)) {
-            spelling::spell_check_files(
-              fragments, ignore = spelling::get_wordlist(), lang = "en_US"
-            )
+            desc <- read.dcf("DESCRIPTION")
+            authors <- unlist(eval(parse(text = desc[, "Authors@R"])),
+                              use.names = FALSE)
+            ignore <- unique(c(desc[, "Package"], authors,
+                               hunspell::en_stats, spelling::get_wordlist()))
+            lang <- gsub("-", "_", desc[, "Language"], fixed = TRUE)
+            spelling::spell_check_files(fragments, ignore = ignore, lang = lang)
           }
           if (length(bad$word)) print(bad)
           if (nrow(misspelled) > 0 || length(bad$word) > 0) {
