@@ -54,6 +54,49 @@
   fit$spec$objective %||% "likelihood"
 }
 
+# Was `fit` made through the vector interface (`time =`, `status =`)?
+# Normally the stored call says so: `hazard(formula, data)` records no
+# `time =`. A wrapper that forwards its formula argument by variable defeats
+# that, because `formula = fml` stores a symbol even when `fml` was NULL, and
+# the fit is then taken for a formula fit (#406).
+#
+# This recognises ONE such shape, the one #406 reported: the call names
+# `time =`, the name is STILL bound to NULL where the fit was made, and the
+# fit cannot be a formula fit, because hazard() REQUIRES `data` with a
+# formula ("'data' is required when 'formula' is provided") and this fit
+# stores no frame beside its design. A fit with a design AND a frame could
+# be either, and is left alone: a formula fit saved by 1.2.10 or earlier
+# keeps `x` without `x_design`, so reading `x` as the vector path's design
+# would classify it as a vector fit and its bootstrap would report success
+# over a model whose covariate never moved.
+#
+# Every other shape keeps the behaviour it has: a fit with both a design and
+# a frame, a fit whose name is bound to something else, and a fit that
+# records no `call_env` are all left to the formula path, where they fail
+# loudly with a message about resolving the name. Deciding those needs to
+# know which interface hazard() used, and a stored call plus a live binding
+# cannot say: four measured shapes get it wrong in both directions (#432).
+# The fix there is for hazard() to record the interface when it fits.
+.hzr_wrapper_vector_call <- function(fit) {
+  f <- fit$call$formula
+  if (is.null(f)) return(TRUE)
+  if (!"time" %in% names(fit$call)) return(FALSE)
+  has_design <- !is.null(fit$data$x) || !is.null(fit$data$x_design)
+  if (has_design && !is.null(fit$data$frame)) return(FALSE)
+  # Only a NAME is looked up, and only for its value: the stored formula
+  # argument may be any expression, and EVALUATING one has side effects.
+  # Measured on this branch before this line: `formula = mk()`, where mk()
+  # increments a counter, ran three more times per hzr_bootstrap() call, and
+  # `formula = draws()`, calling runif(), moved `.Random.seed`, which would
+  # silently change which rows the replicates resample. A call, a literal
+  # formula and anything else are left to the formula path, as on main.
+  if (!is.symbol(f)) return(FALSE)
+  env <- fit$call_env
+  nm <- as.character(f)
+  is.environment(env) && exists(nm, envir = env) &&
+    is.null(tryCatch(get(nm, envir = env), error = function(e) e))
+}
+
 #' Is a fit's maximised objective something other than a log-likelihood?
 #'
 #' Under `objective = "sas"` an interval-censored row contributes PROC
@@ -111,7 +154,7 @@
   if (!is.null(inherit_blocker)) {
     return(inherit_blocker)
   }
-  if (!is.null(fit$call$formula)) {
+  if (!.hzr_wrapper_vector_call(fit)) {
     return(NULL)
   }
 
@@ -269,7 +312,7 @@
   fix <- paste0(". Give each phase its covariates with ",
                 "hzr_phase(formula = ~ ...), with the columns in `data`")
 
-  if (is.null(fit$call$formula)) {
+  if (.hzr_wrapper_vector_call(fit)) {
     # Ask the design that was built, not the call: an `x` argument bound to
     # NULL names `x` but built no columns, so an inheriting phase loses none.
     if (!is.null(fit$data$x) && ncol(fit$data$x) > 0L) {
@@ -404,7 +447,7 @@
   # Recover the original formula; see .hzr_stored_formula() for why this
   # cannot be a deparse. A vector-interface fit has none -- which the blocker
   # above has already established is survivable on the multiphase path only.
-  has_formula <- !is.null(current$call$formula)
+  has_formula <- !.hzr_wrapper_vector_call(current)
   current_formula <- if (has_formula) {
     .hzr_stored_formula(current, "`current`")
   } else {
