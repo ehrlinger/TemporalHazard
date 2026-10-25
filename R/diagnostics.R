@@ -145,13 +145,34 @@ hzr_deciles <- function(object, time, groups = 10L,
   # calibration horizon `time`; the horizon only stratifies subjects into risk
   # groups -- it does not restrict the event or expected counts, and all
   # subjects are included.
-  cumhaz_at <- function(times) {
+  cumhaz_at <- function(times, horizon = FALSE) {
     if (identical(object$spec$dist, "multiphase")) {
-      phases <- object$fit$phases
-      if (is.null(phases)) phases <- object$spec$phases
-      .hzr_multiphase_cumhaz(times, object$fit$theta, phases,
-                             object$fit$covariate_counts, object$fit$x_list,
-                             per_phase = FALSE)
+      # predict() without newdata evaluates the stored per-phase designs at
+      # the stored times, so hand it `times`. With time_windows, a phase that
+      # took the global x stores it expanded at each subject's EXIT time;
+      # read at the horizon, that applied the exit window's coefficient to
+      # the horizon (#629). For the horizon, expand data$x at `times`
+      # instead, as hzr_gof() does, deciding which phases inherit by the same
+      # helper. The exit-time call keeps the stored design, the one the
+      # likelihood and .hzr_cumhaz_at_entry() use.
+      at <- object
+      at$data$time <- times
+      tw <- object$spec$time_windows
+      if (horizon && !is.null(tw)) {
+        at$fit$x_list <- lapply(
+          stats::setNames(nm = names(object$fit$x_list)), function(nm) {
+            m <- object$fit$x_list[[nm]]
+            if (is.null(m) || ncol(m) == 0 ||
+                  !.hzr_phase_inherits_global(object, nm)) {
+              return(m)
+            }
+            .hzr_expand_time_varying_design(
+              x = object$data$x, time = times, time_windows = tw
+            )
+          }
+        )
+      }
+      stats::predict(at, type = "cumulative_hazard")
     } else if (!is.null(object$data$x) && ncol(object$data$x) > 0) {
       nd <- as.data.frame(object$data$x)
       nd$time <- times
@@ -165,7 +186,8 @@ hzr_deciles <- function(object, time, groups = 10L,
   }
 
   cumhaz_fu    <- cumhaz_at(event_time)        # H at each subject's exit
-  cumhaz_hor   <- cumhaz_at(rep(time, n_obs))  # risk grouping at the horizon
+  cumhaz_hor   <- cumhaz_at(rep(time, n_obs),  # risk grouping at the horizon
+                            horizon = TRUE)
   survival_hor <- exp(-cumhaz_hor)
   # A left-truncated subject is at risk only from its entry time, and a
   # weighted fit conserves weighted events, sum(w * H) = sum(w * d). Both
