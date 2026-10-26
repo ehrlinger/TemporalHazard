@@ -109,8 +109,10 @@ by \code{hzr_phase(fixed = )}, shapes a constraint derives, and a conserved
 \item{n_failed}{Number of replicates that failed: the refit stopped with
 an error, returned something other than a fit, returned a non-finite
 objective or one at the optimizer's -1e10 sentinel (which stands in for
-a likelihood that could not be evaluated), did not converge, or
-returned a finite objective but no parameter estimates. A
+a likelihood that could not be evaluated), did not converge,
+returned a finite objective but no parameter estimates, or reported
+convergence on a likelihood that is flat or still rising past its
+estimate. A
 single-distribution refit that
 ends where the likelihood is not defined reports no objective, so it
 fails as a non-finite objective, not at the sentinel (#486).}
@@ -126,7 +128,15 @@ defined, #486), or
 (a refit whose reported objective is still the sentinel), or
 \code{"refit did not converge (converged = FALSE)"} (a refit that reports
 \code{converged = FALSE}, including one stopped on a score that is not
-finite, #518), or, in select mode,
+finite, #518), or
+\code{"likelihood flat or still rising (no unique finite maximum)"} (a
+refit that reports convergence where stepping its estimates further
+out, along a coefficient or the direction its standard errors or
+Hessian say is flattest, does not lower the log-likelihood. Under
+separation in the resample an estimate is at infinity; with
+collinear columns the estimates are finite but not determined. Such
+replicates also draw a warning naming their count, #654), or, in
+select mode,
 \code{"base refit did not converge"} (a base refit with a non-finite
 objective) or \code{"base refit did not converge (converged = FALSE)"} (a
 base refit that reports \code{converged = FALSE}: the screen measures its

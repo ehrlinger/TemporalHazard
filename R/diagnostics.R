@@ -1644,6 +1644,227 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
   param_names
 }
 
+#' Whether a fit's likelihood is flat or still rising past its estimate
+#'
+#' Under separation (say, no events at one level of a factor) the maximum is
+#' at infinity. The optimizer stops where the slope has fallen below its
+#' tolerance and reports `converged = TRUE` with a small gradient, so every
+#' convergence test passes (#654). At a genuine maximum the log-likelihood
+#' falls along any ray out of the estimate. Three kinds of ray are tried,
+#' each in both senses where its sign is not given:
+#'
+#' * each free coefficient, stepped away from zero far enough to move the
+#'   linear predictor (the log hazard, or log time for the lognormal and
+#'   log-logistic) by up to `step`, so the test does not depend on the
+#'   covariate's units, and at least `n_sd` standard errors (from the
+#'   curvature below) so one extreme row cannot shrink the step to nothing;
+#' * with a finite `vcov`, the direction of largest variance over every free
+#'   parameter, stepped `n_sd` standard deviations but no further than a
+#'   coefficient's ray would go, because rounding in that direction grows
+#'   with the step;
+#' * without one, which at separation is the usual case, the flattest
+#'   direction of a central-difference Hessian of the log-likelihood, as far
+#'   as a coefficient's ray.
+#'
+#' The last two catch a separation along a combination: no events at a
+#' factor's reference level sends the intercept to -Inf and the other levels'
+#' coefficients to +Inf, flat only together. The Weibull `mu`, a positive
+#' rate, is stepped as `log(mu)`, where that run is linear. A multiphase
+#' phase's `log_mu` also counts as a coefficient on a column of ones, since
+#' a phase with no events of its own sends it to -Inf alone.
+#'
+#' A ray along which the log-likelihood does not fall by more than `tol` is
+#' reported. So is a rank-deficient design, checked first and exactly: a
+#' column of zeros (a factor level absent from a resample) or one that is a
+#' combination of others. Its estimates are not determined by the data.
+#'
+#' A conserved `log_mu` is held, not re-derived, along a ray. That can hide a
+#' rise the conserved fit would follow, and it can also leave the remaining
+#' rays flat where a phase has been switched off (`log_mu` near -Inf).
+#'
+#' @param fit_obj A fitted `hazard` object.
+#' @param step Largest change in any row's linear predictor along a
+#'   coefficient's ray.
+#' @param n_sd Standard errors or deviations to step.
+#' @param tol Fall in the log-likelihood below which a ray counts as flat.
+#' @return `TRUE` or `FALSE`.
+#' @keywords internal
+#' @noRd
+.hzr_monotone_likelihood <- function(fit_obj, step = 10, n_sd = 3,
+                                     tol = 1e-4) {
+  theta <- unname(fit_obj$fit$theta)
+  prepared <- .hzr_evaluate_prepare(fit_obj)
+  if (length(theta) != prepared$n_par) {
+    return(FALSE)
+  }
+  multiphase <- identical(fit_obj$spec$dist, "multiphase")
+  # The rays run in phi, where the Weibull mu is log(mu).
+  log_mu <- identical(fit_obj$spec$dist, "weibull")
+  if (log_mu && !isTRUE(theta[1L] > 0)) {
+    return(FALSE)
+  }
+  phi <- theta
+  if (log_mu) phi[1L] <- log(theta[1L])
+  ll_phi <- function(f) {
+    if (log_mu) f[1L] <- exp(f[1L])
+    .hzr_logl_at_raw(fit_obj, f, prepared)
+  }
+  ll0 <- ll_phi(phi)
+  if (!isTRUE(is.finite(ll0))) {
+    # Every finite ray would read as no worse.
+    return(FALSE)
+  }
+  fixed <- as.logical(fit_obj$fit$fixed_mask)
+  if (length(fixed) != length(theta)) {
+    fixed <- rep(FALSE, length(theta))
+  }
+  free <- !fixed %in% TRUE
+  if (!any(free)) {
+    return(FALSE)
+  }
+  fi <- which(free)
+
+  # The coefficients, and each multiphase phase's log_mu: positions in phi
+  # and design columns.
+  n <- length(prepared$time)
+  if (multiphase) {
+    pos <- .hzr_split_theta(seq_along(theta), prepared$phases,
+                            prepared$covariate_counts)
+    idx <- unlist(lapply(names(pos), function(nm) {
+      c(pos[[nm]][1L],
+        utils::tail(pos[[nm]], prepared$covariate_counts[[nm]]))
+    }))
+    block <- rep(names(pos), vapply(names(pos), function(nm) {
+      1L + as.integer(prepared$covariate_counts[[nm]])
+    }, integer(1)))
+    design <- do.call(cbind, lapply(names(pos), function(nm) {
+      m <- prepared$x_list[[nm]]
+      cbind(1, if (is.null(m)) matrix(0, n, 0L) else m)
+    }))
+  } else {
+    k <- if (is.null(prepared$x)) 0L else ncol(prepared$x)
+    idx <- utils::tail(seq_along(theta), k)
+    design <- if (k) prepared$x else matrix(0, n, 0L)
+    block <- rep("x", k)
+  }
+
+  # A rank-deficient design is exactly flat along its null direction, which
+  # no ray finds reliably: a column of zeros (a factor level absent from a
+  # resample) leaves its coefficient where it started, and an exact
+  # combination of columns is found only to rounding. Each multiphase phase
+  # is its own block; a single distribution's intercept is a column of ones.
+  # Checked before fixed_mask is applied: a user cannot fix a log_mu or a
+  # coefficient, so the one such entry there is a conserved log_mu, which
+  # Conservation of Events re-solves rather than holds.
+  for (b in split(seq_len(ncol(design)), block)) {
+    m <- design[, b, drop = FALSE]
+    if (!multiphase && free[1L]) m <- cbind(1, m)
+    if (qr(m)$rank < ncol(m)) {
+      return(TRUE)
+    }
+  }
+
+  keep <- free[idx]
+  idx <- idx[keep]
+  design <- design[, keep, drop = FALSE]
+  reach_len <- function(dir) {
+    reach <- if (length(idx)) max(abs(design %*% dir[idx])) else 0
+    if (is.finite(reach) && reach > 0) step / reach else NA_real_
+  }
+
+  # Curvature of -logL over the free parameters on the phi scale: the
+  # inverse of vcov (by the delta method for the Weibull log(mu)), or a
+  # central-difference Hessian when vcov is not finite, which at separation
+  # is the usual case: inverting the Hessian is what fails.
+  v <- fit_obj$fit$vcov
+  v_ok <- is.matrix(v) && nrow(v) == length(theta) &&
+    all(is.finite(v[free, free]))
+  if (v_ok) {
+    if (log_mu) {
+      jac <- c(1 / theta[1L], rep(1, length(theta) - 1L))
+      v <- v * outer(jac, jac)
+    }
+    v <- v[free, free, drop = FALSE]
+    curv <- tryCatch(solve(v), error = function(e) NULL)
+  } else {
+    # A coefficient's difference step moves no row's linear predictor by
+    # more than 1e-3: one extreme row would otherwise overflow exp().
+    h <- 1e-4 * pmax(1, abs(phi[fi]))
+    col <- match(fi, idx)
+    for (j in which(!is.na(col))) {
+      s <- max(abs(design[, col[j]]))
+      if (is.finite(s) && s > 0) h[j] <- min(h[j], 1e-3 / s)
+    }
+    unit <- function(j, size) {
+      d <- numeric(length(phi))
+      d[fi[j]] <- size
+      d
+    }
+    curv <- matrix(0, length(fi), length(fi))
+    for (j in seq_along(fi)) {
+      for (l in seq_len(j)) {
+        a <- unit(j, h[j])
+        b <- unit(l, h[l])
+        curv[j, l] <- curv[l, j] <- -(
+          ll_phi(phi + a + b) - ll_phi(phi + a - b) -
+            ll_phi(phi - a + b) + ll_phi(phi - a - b)
+        ) / (4 * h[j] * h[l])
+      }
+    }
+  }
+  if (!is.null(curv) && !all(is.finite(curv))) {
+    curv <- NULL
+  }
+  curv_along <- function(dir) {
+    if (is.null(curv)) NA_real_ else drop(dir[fi] %*% curv %*% dir[fi])
+  }
+
+  flat_along <- function(dir, len) {
+    if (!is.finite(len) || len <= 0) {
+      return(FALSE)
+    }
+    any(vapply(c(1, -1), function(s) {
+      ll <- ll_phi(phi + s * len * dir)
+      isTRUE(is.finite(ll) && ll0 - ll < tol)
+    }, logical(1)))
+  }
+
+  for (i in idx) {
+    if (phi[i] == 0) next
+    dir <- sign(phi[i]) * (seq_along(phi) == i)
+    len <- reach_len(dir)
+    c_i <- curv_along(dir)
+    if (isTRUE(c_i > 0)) {
+      len <- max(len, n_sd / sqrt(c_i), na.rm = TRUE)
+    }
+    if (flat_along(dir, len)) {
+      return(TRUE)
+    }
+  }
+
+  # The direction of largest variance, or of least curvature, at most
+  # n_sd standard deviations and no further than a coefficient's ray:
+  # rounding in that direction grows with the step.
+  dir <- numeric(length(phi))
+  if (v_ok) {
+    ev <- eigen(v, symmetric = TRUE)
+    if (!(ev$values[1L] > 0)) {
+      return(FALSE)
+    }
+    dir[fi] <- ev$vectors[, 1L]
+    sd_dir <- sqrt(ev$values[1L])
+  } else {
+    if (is.null(curv)) {
+      return(FALSE)
+    }
+    ev <- eigen(curv, symmetric = TRUE)
+    dir[fi] <- ev$vectors[, length(fi)]
+    c_min <- ev$values[length(fi)]
+    sd_dir <- if (c_min > 0) 1 / sqrt(c_min) else Inf
+  }
+  flat_along(dir, min(n_sd * sd_dir, reach_len(dir), na.rm = TRUE))
+}
+
 #' Why a bootstrap refit's return value is not a fit, if it is not
 #'
 #' `hzr_bootstrap()` reads `$fit$objective` and `$fit$theta` off each
@@ -1794,8 +2015,10 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   \item{n_failed}{Number of replicates that failed: the refit stopped with
 #'     an error, returned something other than a fit, returned a non-finite
 #'     objective or one at the optimizer's -1e10 sentinel (which stands in for
-#'     a likelihood that could not be evaluated), did not converge, or
-#'     returned a finite objective but no parameter estimates. A
+#'     a likelihood that could not be evaluated), did not converge,
+#'     returned a finite objective but no parameter estimates, or reported
+#'     convergence on a likelihood that is flat or still rising past its
+#'     estimate. A
 #'     single-distribution refit that
 #'     ends where the likelihood is not defined reports no objective, so it
 #'     fails as a non-finite objective, not at the sentinel (#486).}
@@ -1813,7 +2036,15 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     (a refit whose reported objective is still the sentinel), or
 #'     `"refit did not converge (converged = FALSE)"` (a refit that reports
 #'     `converged = FALSE`, including one stopped on a score that is not
-#'     finite, #518), or, in select mode,
+#'     finite, #518), or
+#'     `"likelihood flat or still rising (no unique finite maximum)"` (a
+#'     refit that reports convergence where stepping its estimates further
+#'     out, along a coefficient or the direction its standard errors or
+#'     Hessian say is flattest, does not lower the log-likelihood. Under
+#'     separation in the resample an estimate is at infinity; with
+#'     collinear columns the estimates are finite but not determined. Such
+#'     replicates also draw a warning naming their count, #654), or, in
+#'     select mode,
 #'     `"base refit did not converge"` (a base refit with a non-finite
 #'     objective) or `"base refit did not converge (converged = FALSE)"` (a
 #'     base refit that reports `converged = FALSE`: the screen measures its
@@ -2342,6 +2573,18 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # stored.
   eval_env <- object$call_env %||% parent.frame()
 
+  # Run on the original after every refusal above, so those name what is
+  # wrong with the fit, and before any replicate, so an error inside the
+  # check ends the run here rather than late in a long one (#654).
+  if (!isFALSE(object$fit$converged) && .hzr_monotone_likelihood(object)) {
+    warning("hzr_bootstrap(): the likelihood of the fit being bootstrapped ",
+            "is flat or still rising past its estimate, although the fit ",
+            "reports convergence: an estimate is at infinity (as under ",
+            "separation) or not determined by the data (as with collinear ",
+            "columns). Replicates like it are dropped as failures, and most ",
+            "may be.", call. = FALSE)
+  }
+
   # Accumulate results
   rep_list <- vector("list", n_boot)
   n_success <- 0L
@@ -2351,6 +2594,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # the message with it: a run could fail every replicate and say only that
   # they failed. Named integer(0), never NULL, when nothing fails.
   failure_reasons <- stats::setNames(integer(0), character(0))
+  monotone_reason <- "likelihood flat or still rising (no unique finite maximum)"
   # Parameters held by `fixed =` in any replicate: identical across replicates
   # by design, so the zero-variance check below must not name them (#373).
   fixed_names <- character()
@@ -2553,6 +2797,18 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
                  length(boot_fit$fit$theta) == 0L) {
       # A success with no estimates ended the run building its replicate row.
       "refit returned no parameter estimates"
+    } else {
+      # Separation in the resample: the estimate is where the optimizer gave
+      # up on a likelihood still rising, and it passes every convergence
+      # test. Pooled, it inflated the sd and the interval (#654). Like the
+      # refit, the check fails only its own replicate, and quietly.
+      mono <- tryCatch(suppressWarnings(.hzr_monotone_likelihood(boot_fit)),
+                       error = function(e) e)
+      if (inherits(mono, "error")) {
+        paste("likelihood check failed:", conditionMessage(mono))
+      } else if (isTRUE(mono)) {
+        monotone_reason
+      }
     }
     if (is.null(failure)) {
       n_success <- n_success + 1L
@@ -2878,6 +3134,17 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             "decided by a different criterion from the rest of the run, and ",
             "they are in the pooled frequencies on the same footing as ",
             "everything else. See `$n_wald_fallbacks`.", call. = FALSE)
+  }
+
+  n_monotone <- unname(failure_reasons[monotone_reason])
+  if (n_success > 0L && isTRUE(n_monotone > 0L)) {
+    warning("hzr_bootstrap(): ", n_monotone, " of ", n_boot, " replicates ",
+            "were dropped because their likelihood was flat or still ",
+            "rising past the estimate: an estimate at infinity, as under ",
+            "separation in the resample, or one the data do not determine. ",
+            "They reported convergence, and pooled they would inflate the sd ",
+            "and the interval. The summary is over the ",
+            n_success, " that remain. See `$failure_reasons`.", call. = FALSE)
   }
 
   # Every replicate failed. The result holds no replicates and an empty
