@@ -152,11 +152,12 @@ A list with class `"hzr_bootstrap"` containing:
   Number of replicates that failed: the refit stopped with an error,
   returned something other than a fit, returned a non-finite objective
   or one at the optimizer's -1e10 sentinel (which stands in for a
-  likelihood that could not be evaluated), did not converge, or returned
-  a finite objective but no parameter estimates. A single-distribution
-  refit that ends where the likelihood is not defined reports no
-  objective, so it fails as a non-finite objective, not at the sentinel
-  (#486).
+  likelihood that could not be evaluated), did not converge, returned a
+  finite objective but no parameter estimates, or reported convergence
+  on a likelihood that is flat or still rising past its estimate. A
+  single-distribution refit that ends where the likelihood is not
+  defined reports no objective, so it fails as a non-finite objective,
+  not at the sentinel (#486).
 
 - failure_reasons:
 
@@ -173,14 +174,21 @@ A list with class `"hzr_bootstrap"` containing:
   refit whose reported objective is still the sentinel), or
   `"refit did not converge (converged = FALSE)"` (a refit that reports
   `converged = FALSE`, including one stopped on a score that is not
-  finite, \#518), or, in select mode, `"base refit did not converge"` (a
-  base refit with a non-finite objective) or
-  `"base refit did not converge (converged = FALSE)"` (a base refit that
-  reports `converged = FALSE`: the screen measures its candidates
-  against the base, so the replicate is not screened). It sums to
-  `n_failed`, and is an empty named integer vector, never `NULL`, when
-  none failed. When every replicate fails, `hzr_bootstrap()` also warns,
-  naming the most common reason.
+  finite, \#518), or
+  `"likelihood flat or still rising (no unique finite maximum)"` (a
+  refit that reports convergence where stepping its estimates further
+  out, along a coefficient or the direction its standard errors or
+  Hessian say is flattest, does not lower the log-likelihood. Under
+  separation in the resample an estimate is at infinity; with collinear
+  columns the estimates are finite but not determined. Such replicates
+  also draw a warning naming their count, \#654), or, in select mode,
+  `"base refit did not converge"` (a base refit with a non-finite
+  objective) or `"base refit did not converge (converged = FALSE)"` (a
+  base refit that reports `converged = FALSE`: the screen measures its
+  candidates against the base, so the replicate is not screened). It
+  sums to `n_failed`, and is an empty named integer vector, never
+  `NULL`, when none failed. When every replicate fails,
+  `hzr_bootstrap()` also warns, naming the most common reason.
 
 - n_uncomputable_replicates:
 
