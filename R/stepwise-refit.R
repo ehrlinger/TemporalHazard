@@ -178,8 +178,8 @@
   # evaluating it: `data = dd` reads the same whether `dd` was a data frame or
   # NULL, and by the time a saved object is reloaded `dd` may be gone or
   # rebound. Such a fit is refused whenever its phase looks inherited, which
-  # also refuses a fit that genuinely used a phase formula whose columns are
-  # the inherited names: a refit request, not a wrong number (#324). A fit
+  # also refuses a fit that genuinely used a phase formula whose design is
+  # the inherited one: a refit request, not a wrong number (#324). A fit
   # with a record, or with no `data` in its call, is decided by the check
   # before it.
   # The vector interface is recognised by `time =` in the call, not by a

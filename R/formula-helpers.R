@@ -992,12 +992,16 @@
 #' The fit's record, `attr(fit$x_list, "from_formula")`, decides when it is
 #' there. A fit saved before that record (no tag through v1.2.9 has it)
 #' falls back to its columns: a phase with no formula inherits, and a phase
-#' with one inherits only if its stored columns are exactly the inherited
-#' ones -- the window-expanded names under `time_windows`, otherwise
-#' `colnames(data$x)`. That keeps a 1.0.3-era fit, which kept neither the
-#' record nor its data, on the phase formula it was fitted with. Known
-#' limit: a pre-record phase formula whose columns are literally the
-#' inherited names; without windows both routes then build the same design.
+#' with one inherits only if its stored design IS the inherited one -- the
+#' same column names and the same values as `data$x`, expanded at the stored
+#' times under `time_windows`. That keeps a 1.0.3-era fit, which kept neither
+#' the record nor its data, on the phase formula it was fitted with. Names
+#' alone are not enough under `time_windows`: a phase formula can use
+#' columns named like the expanded ones (`x1_w1`, `x1_w2`) that hold other
+#' covariates, and reading it as inherited swapped them for the global ones
+#' (#658). A phase formula whose design equals the inherited one in names
+#' and values is read as inheriting; both routes then build the same design
+#' at the fitted times.
 #'
 #' @param object A fitted multiphase `hazard` object.
 #' @param nm Phase name.
@@ -1016,14 +1020,20 @@
   }
   time_windows <- object$spec$time_windows
   inherited <- if (!is.null(time_windows) && !is.null(object$data$x)) {
-    colnames(.hzr_expand_time_varying_design(
-      x = object$data$x[1, , drop = FALSE], time = 0,
+    .hzr_expand_time_varying_design(
+      x = object$data$x, time = object$data$time,
       time_windows = time_windows
-    ))
+    )
   } else {
-    colnames(object$data$x)
+    object$data$x
   }
-  identical(colnames(object$fit$x_list[[nm]]), inherited)
+  m <- object$fit$x_list[[nm]]
+  if (!identical(colnames(m), colnames(inherited))) {
+    return(FALSE)
+  }
+  is.null(inherited) ||
+    (identical(dim(m), dim(inherited)) &&
+       isTRUE(all(unname(m) == unname(inherited))))
 }
 
 

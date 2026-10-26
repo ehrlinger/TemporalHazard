@@ -95,11 +95,11 @@ test_that("multiphase time_windows: a phase's own formula keeps its design", {
 })
 
 test_that("multiphase time_windows: a legacy fit is rebuilt only where it inherited", {
-  # A fit saved before attr(x_list, "from_formula") is classified by column
-  # names. Here the early phase's own formula uses columns NAMED x1_w1 and
-  # x1_w2, independent of x1, which match the global ~ x1 expanded at one cut
-  # (Codex on #657). The stored own-formula design is not windowed, so it is
-  # also the horizon design and must be kept.
+  # A fit saved before attr(x_list, "from_formula") is classified by its
+  # stored design. Here the early phase's own formula uses columns NAMED
+  # x1_w1 and x1_w2, independent of x1, which match the global ~ x1 expanded
+  # at one cut (Codex on #657). The stored own-formula design is not
+  # windowed, so it is also the horizon design and must be kept.
   set.seed(6292)
   n <- 400
   d <- data.frame(x1 = stats::rnorm(n), x1_w1 = stats::rnorm(n),
@@ -122,8 +122,8 @@ test_that("multiphase time_windows: a legacy fit is rebuilt only where it inheri
   expect_true(isTRUE(fm$fit$converged))
   legacy <- fm
   attr(legacy$fit$x_list, "from_formula") <- NULL
-  # Premise: the name fallback misreads the phase as inheriting.
-  expect_true(.hzr_phase_inherits_global(legacy, "early"))
+  # The names match the inherited ones, but the values do not (#658).
+  expect_false(.hzr_phase_inherits_global(legacy, "early"))
 
   horizon <- 6
   ref_h <- .hzr_multiphase_cumhaz(
