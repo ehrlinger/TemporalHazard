@@ -159,27 +159,11 @@ hzr_deciles <- function(object, time, groups = 10L,
       at$data$time <- times
       tw <- object$spec$time_windows
       if (horizon && !is.null(tw)) {
-        # A fit saved before the from_formula record is classified by its
-        # column names, which a phase formula can share with the expanded
-        # global design (x1_w1, x1_w2). Rebuilding such a phase would swap
-        # its own covariates for the global ones, so for those fits rebuild
-        # only a design that IS the global design expanded at the stored
-        # exit times.
-        legacy <- is.null(attr(object$fit$x_list, "from_formula"))
-        x_exit <- if (legacy) {
-          .hzr_expand_time_varying_design(
-            x = object$data$x, time = object$data$time, time_windows = tw
-          )
-        }
         at$fit$x_list <- lapply(
           stats::setNames(nm = names(object$fit$x_list)), function(nm) {
             m <- object$fit$x_list[[nm]]
             if (is.null(m) || ncol(m) == 0 ||
                   !.hzr_phase_inherits_global(object, nm)) {
-              return(m)
-            }
-            if (legacy && !(identical(dim(m), dim(x_exit)) &&
-                              all(unname(m) == unname(x_exit)))) {
               return(m)
             }
             .hzr_expand_time_varying_design(
@@ -708,7 +692,8 @@ hzr_gof <- function(object, time_grid = NULL) {
     # fit's own record of which designs came from a phase formula, not by
     # whether a formula was written (the fit ignores one it cannot evaluate,
     # without `data`) nor by column names (a phase formula's columns can share
-    # the expanded names). A fit from before that record falls back to names.
+    # the expanded names). A fit from before that record falls back to its
+    # stored design, names and values (#658).
     # Which phases inherit is decided by .hzr_phase_inherits_global(), which
     # predict(newdata = ) calls too, so the two cannot disagree.
     time_windows <- object$spec$time_windows
