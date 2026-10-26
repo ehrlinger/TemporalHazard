@@ -151,6 +151,24 @@ test_that("the check sees an exactly flat direction in the design", {
   expect_false(.hzr_monotone_likelihood(fit))
 })
 
+test_that("an offset covariate does not read as a flat likelihood", {
+  # Shifted by 20000, the covariate's move along the combined direction
+  # nearly cancels the intercept's. Sized on the covariate alone the step
+  # shrank to nothing, and every replicate of a genuine maximum was dropped.
+  x <- rep(c(-1, 0, 1), 100)
+  for (shift in c(0, 20000)) {
+    d <- data.frame(time = exp(-0.001 * x) / 0.3, status = 1, x = x + shift)
+    fit <- suppressWarnings(hazard(
+      survival::Surv(time, status) ~ x, data = d, dist = "exponential",
+      theta = c(log(0.3) - 0.001 * shift, 0.001), fit = TRUE))
+    expect_false(.hzr_monotone_likelihood(fit), label = paste("shift", shift))
+    fit$fit$vcov <- NA
+    expect_false(.hzr_monotone_likelihood(fit), label = paste("shift", shift))
+  }
+  b <- suppressWarnings(hzr_bootstrap(fit, n_boot = 3, seed = 1))
+  expect_identical(b$n_success, 3L)
+})
+
 test_that("the check sees a multiphase phase with no events of its own", {
   skip_on_cran() # multiphase fit
   # With no deaths after six months the constant phase is not needed: its
