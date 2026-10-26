@@ -8,3 +8,8 @@
   The step is now sized on the whole linear predictor, intercept included,
   and for the Weibull the intercept `log(mu)` is weighted by the shape `nu`,
   as it enters the cumulative hazard.
+* The same check's tolerance now scales with the mean weight. The
+  log-likelihood and every fall along a ray scale with the weights while the
+  maximum does not, so an intercept-only fit with weights of 5e-8 read as
+  flat at its exact maximum and all its replicates were dropped. Rescaling
+  every weight now leaves the verdict unchanged.

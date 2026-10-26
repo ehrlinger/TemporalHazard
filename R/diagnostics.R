@@ -1709,6 +1709,13 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
     if (log_mu) f[1L] <- exp(f[1L])
     .hzr_logl_at_raw(fit_obj, f, prepared)
   }
+  # The log-likelihood, and every fall along a ray, scales with the weights,
+  # while the maximum does not move: `tol` is per unit of mean weight, so
+  # rescaling every weight leaves the verdict as it was.
+  w <- prepared$weights
+  if (length(w) && all(is.finite(w)) && mean(w) > 0) {
+    tol <- tol * mean(w)
+  }
   ll0 <- ll_phi(phi)
   if (!isTRUE(is.finite(ll0))) {
     # Every finite ray would read as no worse.
