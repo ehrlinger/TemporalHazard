@@ -98,7 +98,9 @@ If <code>NULL</code> (default), extracted from the fitted object's stored data.<
 
 <dt id="arg-event-time">event_time<a class="anchor" aria-label="anchor" href="#arg-event-time"></a></dt>
 <dd><p>Optional numeric vector of observed event/censoring
-times.  If <code>NULL</code> (default), extracted from the fitted object.</p></dd>
+times.  If <code>NULL</code> (default), extracted from the fitted object. On a
+left-truncated row each must exceed the row's entry time, or the call
+stops.</p></dd>
 
 </dl></div>
     <div class="section level2">

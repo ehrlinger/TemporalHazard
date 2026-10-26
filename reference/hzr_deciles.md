@@ -35,7 +35,8 @@ hzr_deciles(object, time, groups = 10L, status = NULL, event_time = NULL)
 - event_time:
 
   Optional numeric vector of observed event/censoring times. If `NULL`
-  (default), extracted from the fitted object.
+  (default), extracted from the fitted object. On a left-truncated row
+  each must exceed the row's entry time, or the call stops.
 
 ## Value
 
