@@ -327,13 +327,20 @@ test_that("stepping-only refusals do not reach the bootstrap: a 3-level factor s
   # must take only the ignored-formula check, not the whole blocker.
   d <- avc_fixture_mal()
   d$ageg <- cut(d$age, 3, labels = c("lo", "mid", "hi"))
+  # Only the early phase inherits the factor. avc has 8 deaths after six
+  # months, and the oldest group's one death is early, so in the constant
+  # phase its coefficient is at -Inf and every replicate is dropped as
+  # monotone (#654).
+  phases <- mp_phases()
+  phases$constant <- hzr_phase("constant", formula = ~ 1)
   fit <- suppressWarnings(hazard(
     survival::Surv(int_dead, dead) ~ ageg, data = d, dist = "multiphase",
-    phases = mp_phases(), fit = TRUE,
+    phases = phases, fit = TRUE,
     control = list(n_starts = 1L, conserve = FALSE)))
   # The known positive: the whole blocker would refuse this fit.
   expect_match(.hzr_inherit_blocker(fit),
                "a term that expands to more than one column", fixed = TRUE)
+  expect_false(.hzr_monotone_likelihood(fit))
 
   b <- suppressWarnings(hzr_bootstrap(fit, n_boot = 3L, seed = 1L))
   expect_equal(b$n_success, 3L)
