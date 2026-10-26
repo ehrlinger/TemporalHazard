@@ -39,7 +39,9 @@ NULL
 #'   0 = censored).
 #'   If `NULL` (default), extracted from the fitted object's stored data.
 #' @param event_time Optional numeric vector of observed event/censoring
-#'   times.  If `NULL` (default), extracted from the fitted object.
+#'   times.  If `NULL` (default), extracted from the fitted object. On a
+#'   left-truncated row each must exceed the row's entry time, or the call
+#'   stops.
 #'
 #' @return A data frame with one row per risk group and columns:
 #' \describe{
@@ -133,6 +135,21 @@ hzr_deciles <- function(object, time, groups = 10L,
   if (n_obs != n_model) {
     stop("'status'/'event_time' lengths must match the fitted data length (",
          n_model, ").", call. = FALSE)
+  }
+  # A left-truncated row's expected count is H(event_time) - H(entry), so an
+  # event_time at or below entry has no defined count (#656). A row is
+  # truncated as the likelihood reads it, by its stored exit time, so a
+  # time_lower equal to that time is no entry.
+  entry <- object$data$time_lower
+  if (!is.null(entry)) {
+    early <- which(entry > 0 & entry < object$data$time &
+                     object$data$status %in% c(0, 1) & event_time <= entry)
+    if (length(early) > 0) {
+      stop("'event_time' must exceed the entry time on left-truncated rows; ",
+           length(early), " row(s) do not, the first being row ", early[1],
+           " (event_time ", format(event_time[early[1]]), ", entry ",
+           format(entry[early[1]]), ").", call. = FALSE)
+    }
   }
 
   .hzr_refuse_short_phase_design(object, "hzr_deciles()")
@@ -300,7 +317,8 @@ hzr_deciles <- function(object, time, groups = 10L,
 #' Each subject's cumulative hazard at its counting-process entry time
 #'
 #' A subject with a genuine entry time (a status 0/1 row with
-#' `0 < time_lower < exit`) is at risk only after it, so its expected events
+#' `0 < time_lower < time` at the stored time, as the likelihood reads it) is
+#' at risk only after it, so its expected events
 #' are H(exit) - H(entry), the quantity a maximum likelihood fit conserves.
 #' Shared by hzr_gof() and hzr_deciles() so the two cannot disagree (#491).
 #'
@@ -320,10 +338,13 @@ hzr_deciles <- function(object, time, groups = 10L,
   # Only on a stored status 0/1 row is time_lower an entry time: on a left- or
   # interval-censored row it bounds the event time instead. hzr_gof() refuses
   # such rows, but hzr_deciles() takes a caller's `status` in their place.
+  # Truncation is read against the stored time, not exit_time: a caller's
+  # later event_time must not turn time_lower == time into an entry (#656).
+  # hzr_deciles() refuses an exit_time at or below a genuine entry.
   has_entry <- if (is.null(entry)) {
     rep(FALSE, n)
   } else {
-    entry > 0 & entry < exit_time & object$data$status %in% c(0, 1)
+    entry > 0 & entry < object$data$time & object$data$status %in% c(0, 1)
   }
   h_entry <- rep(0, n)
   if (any(has_entry)) {
