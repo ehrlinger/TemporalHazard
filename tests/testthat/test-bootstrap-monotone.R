@@ -199,9 +199,11 @@ test_that("the rank check sees a column collinear with a conserved log_mu", {
   b <- vapply(fits, function(f) utils::tail(unname(f$fit$theta), 1), 0)
   expect_gt(abs(diff(b)), 1)
   for (f in fits) {
-    # The case needs the conserved log_mu (5th) masked, as CoE leaves it
-    # when the vcov recompute fails.
-    expect_true(f$fit$fixed_mask[[5]])
+    # The case is the conserved log_mu (5th) left masked with no finite
+    # vcov, as CoE leaves it when the vcov recompute fails. Whether it fails
+    # varies by platform (it succeeds on R-devel), so the state is set here.
+    f$fit$fixed_mask[[5]] <- TRUE
+    f$fit$vcov <- NA
     expect_true(.hzr_monotone_likelihood(f))
   }
 })
