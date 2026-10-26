@@ -21,7 +21,9 @@ are accumulated over each subject's full follow-up.}
 If \code{NULL} (default), extracted from the fitted object's stored data.}
 
 \item{event_time}{Optional numeric vector of observed event/censoring
-times.  If \code{NULL} (default), extracted from the fitted object.}
+times.  If \code{NULL} (default), extracted from the fitted object. On a
+left-truncated row each must exceed the row's entry time, or the call
+stops.}
 }
 \value{
 A data frame with one row per risk group and columns:

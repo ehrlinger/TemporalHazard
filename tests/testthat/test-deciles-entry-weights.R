@@ -168,3 +168,75 @@ test_that("a group whose weights sum to 0 has NA rates, not NaN", {
   expect_false(any(is.nan(dec$expected_rate)))
   expect_true(all(is.na(dec$expected_rate[undefined])))
 })
+
+test_that("hzr_deciles() refuses an event_time at or below entry (#656)", {
+  # Such a row's correction H(entry) was dropped with no warning, so it
+  # counted H(event_time) expected events where the defined count is none.
+  avc <- .dec_avc
+  set.seed(2)
+  late <- stats::runif(nrow(avc)) < 0.4
+  entry <- ifelse(late, avc$int_dead * stats::runif(nrow(avc), 0.1, 0.9), 0)
+  fit <- suppressWarnings(hazard(
+    time       = avc$int_dead,
+    status     = avc$dead,
+    time_lower = entry,
+    x          = as.matrix(avc[, c("age", "mal")]),
+    dist       = "weibull",
+    theta      = c(0.01, 0.5, 0, 0),
+    fit        = TRUE
+  ))
+  i <- which(late)[1]
+  for (at in c(entry[i], entry[i] / 2)) {
+    ev <- avc$int_dead
+    ev[i] <- at
+    expect_error(hzr_deciles(fit, time = 12, event_time = ev),
+                 paste0("row ", i, " \\(event_time"))
+  }
+  # Just above entry is a defined, near-zero count, and is not refused.
+  ev <- avc$int_dead
+  ev[i] <- entry[i] + 1e-9
+  base <- attr(hzr_deciles(fit, time = 12), "overall")$total_expected
+  nd <- function(t) data.frame(age = avc$age[i], mal = avc$mal[i], time = t)
+  h <- function(t) predict(fit, newdata = nd(t), type = "cumulative_hazard")
+  own <- h(avc$int_dead[i]) - h(entry[i])
+  ov <- attr(hzr_deciles(fit, time = 12, event_time = ev), "overall")
+  expect_gt(own, 1e-3)
+  expect_equal(ov$total_expected, base - own, tolerance = 1e-8)
+  # A row with no entry time may still have event_time 0.
+  j <- which(!late)[1]
+  ev <- avc$int_dead
+  ev[j] <- 0
+  expect_no_error(hzr_deciles(fit, time = 12, event_time = ev))
+})
+
+test_that("a later event_time does not make time_lower == time an entry", {
+  # The likelihood reads a status 0/1 row as truncated only when
+  # time_lower < time at the stored time. hzr_deciles() read it against the
+  # caller's event_time, so a later one subtracted H(time) (#656).
+  avc <- .dec_avc
+  i <- 5
+  lo <- rep(0, nrow(avc))
+  lo[i] <- avc$int_dead[i]
+  x <- as.matrix(avc[, c("age", "mal")])
+  fit_lo <- suppressWarnings(hazard(
+    time = avc$int_dead, status = avc$dead, time_lower = lo, x = x,
+    dist = "weibull", theta = c(0.01, 0.5, 0, 0), fit = TRUE
+  ))
+  fit_no <- suppressWarnings(hazard(
+    time = avc$int_dead, status = avc$dead, x = x,
+    dist = "weibull", theta = c(0.01, 0.5, 0, 0), fit = TRUE
+  ))
+  # The likelihood ignores row i's time_lower, so the fits agree.
+  expect_equal(fit_lo$fit$theta, fit_no$fit$theta)
+  nd <- data.frame(age = avc$age[i], mal = avc$mal[i], time = avc$int_dead[i])
+  # The term the old rule subtracted is not negligible.
+  expect_gt(predict(fit_no, newdata = nd, type = "cumulative_hazard"), 0.1)
+
+  ev <- avc$int_dead
+  ev[i] <- 2 * ev[i]
+  expect_equal(
+    attr(hzr_deciles(fit_lo, time = 12, event_time = ev), "overall"),
+    attr(hzr_deciles(fit_no, time = 12, event_time = ev), "overall"),
+    tolerance = 1e-10
+  )
+})
