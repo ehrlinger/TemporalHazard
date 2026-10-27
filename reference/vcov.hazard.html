@@ -88,10 +88,11 @@ and columns for parameters held fixed (e.g. fixed shape parameters) are
 is still usable. For Conservation-of-Events fits the conserved phase
 <code>log_mu</code> <em>normally</em> carries a variance: it is removed from the
 optimizer search but the vcov is the full-information matrix at the optimum
-(the CoE solution is the unconstrained MLE). That recomputation requires
-<span class="pkg">numDeriv</span> and an invertible Hessian; if either is unavailable the fit
-emits a warning and the conserved <code>log_mu</code> stays <code>NA</code> (the rest
-of the matrix is unaffected). For a Weibull fit whose scale <code>mu</code>, or
+(the CoE solution is the unconstrained MLE). That recomputation needs a
+Hessian (analytic, or from <span class="pkg">numDeriv</span> for left- or interval-censored
+rows) that can be inverted; if it fails the fit warns, records why in
+<code>degraded_causes</code>, and has no covariance matrix, so <code><a href="https://rdrr.io/r/stats/vcov.html" class="external-link">vcov()</a></code>
+returns <code>NA</code>. For a Weibull fit whose scale <code>mu</code>, or
 its variance, cannot be represented, <code>mu</code>'s row and column are
 <code>NA</code>, the reason is recorded in the fit's <code>degraded_causes</code>,
 and <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> shows the variance of <code>log(mu)</code> instead.

@@ -7,16 +7,18 @@
   };
 </script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet"><meta property="og:title" content="Vcov submatrix for the delta-method sandwich — .hzr_free_vcov"><meta name="description" content="Restricts the sandwich to the parameters the prediction uses. A parameter
 held fixed (fixed, from the fit's fixed_mask; e.g. fixed = &quot;shapes&quot;)
-with an NA row is dropped as known. (The CoE-conserved log_mu is one when
-its full-information recompute failed; the caller warns.) A fixed one with
+with an NA row is dropped as known. (The CoE-conserved log_mu is one in
+an object saved before #652 whose full-information recompute failed; the
+caller warns. A fit made since has no vcov in that case.) A fixed one with
 a variance, such as a shape a g3 constraint derives, stays in. An NA
 variance on a parameter that is NOT fixed was masked by .hzr_safe_solve()
 as non-positive: it withholds the standard error if the prediction uses
 it (#586). Returns NULL (with a warning) when CLs cannot be computed.
 Shared by the aggregate and decomposed se.fit paths."><meta property="og:description" content="Restricts the sandwich to the parameters the prediction uses. A parameter
 held fixed (fixed, from the fit's fixed_mask; e.g. fixed = &quot;shapes&quot;)
-with an NA row is dropped as known. (The CoE-conserved log_mu is one when
-its full-information recompute failed; the caller warns.) A fixed one with
+with an NA row is dropped as known. (The CoE-conserved log_mu is one in
+an object saved before #652 whose full-information recompute failed; the
+caller warns. A fit made since has no vcov in that case.) A fixed one with
 a variance, such as a shape a g3 constraint derives, stays in. An NA
 variance on a parameter that is NOT fixed was masked by .hzr_safe_solve()
 as non-positive: it withholds the standard error if the prediction uses
@@ -75,8 +77,9 @@ Shared by the aggregate and decomposed se.fit paths."></head><body>
     <div class="ref-description section level2">
     <p>Restricts the sandwich to the parameters the prediction uses. A parameter
 held fixed (<code>fixed</code>, from the fit's <code>fixed_mask</code>; e.g. <code>fixed = "shapes"</code>)
-with an NA row is dropped as known. (The CoE-conserved <code>log_mu</code> is one when
-its full-information recompute failed; the caller warns.) A fixed one with
+with an NA row is dropped as known. (The CoE-conserved <code>log_mu</code> is one in
+an object saved before #652 whose full-information recompute failed; the
+caller warns. A fit made since has no vcov in that case.) A fixed one with
 a variance, such as a shape a g3 constraint derives, stays in. An NA
 variance on a parameter that is NOT fixed was masked by <code>.hzr_safe_solve()</code>
 as non-positive: it withholds the standard error if the prediction uses

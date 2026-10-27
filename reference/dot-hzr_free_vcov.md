@@ -3,8 +3,9 @@
 Restricts the sandwich to the parameters the prediction uses. A
 parameter held fixed (`fixed`, from the fit's `fixed_mask`; e.g.
 `fixed = "shapes"`) with an NA row is dropped as known. (The
-CoE-conserved `log_mu` is one when its full-information recompute
-failed; the caller warns.) A fixed one with a variance, such as a shape
+CoE-conserved `log_mu` is one in an object saved before \#652 whose
+full-information recompute failed; the caller warns. A fit made since
+has no vcov in that case.) A fixed one with a variance, such as a shape
 a g3 constraint derives, stays in. An NA variance on a parameter that is
 NOT fixed was masked by `.hzr_safe_solve()` as non-positive: it
 withholds the standard error if the prediction uses it (#586). Returns

@@ -140,8 +140,9 @@ A list with class `"hzr_bootstrap"` containing:
   statistics are conditional on selection. A free parameter whose `sd`
   is 0, to within rounding, across two or more replicates draws a
   warning naming it: the replicates did not re-estimate it. Parameters
-  the fit holds fixed are exempt: those held by `hzr_phase(fixed = )`,
-  shapes a constraint derives, and a conserved `log_mu`.
+  the fit holds fixed are exempt: those held by `hzr_phase(fixed = )`
+  and shapes a constraint derives. A conserved `log_mu` is not exempt:
+  it is re-solved in every replicate.
 
 - n_success:
 

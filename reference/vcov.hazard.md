@@ -30,12 +30,14 @@ because they carry no variance; the finite free-parameter block is still
 usable. For Conservation-of-Events fits the conserved phase `log_mu`
 *normally* carries a variance: it is removed from the optimizer search
 but the vcov is the full-information matrix at the optimum (the CoE
-solution is the unconstrained MLE). That recomputation requires numDeriv
-and an invertible Hessian; if either is unavailable the fit emits a
-warning and the conserved `log_mu` stays `NA` (the rest of the matrix is
-unaffected). For a Weibull fit whose scale `mu`, or its variance, cannot
-be represented, `mu`'s row and column are `NA`, the reason is recorded
-in the fit's `degraded_causes`, and
+solution is the unconstrained MLE). That recomputation needs a Hessian
+(analytic, or from numDeriv for left- or interval-censored rows) that
+can be inverted; if it fails the fit warns, records why in
+`degraded_causes`, and has no covariance matrix, so
+[`vcov()`](https://rdrr.io/r/stats/vcov.html) returns `NA`. For a
+Weibull fit whose scale `mu`, or its variance, cannot be represented,
+`mu`'s row and column are `NA`, the reason is recorded in the fit's
+`degraded_causes`, and
 [`summary()`](https://rdrr.io/r/base/summary.html) shows the variance of
 `log(mu)` instead. Returns a scalar `NA` only when the model has not
 been fitted or no covariance matrix is available.
