@@ -275,6 +275,45 @@ test_that("an empty `.` beside other terms stops rather than dropping them", {
   )
 })
 
+test_that("`.` inside a function call is refused, not dropped", {
+  # terms() leaves log(abs(.)) unexpanded, and the RHS used to become ~ 1:
+  # a fit with no covariates and no warning. lm() stops on this formula.
+  expect_error(parse(survival::Surv(int_dead, dead) ~ log(abs(.)),
+                     data = avc_dot),
+               "inside a function call")
+  expect_error(
+    hazard(survival::Surv(int_dead, dead) ~ log(abs(.)), data = avc_dot,
+           dist = "weibull", theta = c(0.3, 1), fit = TRUE),
+    "inside a function call"
+  )
+  # Beside other terms it was refused, but as if `data` held no covariates.
+  expect_error(parse(survival::Surv(int_dead, dead) ~ age + I(.^2),
+                     data = avc_dot),
+               "inside a function call")
+  # Beside a bare `.`, terms() substituted the sum of the columns:
+  # log(age + mal), one covariate nobody asked for.
+  expect_error(parse(survival::Surv(int_dead, dead) ~ . + log(.),
+                     data = avc_dot),
+               "`log\\(\\.\\)`")
+  # terms() substitutes inside `$` as well, giving `$`(cfg, age + mal).
+  # Alone, cfg$. was blamed on `data` holding only the response.
+  expect_error(parse(survival::Surv(int_dead, dead) ~ . + cfg$.,
+                     data = avc_dot),
+               "inside a function call")
+  expect_error(parse(survival::Surv(int_dead, dead) ~ cfg$., data = avc_dot),
+               "inside a function call")
+})
+
+test_that("`.` as a term of the formula operators still expands", {
+  dot <- parse(survival::Surv(int_dead, dead) ~ (.)^2, data = avc_dot)
+  explicit <- parse(survival::Surv(int_dead, dead) ~ (age + mal)^2,
+                    data = avc_dot)
+  expect_identical(colnames(dot$x), c("age", "mal", "age:mal"))
+  expect_identical(dot$x, explicit$x)
+  dot <- parse(survival::Surv(int_dead, dead) ~ .:age, data = avc_dot)
+  expect_identical(colnames(dot$x), c("age", "age:mal"))
+})
+
 test_that("a `~ .` fit is the explicit fit, not one on the response", {
   fit_dot <- fit_avc_dot(survival::Surv(int_dead, dead) ~ .)
   fit_exp <- fit_avc_dot(survival::Surv(int_dead, dead) ~ age + mal)

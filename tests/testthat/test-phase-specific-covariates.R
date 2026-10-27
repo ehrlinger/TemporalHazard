@@ -374,6 +374,11 @@ test_that("`.` in a phase formula over response-only data", {
                "stands for no column")
 })
 
+test_that("`.` inside a function call in a phase formula is refused", {
+  # It used to become ~ 1: a phase with no covariates and no warning.
+  expect_error(fit_277(~ log(abs(.))), "inside a function call")
+})
+
 test_that("`.` in a phase formula is refused on the vector interface", {
   # With `time =` and `status =` there is no Surv() term to say which columns
   # of `data` hold the response, so `.` cannot be expanded safely.
