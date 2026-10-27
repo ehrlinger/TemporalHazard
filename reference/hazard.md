@@ -113,21 +113,32 @@ hazard(
   inputs are refused because they cannot follow the rows: a response
   whose values change once the rows are dropped, such as
   `Surv(time - min(time), status)`, and a formula that reads a per-row
-  value from outside `data`. That check reads the formula's own
-  variables, so it cannot see inside a function: a helper that indexes a
-  vector from outside `data` by position, such as
-  `function(a) a + g[seq_along(a)]`, sees only the retained rows and
-  pairs them with the first elements of `g`, so every row after the
-  first dropped one is paired with the wrong value. Only the drop itself
-  is warned about; the mis-pairing is not. `stats::lm(subset = )` is not
-  a guide here: it evaluates the terms on every row and subsets
-  afterwards, so the same helper pairs correctly there. Put such a
-  vector in `data`, where it is dropped with its rows. A caller-supplied
-  row-aligned input whose row count differs from `time`'s is refused
-  before any row is dropped: `x` and `weights` on the
-  `time =`/`status =` interface, and `data` wherever a formula reads it
-  row by row. (On the formula interface the design is not the caller's;
-  it is rebuilt from the retained rows of `data`.)
+  value from outside `data`. The second is read two ways. A variable
+  named in the formula is refused when it is not a column of `data`. A
+  helper that reads an outside vector inside its body, such as
+  `function(a) a + g[seq_along(a)]`, names no such variable, and on the
+  retained rows would pair them with the first elements of `g`. So the
+  formula's variables are evaluated on every row in order, and again
+  with the retained rows first, in their order, as the fit sees them; a
+  variable that then gives a retained row a different value is refused
+  (#590). Both times every row is present, so
+  [`scale()`](https://rdrr.io/r/base/scale.html),
+  [`poly()`](https://rdrr.io/r/stats/poly.html), `ns()` and factors
+  pass, including a factor whose levels are taken in order of
+  appearance. A term that cannot be evaluated on the dropped rows, such
+  as [`poly()`](https://rdrr.io/r/stats/poly.html) over an NA only they
+  carry, is evaluated with those rows replaced by a copy of a retained
+  one. A term that depends on the order of the rows, such as
+  `cumsum(age)`, or is random, such as `jitter(age)`, is refused unless
+  the dropped rows are the last ones. A helper that depends on how many
+  rows it is given, such as `tail(g, length(a))` or
+  `a * mean(g[seq_along(a)])`, is not caught, because both evaluations
+  see every row. Put such a vector in `data`, where it is dropped with
+  its rows. A caller-supplied row-aligned input whose row count differs
+  from `time`'s is refused before any row is dropped: `x` and `weights`
+  on the `time =`/`status =` interface, and `data` wherever a formula
+  reads it row by row. (On the formula interface the design is not the
+  caller's; it is rebuilt from the retained rows of `data`.)
 
 - status:
 
