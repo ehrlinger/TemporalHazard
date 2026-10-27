@@ -185,8 +185,9 @@
 #' Find the terms of a formula that use `.` inside a function call
 #'
 #' Walks the formula operators (`+ - * / : ^ ( %in%`), where `.` is a term
-#' of its own, and returns each other call that reaches a `.` symbol. The
-#' name after `$` is not a symbol lookup, so `cfg$.` is not reported.
+#' of its own, and returns each other call that reaches a `.` symbol. This
+#' uses `all.vars()`, not `.hzr_mask_symbols()`: `terms()` substitutes the
+#' columns for the `.` in `cfg$.` too, so that is reported.
 #'
 #' @param e A formula right-hand side (a call or symbol).
 #' @return Character vector of deparsed offending terms, possibly empty.
@@ -201,7 +202,7 @@
   }
   # The exponent of `^` is a number, never a term.
   if (identical(head, as.symbol("^"))) return(.hzr_dot_in_calls(e[[2L]]))
-  if ("." %in% .hzr_mask_symbols(e)) {
+  if ("." %in% all.vars(e)) {
     return(paste(deparse(e), collapse = " "))
   }
   character(0)

@@ -295,6 +295,13 @@ test_that("`.` inside a function call is refused, not dropped", {
   expect_error(parse(survival::Surv(int_dead, dead) ~ . + log(.),
                      data = avc_dot),
                "`log\\(\\.\\)`")
+  # terms() substitutes inside `$` as well, giving `$`(cfg, age + mal).
+  # Alone, cfg$. was blamed on `data` holding only the response.
+  expect_error(parse(survival::Surv(int_dead, dead) ~ . + cfg$.,
+                     data = avc_dot),
+               "inside a function call")
+  expect_error(parse(survival::Surv(int_dead, dead) ~ cfg$., data = avc_dot),
+               "inside a function call")
 })
 
 test_that("`.` as a term of the formula operators still expands", {
