@@ -110,9 +110,9 @@ test_that("a failed full-information recompute under CoE is recorded", {
 
 test_that("a failed CoE recompute reports no SEs, not the search-only ones", {
   skip_on_cran()
-  # #652. The search-only vcov holds the conserved log_mu fixed, so the SEs it
-  # gives are conditional on it and too small; on avc one was 0.17 of its
-  # full-information value. Fail only the recompute's inversion, which is the
+  # #652. The search-only vcov holds the conserved log_mu fixed and was taken
+  # at its start, so its SEs can be wrong in either direction; on avc one was
+  # 0.17 of its full-information value. Fail only the recompute's inversion, which is the
   # one over every estimated parameter: the search's has one fewer.
   ok <- mp_fit(c(1, 0))
   expect_true(ok$spec$control$conserve_applied)    # guard: the recompute ran

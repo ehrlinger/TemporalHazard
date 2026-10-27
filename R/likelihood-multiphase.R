@@ -2907,7 +2907,8 @@
         # is recorded, so it is not only a warning that scrolled past.
         warning(
           "Could not compute the full-information variance for the ",
-          "Conservation-of-Events fit (", cv_reason, "), so no standard ",
+          "Conservation-of-Events fit (", .hzr_reason_or_unrecorded(cv_reason),
+          "), so no standard ",
           "errors are reported. The search-only variance holds the conserved ",
           "phase's 'log_mu' fixed and would misstate them.", call. = FALSE)
         best_result$vcov  <- NA
