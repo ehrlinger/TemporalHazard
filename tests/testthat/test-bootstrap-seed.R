@@ -41,9 +41,28 @@ test_that("a seeded bootstrap does not write the stream back on exit (#653)", {
   fit <- seed_fit()
   withr::local_preserve_seed()
 
+  set.seed(42)
+  hzr_bootstrap(fit, n_boot = 5)
+  expected <- get(".Random.seed", envir = globalenv())
+
+  # An unseeded session is left seeded, at the bootstrap's own state, rather
+  # than put back to having no stream.
   suppressWarnings(rm(".Random.seed", envir = globalenv()))
   hzr_bootstrap(fit, n_boot = 5, seed = 42)
-  expect_true(exists(".Random.seed", envir = globalenv(), inherits = FALSE))
+  expect_identical(get(".Random.seed", envir = globalenv()), expected)
+})
+
+test_that("a call that stops before resampling leaves the stream alone (#653)", {
+  fit <- seed_fit()
+  withr::local_preserve_seed()
+  # Fails after every refusal, just before the seed and the replicate loop.
+  local_mocked_bindings(.hzr_bootstrap_param_names = function(...) {
+    stop("planted failure")
+  })
+  set.seed(1)
+  before <- get(".Random.seed", envir = globalenv())
+  expect_error(hzr_bootstrap(fit, n_boot = 5, seed = 42), "planted failure")
+  expect_identical(get(".Random.seed", envir = globalenv()), before)
 })
 
 test_that("the same seed still gives the same replicates", {

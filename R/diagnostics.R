@@ -2406,12 +2406,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
          "rows. Refit with `data =` and bootstrap that.", call. = FALSE)
   }
 
-  # Seeded after the refusals above, so a refused call leaves the caller's
-  # random number stream alone. A plain set.seed(), with no restore (#653):
-  # restoring the caller's stream (#611) meant writing .Random.seed into
-  # .GlobalEnv, which CRAN policy forbids. The documentation says that
-  # `seed =` sets the session's stream, as set.seed() does.
-  # Validated as control$start_seed is (.hzr_optim_multiphase()): set.seed()
+  # Validated here, before anything else can fail on it, and applied just
+  # before the replicate loop (#653). Validated as control$start_seed is (.hzr_optim_multiphase()): set.seed()
   # truncates 1.7 to 1 and takes the first of c(1, 2), so either would
   # silently repeat seed 1, and an NA or out-of-range value failed with a
   # message that did not name `seed`.
@@ -2421,7 +2417,6 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       stop("`seed` must be NULL or a single whole number no larger in ",
            "magnitude than ", .Machine$integer.max, ".", call. = FALSE)
     }
-    set.seed(seed)
   }
 
   # A vector fit made without `data =` has no frame to count rows in, and
@@ -2686,6 +2681,15 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # Progress bar over replicates (verbose only). Closed after the loop.
   pb <- if (verbose) utils::txtProgressBar(min = 0, max = n_boot, style = 3)
   if (verbose) on.exit(close(pb), add = TRUE)
+
+  # Seeded here, after every refusal and the up-front screen, so a call that
+  # stops before resampling leaves the caller's random number stream alone. A
+  # plain set.seed() with no restore (#653): restoring the caller's stream
+  # (#611) meant writing .Random.seed into .GlobalEnv, which CRAN policy
+  # forbids, and the documentation says `seed =` sets the session's stream.
+  # Nothing above draws from the stream: the screen's multi-start fits draw
+  # their offsets from an internal seed and restore the stream.
+  if (!is.null(seed)) set.seed(seed)
 
   for (b in seq_len(n_boot)) {
     # Resample with replacement
