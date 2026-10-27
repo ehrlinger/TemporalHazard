@@ -1736,6 +1736,136 @@
 }
 
 
+#' Formula variables that the drop would pair with the wrong rows
+#'
+#' `hazard()` builds the design on the rows it keeps, in their order, so a
+#' term that reads an outside vector by position,
+#' `function(a) a + g[seq_along(a)]`, gives kept row j the value of `g[j]`
+#' rather than that of its own row (#590). This evaluates each variable of
+#' each formula -- `age`, `scale(age)`, `hf(z)`, one per entry of the terms'
+#' `variables` -- on every row in order, and again on every row with the
+#' kept rows first, in their order, and the dropped rows after them. At the
+#' kept rows the second evaluation reads what the fit reads, and the first
+#' what each row's own values give, so a variable that differs between the
+#' two is one the fit would mis-pair, and it is named. All the rows are
+#' present both times, so a term computed from the rows as a set --
+#' `scale()`, `poly()`, `ns()`, a factor -- comes out the same. This is read
+#' from behaviour, so it sees inside a function body, where the name-based
+#' check in `hazard()` cannot. A term that depends on the order of the rows,
+#' `cumsum()`, or is random, `jitter()`, is named too, unless the dropped
+#' rows are already last.
+#'
+#' A variable that cannot be evaluated on every row -- `poly()` over an NA
+#' that only a dropped row carries -- is evaluated with the dropped rows
+#' replaced by copies of the first kept row, the same in both orders. One
+#' that cannot be evaluated even so is named if it can be evaluated on the
+#' kept rows alone, as a phase design is built, since it cannot be checked;
+#' otherwise the fit fails on it itself. Each variable is
+#' evaluated on its own, so one that fails does not take the others out of
+#' the check. When only the reordered evaluation fails, the variable
+#' depends on the order of the rows and is named.
+#'
+#' Values are compared as values: a factor by its labels, so one whose
+#' levels are taken in order of appearance passes; anything else without
+#' its class, matrices column by column, numbers to a tolerance scaled to
+#' the spread of the column. Columns of `data` named "" are dropped first,
+#' as the fit drops them (#470). The global formula (two-sided) is read by
+#' its right-hand side.
+#'
+#' Not covered: a helper that depends on how many rows it is given --
+#' `tail(g, length(a))`, `a * mean(g[seq_along(a)])`, a test of
+#' `length(a)` -- sees `n` rows both times where the fit sees the kept
+#' ones. When the dropped rows are all last, the two orders are the same,
+#' and only such helpers can mis-pair.
+#'
+#' @param forms List of formulas. A two-sided one is the global formula.
+#' @param data The data: a data frame, or a list whose columns have `n`
+#'   rows or are scalars.
+#' @param keep Logical, length `n`: the rows that are kept.
+#' @return Character vector of offending variables; empty when none.
+#' @keywords internal
+#' @noRd
+.hzr_position_bound_columns <- function(forms, data, keep) {
+  n <- length(keep)
+  if (!any(keep) || all(keep) || !length(forms)) return(character(0))
+  data <- .hzr_drop_empty_names(data)
+  take_rows <- function(d, rows) {
+    pick <- function(v) {
+      if (NROW(v) != n) v
+      else if (is.matrix(v) || is.data.frame(v)) v[rows, , drop = FALSE]
+      else v[rows]
+    }
+    if (is.data.frame(d)) d[rows, , drop = FALSE] else lapply(d, pick)
+  }
+  # The fit's order: kept rows first, in their order. `back` returns a value
+  # computed in that order to the rows' own order.
+  order_fit <- c(which(keep), which(!keep))
+  back <- match(seq_len(n), order_fit)
+  # The fallback: the dropped rows replaced by the first kept row.
+  patched <- take_rows(data, ifelse(keep, seq_len(n), which(keep)[1L]))
+  # One variable evaluated on `d`; NULL when it fails or does not have a
+  # value per row.
+  value <- function(expr, d, env, m = n) {
+    v <- tryCatch(suppressWarnings(eval(expr, d, env)),
+                  error = function(e) NULL)
+    if (NROW(v) == m) v
+  }
+  # Do two evaluations of a variable differ?
+  differs <- function(a, b) {
+    if (is.matrix(a) || is.matrix(b)) {
+      a <- as.matrix(a)
+      b <- as.matrix(b)
+      if (!identical(dim(a), dim(b))) return(TRUE)
+      return(any(vapply(seq_len(ncol(a)), function(j) {
+        differs(a[, j], b[, j])
+      }, logical(1))))
+    }
+    a <- if (is.factor(a)) as.character(a) else as.vector(unclass(a))
+    b <- if (is.factor(b)) as.character(b) else as.vector(unclass(b))
+    if (length(a) != length(b)) return(TRUE)
+    if (!is.numeric(a) || !is.numeric(b)) return(!identical(a, b))
+    fin <- is.finite(a) & is.finite(b)
+    if (!identical(a[!fin], b[!fin])) return(TRUE)
+    if (!any(fin)) return(FALSE)
+    spread <- diff(range(a[fin]))
+    tol <- 1e-8 * if (spread > 0) spread else max(1, abs(a[fin]))
+    any(abs(a[fin] - b[fin]) > tol)
+  }
+  # NA when the variable cannot be evaluated on `d` at all.
+  mis_paired <- function(expr, d, env) {
+    a <- value(expr, d, env)
+    if (is.null(a)) return(NA)
+    b <- value(expr, take_rows(d, order_fit), env)
+    if (is.null(b)) return(TRUE)
+    b <- if (is.matrix(b) || is.data.frame(b)) b[back, , drop = FALSE] else
+      b[back]
+    differs(a, b)
+  }
+  unique(unlist(lapply(forms, function(fm) {
+    env <- environment(fm)
+    # A global formula's `.` takes in the response's columns too; those are
+    # plain columns, which always follow their rows.
+    rhs <- if (length(fm) == 3L) fm[-2L] else fm
+    tt <- tryCatch(stats::terms(rhs, data = data), error = function(e) NULL)
+    if (is.null(tt)) return(character(0))
+    vars <- as.list(attr(tt, "variables"))[-1L]
+    hit <- vapply(vars, function(expr) {
+      out <- mis_paired(expr, data, env)
+      if (is.na(out)) out <- mis_paired(expr, patched, env)
+      # Not checkable on n rows, but a phase design is built on the kept
+      # rows alone and may still succeed there: refuse rather than pass.
+      if (is.na(out)) {
+        out <- !is.null(value(expr, take_rows(data, keep), env, sum(keep)))
+      }
+      isTRUE(out)
+    }, logical(1))
+    vapply(vars[hit], function(e) {
+      paste(deparse(e, width.cutoff = 500L), collapse = " ")
+    }, character(1))
+  })))
+}
+
+
 #' Recover a legacy fit's phase design from the data it kept
 #'
 #' A fit saved before the phase design was stored (no `fit$x_design`), but

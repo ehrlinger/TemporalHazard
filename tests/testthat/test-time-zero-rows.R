@@ -343,6 +343,295 @@ test_that("a formula reading per-row values from outside data is refused", {
     theta = c(0.5, 1, 0), fit = TRUE)))
 })
 
+test_that("a helper reading an outside vector by position is refused (#590)", {
+  # The check above reads the formula's own variables, and `g` is not one of
+  # them: it is read inside `hf`. On the retained rows `hf` would pair them
+  # with g[1:n], although `g` was aligned with every row given.
+  withr::local_seed(5)
+  n <- 50
+  dd <- data.frame(time = c(0, 0, stats::rexp(n - 2, 0.3)),
+                   status = stats::rbinom(n, 1, 0.7),
+                   age = stats::rnorm(n, 50, 10))
+  g <- stats::rnorm(n)
+  hf <- function(a) a + g[seq_along(a)]
+  expect_error(suppressWarnings(hazard(
+    survival::Surv(time, status) ~ hf(age), data = dd, dist = "weibull",
+    theta = c(0.3, 1, 0), fit = TRUE)),
+    "the formula's 'hf(age)' depends on the order of the rows", fixed = TRUE)
+  # A phase formula too.
+  expect_error(suppressWarnings(hazard(
+    survival::Surv(time, status) ~ 1, data = dd, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                                    fixed = "shapes", formula = ~ hf(age)),
+                  const = hzr_phase("constant")),
+    fit = TRUE, control = list(n_starts = 1))),
+    "the formula's 'hf(age)' depends on the order of the rows", fixed = TRUE)
+  # Without a row at time 0 nothing is dropped, nothing is mis-paired, and
+  # the helper still fits.
+  dd1 <- dd
+  dd1$time <- dd1$time + 1
+  expect_no_error(suppressWarnings(hazard(
+    survival::Surv(time, status) ~ hf(age), data = dd1, dist = "weibull",
+    theta = c(0.3, 1, 0), fit = TRUE)))
+})
+
+test_that("a global formula with `.` beside the helper is checked (#590)", {
+  # The global formula, with `.` beside the helper and a Surv() response
+  # that reads a column through an expression.
+  withr::local_seed(5)
+  n <- 50
+  dd <- data.frame(time = c(0, 0, stats::rexp(n - 2, 0.3)),
+                   ev = "dead", z = stats::rnorm(n))
+  g <- stats::rnorm(n)
+  hf <- function(a) a + g[seq_along(a)]
+  expect_error(suppressWarnings(hazard(
+    survival::Surv(time, ev == "dead") ~ hf(z) + ., data = dd,
+    dist = "weibull", theta = c(0.3, 1, 0, 0), fit = TRUE)),
+    "the formula's 'hf(z)' depends on the order of the rows", fixed = TRUE)
+})
+
+test_that("the order check reads every row given, not the kept ones (#590)", {
+  # Sorted by era, with the early rows at time 0: `late` is 0 over its first
+  # 180 values, so a check of the 180 kept rows alone would see a constant,
+  # while 20 of those rows are paired with the wrong era.
+  withr::local_seed(5)
+  n <- 200
+  dd <- data.frame(time = c(rep(0, 20), stats::rexp(n - 20, 0.3)),
+                   status = stats::rbinom(n, 1, 0.7),
+                   age = stats::rnorm(n))
+  late <- c(rep(0, 180), rep(1, 20))
+  h <- function(a) a + late[seq_along(a)]
+  expect_error(suppressWarnings(hazard(
+    survival::Surv(time, status) ~ age + h(age), data = dd,
+    dist = "weibull", theta = c(0.3, 1, 0, 0), fit = TRUE)),
+    "the formula's 'h(age)' depends on the order of the rows", fixed = TRUE)
+})
+
+test_that("a helper that reads by position on some rows only is refused (#590)", {
+  # Imputing an NA from an outside era indicator by position: the indicator
+  # changes at row 101, which is not NA, so a check comparing neighbouring
+  # rows sees no difference, but the 60 rows dropped before them move every
+  # imputed row to another row's era.
+  withr::local_seed(5)
+  n <- 200
+  gimp <- c(rep(0, 100), rep(1, 100))
+  x <- stats::rnorm(n)
+  x[setdiff(sample(61:n, 40), 101)] <- NA
+  dd <- data.frame(time = c(rep(0, 60), stats::rexp(n - 60, 0.3)),
+                   status = stats::rbinom(n, 1, 0.7), x = x)
+  imp <- function(a) ifelse(is.na(a), gimp[seq_along(a)], a)
+  expect_error(suppressWarnings(hazard(
+    survival::Surv(time, status) ~ imp(x), data = dd, dist = "weibull",
+    theta = c(0.1, 1, 0), fit = TRUE)),
+    "the formula's 'imp(x)' depends on the order of the rows", fixed = TRUE)
+  # On the fallback path too: poly() inside the helper refuses the NA only a
+  # dropped row carries, and the era indicator is constant over its first
+  # 160 values.
+  dd <- data.frame(time = c(rep(0, 40), stats::rexp(160, 0.3)),
+                   status = stats::rbinom(n, 1, 0.7), age = stats::rnorm(n))
+  dd$age[1] <- NA
+  late <- c(rep(0, 160), rep(1, 40))
+  hp <- function(a) as.vector(poly(a, 1)) + late[seq_along(a)]
+  expect_error(suppressWarnings(hazard(
+    survival::Surv(time, status) ~ 1, data = dd, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                                    fixed = "shapes", formula = ~ hp(age)),
+                  const = hzr_phase("constant")),
+    fit = TRUE, control = list(n_starts = 1))),
+    "the formula's 'hp(age)' depends on the order of the rows", fixed = TRUE)
+})
+
+test_that("a column named \"\" does not switch the order check off (#590)", {
+  # `.` would reach the column, the check's frame would fail on it, and the
+  # check would pass while the fit, which drops the column, went ahead.
+  withr::local_seed(5)
+  n <- 50
+  dd <- data.frame(time = c(0, 0, stats::rexp(n - 2, 0.3)),
+                   status = stats::rbinom(n, 1, 0.7),
+                   z = stats::rnorm(n), e = 1)
+  names(dd)[4] <- ""
+  g <- stats::rnorm(n)
+  hf <- function(a) a + g[seq_along(a)]
+  # The global formula.
+  expect_error(suppressWarnings(hazard(
+    survival::Surv(time, status) ~ hf(z) + ., data = dd,
+    dist = "weibull", theta = c(0.3, 1, 0, 0), fit = TRUE)),
+    "the formula's 'hf(z)' depends on the order of the rows", fixed = TRUE)
+  # A phase formula.
+  expect_error(suppressWarnings(hazard(
+    survival::Surv(time, status) ~ 1, data = dd, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                                    fixed = "shapes", formula = ~ hf(z) + .),
+                  const = hzr_phase("constant")),
+    fit = TRUE, control = list(n_starts = 1))),
+    "the formula's 'hf(z)' depends on the order of the rows", fixed = TRUE)
+})
+
+test_that("one variable that fails on every row does not hide another (#590)", {
+  # poly() refuses the NA that only a dropped row carries, so the check
+  # evaluates it with that row patched; the helper beside it is still
+  # checked.
+  withr::local_seed(5)
+  n <- 120
+  dd <- data.frame(time = c(0, 0, 0, stats::rexp(n - 3, 0.3)),
+                   status = stats::rbinom(n, 1, 0.7),
+                   age = stats::rnorm(n, 50, 10), z = stats::rnorm(n))
+  dd$age[1] <- NA
+  g <- stats::rnorm(n)
+  hf <- function(a) a + g[seq_along(a)]
+  early <- function(f) {
+    list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                           fixed = "shapes", formula = f),
+         const = hzr_phase("constant"))
+  }
+  expect_error(suppressWarnings(hazard(
+    survival::Surv(time, status) ~ 1, data = dd, dist = "multiphase",
+    phases = early(~ poly(age, 2) + hf(z)),
+    fit = TRUE, control = list(n_starts = 1))),
+    "the formula's 'hf(z)' depends on the order of the rows", fixed = TRUE)
+  # The helper inside poly() cannot be built on every row either; it is
+  # evaluated with the dropped rows replaced by a kept one.
+  expect_error(suppressWarnings(hazard(
+    survival::Surv(time, status) ~ 1, data = dd, dist = "multiphase",
+    phases = early(~ poly(hf(age), 2)),
+    fit = TRUE, control = list(n_starts = 1))),
+    "the formula's 'poly(hf(age), 2)' depends on the order of the rows",
+    fixed = TRUE)
+  # Without the helper, poly() over that NA still fits, as it did before.
+  fit <- suppressWarnings(hazard(
+    survival::Surv(time, status) ~ 1, data = dd, dist = "multiphase",
+    phases = early(~ poly(age, 2)), fit = TRUE,
+    control = list(n_starts = 1)))
+  expect_identical(fit$data$dropped_time_zero, 3L)
+})
+
+test_that("terms computed from the rows as a set still fit after a drop (#590)", {
+  # Known negatives for the order check: each of these follows its rows.
+  withr::local_seed(5)
+  n <- 50
+  dd <- data.frame(time = c(0, 0, stats::rexp(n - 2, 0.3)),
+                   status = stats::rbinom(n, 1, 0.7),
+                   age = stats::rnorm(n, 50, 10),
+                   grp = sample(c("a", "b", "c"), n, replace = TRUE))
+  fits <- list(
+    scale = list(~ scale(age), c(0.3, 1, 0)),
+    poly_factor = list(~ poly(age, 2) + grp, c(0.3, 1, 0, 0, 0, 0)),
+    ns = list(~ splines::ns(age, 3), c(0.3, 1, 0, 0, 0))
+  )
+  for (nm in names(fits)) {
+    f <- stats::update(survival::Surv(time, status) ~ 1, fits[[nm]][[1]])
+    fit <- suppressWarnings(hazard(f, data = dd, dist = "weibull",
+                                   theta = fits[[nm]][[2]], fit = TRUE))
+    expect_identical(fit$data$dropped_time_zero, 2L, info = nm)
+    expect_true(isTRUE(fit$fit$converged), info = nm)
+  }
+  # scale(age) is still taken over the retained rows (#476).
+  fit <- suppressWarnings(hazard(survival::Surv(time, status) ~ scale(age),
+                                 data = dd, dist = "weibull",
+                                 theta = c(0.3, 1, 0), fit = TRUE))
+  expect_equal(unname(fit$data$x[, 1]),
+               as.vector(scale(dd$age[dd$time > 0])))
+})
+
+test_that("the order check names only the columns that do not follow (#590)", {
+  withr::local_seed(5)
+  n <- 30
+  d <- data.frame(age = stats::rnorm(n), z = stats::rnorm(n))
+  g <- stats::rnorm(n + 5)
+  hf <- function(a) a + g[seq_along(a)]
+  expect_identical(
+    .hzr_position_bound_columns(list(~ age + hf(z) + scale(age)), d, c(FALSE, rep(TRUE, n - 1))),
+    "hf(z)")
+  expect_identical(.hzr_position_bound_columns(list(~ age + z), d, c(FALSE, rep(TRUE, n - 1))),
+                   character(0))
+  # A list `data` with a scalar column, as hazard() accepts.
+  expect_identical(
+    .hzr_position_bound_columns(list(~ hf(age)), list(age = d$age, k = 1), c(FALSE, rep(TRUE, n - 1))),
+    "hf(age)")
+  # An outside vector that reads the same backwards over the kept rows: a
+  # check that reversed the rows could not see it.
+  gq <- rep(c(1, 2, 1), length.out = n)
+  hq <- function(a) a + gq[seq_along(a)]
+  expect_identical(.hzr_position_bound_columns(list(~ hq(age)), d, c(FALSE, rep(TRUE, n - 1))),
+                   "hq(age)")
+  # A factor with levels in order of appearance changes its reference level
+  # when the rows are reordered, but its value on each row does not, so it
+  # is accepted.
+  d$ch <- sample(c("x", "y", "w"), n, replace = TRUE)
+  expect_identical(.hzr_position_bound_columns(
+    list(~ factor(ch, levels = unique(ch)) + age), d, c(FALSE, rep(TRUE, n - 1))),
+    character(0))
+  # A term that depends on the order of the rows is refused.
+  expect_identical(.hzr_position_bound_columns(list(~ cumsum(z)), d, c(FALSE, rep(TRUE, n - 1))),
+                   "cumsum(z)")
+  # An NA in a column is compared as an NA, not as a moved value.
+  d$age[3] <- NA
+  expect_identical(
+    .hzr_position_bound_columns(list(~ age + hf(z)), d, c(FALSE, rep(TRUE, n - 1))), "hf(z)")
+  # Known negatives on every shape of `data`: own row names, a list with a
+  # scalar column, a matrix column.
+  rownames(d) <- paste0("r", seq_len(n))
+  expect_identical(.hzr_position_bound_columns(list(~ age + ch), d, c(FALSE, rep(TRUE, n - 1))),
+                   character(0))
+  dl <- list(age = d$age, ch = d$ch, k = 1, m = cbind(d$z, d$z^2))
+  expect_identical(.hzr_position_bound_columns(list(~ age + ch + m), dl, c(FALSE, rep(TRUE, n - 1))),
+                   character(0))
+  expect_identical(.hzr_position_bound_columns(list(~ age + hf(z)),
+                                               c(dl, list(z = d$z)), c(FALSE, rep(TRUE, n - 1))),
+                   "hf(z)")
+  # An outside vector that alternates, or repeats with any period, still
+  # is mis-paired, whatever the number of rows.
+  for (m in c(n, n + 1)) {
+    alt <- rep(c(0, 1), length.out = m)
+    af <- function(a) alt[seq_along(a)]
+    dm <- data.frame(age = stats::rnorm(m))
+    expect_identical(.hzr_position_bound_columns(list(~ age + af(age)), dm, c(FALSE, rep(TRUE, m - 1))),
+                     "af(age)", info = m)
+    per <- rep(c("p", "q", "r"), length.out = m)
+    pf <- function(a) factor(per[seq_along(a)])
+    expect_identical(.hzr_position_bound_columns(list(~ pf(age)), dm, c(FALSE, rep(TRUE, m - 1))),
+                     "pf(age)", info = m)
+  }
+  # A term that can be built in only one order of the rows is refused, and
+  # named by its formula.
+  bad <- d$z[2]  # first once the dropped row 1 is put last
+  hord <- function(a) {
+    if (isTRUE(all.equal(a[1], bad))) stop("order")
+    a
+  }
+  expect_identical(.hzr_position_bound_columns(list(~ hord(z)), d, c(FALSE, rep(TRUE, n - 1))),
+                   "hord(z)")
+  # The tolerance follows the spread of the column, not the size of its
+  # values: a large mean must not hide a mis-pairing.
+  big <- 1.7e9 + stats::rnorm(n, 0, 100)
+  gs <- stats::rnorm(n, 0, 1)
+  hs <- function(a) a + gs[seq_along(a)]
+  expect_identical(.hzr_position_bound_columns(list(~ hs(big)),
+                                               data.frame(big = big),
+                                               c(FALSE, rep(TRUE, n - 1))), "hs(big)")
+  # With the dropped rows already last, a helper reading by position pairs
+  # every kept row with its own value, and nothing is named.
+  expect_identical(.hzr_position_bound_columns(
+    list(~ hf(z) + cumsum(z)), d, c(rep(TRUE, n - 2), FALSE, FALSE)),
+    character(0))
+  # A variable that fails on every row and on the patched rows, but builds
+  # on the kept rows alone, as a phase design is built, cannot be checked
+  # and is refused.
+  dk <- d
+  dk$id <- c(NA, seq_len(n - 1))
+  hid <- function(i) {
+    if (anyNA(i) || anyDuplicated(i)) stop("ids")
+    i + g[seq_along(i)]
+  }
+  expect_identical(.hzr_position_bound_columns(
+    list(~ hid(id)), dk, c(FALSE, rep(TRUE, n - 1))), "hid(id)")
+  # The documented limit: a helper that depends on how many rows it is
+  # given sees n rows in both evaluations, so it is not seen.
+  hm <- function(a) a * mean(g[seq_along(a)])
+  expect_identical(.hzr_position_bound_columns(list(~ hm(z)), d, c(FALSE, rep(TRUE, n - 1))),
+                   character(0))
+})
+
 test_that("an x, weights or data of the wrong length is refused, not misaligned", {
   # N2 (1.2.12 release review): a design k rows short was accepted when k
   # rows were at time 0, and paired with the wrong rows.
