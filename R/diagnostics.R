@@ -1709,6 +1709,13 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
     if (log_mu) f[1L] <- exp(f[1L])
     .hzr_logl_at_raw(fit_obj, f, prepared)
   }
+  # The log-likelihood, and every fall along a ray, scales with the weights,
+  # while the maximum does not move: `tol` is per unit of mean weight, so
+  # rescaling every weight leaves the verdict as it was.
+  w <- prepared$weights
+  if (length(w) && all(is.finite(w)) && mean(w) > 0) {
+    tol <- tol * mean(w)
+  }
   ll0 <- ll_phi(phi)
   if (!isTRUE(is.finite(ll0))) {
     # Every finite ray would read as no worse.
@@ -1767,8 +1774,15 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
   keep <- free[idx]
   idx <- idx[keep]
   design <- design[, keep, drop = FALSE]
+  # The whole linear predictor, intercept included: along a combined
+  # direction an offset covariate's move nearly cancels the intercept's, and
+  # sizing on the covariate alone shrinks the step to nothing. The Weibull
+  # log(mu) enters as nu * log(mu); the other families' intercepts add.
+  w_int <- if (log_mu) theta[2L] else 1
   reach_len <- function(dir) {
-    reach <- if (length(idx)) max(abs(design %*% dir[idx])) else 0
+    lp <- if (length(idx)) design %*% dir[idx] else 0
+    if (!multiphase && free[1L]) lp <- lp + w_int * dir[1L]
+    reach <- max(abs(lp))
     if (is.finite(reach) && reach > 0) step / reach else NA_real_
   }
 

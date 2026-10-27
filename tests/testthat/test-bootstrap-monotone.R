@@ -151,6 +151,50 @@ test_that("the check sees an exactly flat direction in the design", {
   expect_false(.hzr_monotone_likelihood(fit))
 })
 
+test_that("an offset covariate does not read as a flat likelihood", {
+  # Shifted by 20000, the covariate's move along the combined direction
+  # nearly cancels the intercept's. Sized on the covariate alone the step
+  # shrank to nothing, and every replicate of a genuine maximum was dropped.
+  x <- rep(c(-1, 0, 1), 100)
+  for (shift in c(0, 20000)) {
+    d <- data.frame(time = exp(-0.001 * x) / 0.3, status = 1, x = x + shift)
+    fit <- suppressWarnings(hazard(
+      survival::Surv(time, status) ~ x, data = d, dist = "exponential",
+      theta = c(log(0.3) - 0.001 * shift, 0.001), fit = TRUE))
+    expect_false(.hzr_monotone_likelihood(fit), label = paste("shift", shift))
+    fit$fit$vcov <- NA
+    expect_false(.hzr_monotone_likelihood(fit), label = paste("shift", shift))
+  }
+  b <- suppressWarnings(hzr_bootstrap(fit, n_boot = 3, seed = 1))
+  expect_identical(b$n_success, 3L)
+})
+
+test_that("rescaling every weight leaves the verdict as it was", {
+  # Weights scale the log-likelihood and every fall along a ray, but not
+  # the maximum. At weight 5e-8 a genuine maximum's fall over the capped
+  # step was below an absolute tolerance, and every replicate was dropped.
+  d <- data.frame(time = 1:20, status = 1, w = 5e-8)
+  fit <- suppressWarnings(hazard(
+    survival::Surv(time, status) ~ 1, data = d, dist = "exponential",
+    weights = w, theta = -log(10.5), fit = TRUE))
+  expect_false(.hzr_monotone_likelihood(fit))
+  b <- suppressWarnings(hzr_bootstrap(fit, n_boot = 3, seed = 1))
+  expect_identical(b$n_success, 3L)
+  # The same estimates under rescaled weights: a separation stays flat and
+  # a genuine maximum stays a maximum. (Fitted at weight 5e-8 the optimizer
+  # barely leaves its start, so the rescaling is applied to fitted objects.)
+  sep <- suppressWarnings(hazard(
+    survival::Surv(time, status) ~ g, data = .mono_reference,
+    dist = "exponential", theta = c(0.3, 0, 0), fit = TRUE))
+  ok <- .mono_fit(.mono_data)
+  for (s in c(5e-8, 1e6)) {
+    sep$data$weights <- rep(s, length(sep$data$time))
+    ok$data$weights <- rep(s, length(ok$data$time))
+    expect_true(.hzr_monotone_likelihood(sep), label = paste("separated", s))
+    expect_false(.hzr_monotone_likelihood(ok), label = paste("maximum", s))
+  }
+})
+
 test_that("the check sees a multiphase phase with no events of its own", {
   skip_on_cran() # multiphase fit
   # With no deaths after six months the constant phase is not needed: its
