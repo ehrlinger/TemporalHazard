@@ -307,3 +307,28 @@ test_that("hzr_bootstrap() warns when the fit itself is on a monotone likelihood
   )
   expect_true(any(grepl("fit being bootstrapped is flat or still rising", w)))
 })
+
+test_that("the drop warning says the summary is conditional (rollup review)", {
+  # Dropping separated replicates leaves a summary over the resamples in
+  # which the model is identified. On avc 17 of 30 were dropped and the
+  # interval narrowed from [-19.3, 12.0] to [-0.11, 1.82]; the warning must
+  # say what the summary is conditional on, and say it louder when much of
+  # the run was dropped.
+  fit <- .mono_fit(.mono_data)
+  reason <- "likelihood flat or still rising (no unique finite maximum)"
+  msgs <- character()
+  b <- withCallingHandlers(
+    hzr_bootstrap(fit, n_boot = 40, seed = 1),
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+  drop_msg <- msgs[grepl("were dropped because their likelihood", msgs)]
+  expect_length(drop_msg, 1L)
+  expect_match(drop_msg, "conditional on a resample in which the model is",
+               fixed = TRUE)
+  n_mono <- b$failure_reasons[[reason]]
+  expect_gt(n_mono, 0L)
+  expect_identical(grepl("unreliable", drop_msg, fixed = TRUE),
+                   n_mono >= 0.2 * 40)
+})

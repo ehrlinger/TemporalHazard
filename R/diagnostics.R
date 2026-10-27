@@ -170,12 +170,16 @@ hzr_deciles <- function(object, time, groups = 10L,
       # read at the horizon, that applied the exit window's coefficient to
       # the horizon (#629). For the horizon, expand data$x at `times`
       # instead, as hzr_gof() does, deciding which phases inherit by the same
-      # helper. The exit-time call keeps the stored design, the one the
-      # likelihood and .hzr_cumhaz_at_entry() use.
+      # helper. A caller's `event_time` is expanded the same way: keeping
+      # the exit-time design charged a row whose event_time fell in another
+      # window that window's coefficient. Only the stored exit times keep the
+      # stored design, the one the likelihood and .hzr_cumhaz_at_entry() use.
       at <- object
       at$data$time <- times
       tw <- object$spec$time_windows
-      if (horizon && !is.null(tw)) {
+      if ((horizon || !identical(as.numeric(times),
+                                 as.numeric(object$data$time))) &&
+            !is.null(tw)) {
         at$fit$x_list <- lapply(
           stats::setNames(nm = names(object$fit$x_list)), function(nm) {
             m <- object$fit$x_list[[nm]]
@@ -1678,9 +1682,11 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #' column of zeros (a factor level absent from a resample) or one that is a
 #' combination of others. Its estimates are not determined by the data.
 #'
-#' A conserved `log_mu` is held, not re-derived, along a ray. That can hide a
-#' rise the conserved fit would follow, and it can also leave the remaining
-#' rays flat where a phase has been switched off (`log_mu` near -Inf).
+#' A conserved `log_mu` is free in `fixed_mask` since #652, so the rays step
+#' it like any other free parameter rather than re-deriving it by
+#' Conservation of Events. A ray therefore leaves the conserved fit's
+#' constraint, and it can also run flat where a phase has been switched off
+#' (`log_mu` near -Inf).
 #'
 #' @param fit_obj A fitted `hazard` object.
 #' @param step Largest change in any row's linear predictor along a
@@ -1761,8 +1767,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
   # combination of columns is found only to rounding. Each multiphase phase
   # is its own block; a single distribution's intercept is a column of ones.
   # Checked before fixed_mask is applied: a user cannot fix a log_mu or a
-  # coefficient, so the one such entry there is a conserved log_mu, which
-  # Conservation of Events re-solves rather than holds.
+  # coefficient. Since #652 a conserved log_mu is free there too, so only an
+  # object saved before #652 marks one fixed, and it is still a parameter
+  # the data determine, which Conservation of Events re-solves.
   for (b in split(seq_len(ncol(design)), block)) {
     m <- design[, b, drop = FALSE]
     if (!multiphase && free[1L]) m <- cbind(1, m)
@@ -3246,9 +3253,18 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
             "were dropped because their likelihood was flat or still ",
             "rising past the estimate: an estimate at infinity, as under ",
             "separation in the resample, or one the data do not determine. ",
-            "They reported convergence, and pooled they would inflate the sd ",
-            "and the interval. The summary is over the ",
-            n_success, " that remain. See `$failure_reasons`.", call. = FALSE)
+            "The summary is over the ", n_success, " that remain, so it is ",
+            "conditional on a resample in which the model is identified: it ",
+            "understates the uncertainty of the parameters involved, and ",
+            "dropping whole replicates moves the others' intervals too.",
+            if (n_monotone >= 0.2 * n_boot) {
+              paste0(" With ", round(100 * n_monotone / n_boot), "% of ",
+                     "replicates dropped, treat the summary as unreliable: ",
+                     "the model is not identified in a large share of ",
+                     "resamples. Simplify the model, or fit fewer ",
+                     "covariates in the phase with few events.")
+            },
+            " See `$failure_reasons`.", call. = FALSE)
   }
 
   # Every replicate failed. The result holds no replicates and an empty
