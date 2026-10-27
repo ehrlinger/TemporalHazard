@@ -9,7 +9,7 @@ weib_data <- function(n = 80) {
 }
 
 # Copied from test-coe-applied.R's coe_fit(): explicit starts, n_starts = 1.
-mp_fit <- function(status_pattern, conserve = TRUE) {
+mp_fit <- function(status_pattern, conserve = TRUE, quiet = TRUE) {
   set.seed(42)
   n <- 60
   time <- stats::rexp(n, 0.2) + 0.05
@@ -19,12 +19,15 @@ mp_fit <- function(status_pattern, conserve = TRUE) {
     args$time_lower <- time
     args$time_upper <- ifelse(status == 2, time * 1.5, time)
   }
-  suppressWarnings(do.call(hazard, c(args, list(
-    phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
-                  const = hzr_phase("constant")),
-    dist = "multiphase", fit = TRUE,
-    control = list(conserve = conserve, n_starts = 1)
-  ))))
+  run <- function() {
+    do.call(hazard, c(args, list(
+      phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                    const = hzr_phase("constant")),
+      dist = "multiphase", fit = TRUE,
+      control = list(conserve = conserve, n_starts = 1)
+    )))
+  }
+  if (quiet) suppressWarnings(run()) else run()
 }
 
 test_that("a clean fit records nothing", {
@@ -102,6 +105,47 @@ test_that("a failed full-information recompute under CoE is recorded", {
   expect_true(fit$spec$control$conserve_applied)   # guard: the recompute ran
   expect_identical(fit$degraded_causes[["conserved_phase_variance"]],
                    "numDeriv not installed")
+  expect_false("cause not recorded" %in% fit$degraded_causes)
+})
+
+test_that("a failed CoE recompute reports no SEs, not the search-only ones", {
+  skip_on_cran()
+  # #652. The search-only vcov holds the conserved log_mu fixed, so the SEs it
+  # gives are conditional on it and too small; on avc one was 0.17 of its
+  # full-information value. Fail only the recompute's inversion, which is the
+  # one over every estimated parameter: the search's has one fewer.
+  ok <- mp_fit(c(1, 0))
+  expect_true(ok$spec$control$conserve_applied)    # guard: the recompute ran
+  expect_true(is.matrix(ok$fit$vcov))              # guard: it succeeds unmocked
+  n_full <- sum(!ok$fit$fixed_mask)
+  real_solve <- .hzr_safe_solve
+  n_failed <- 0L
+  local_mocked_bindings(.hzr_safe_solve = function(H, ...) {
+    if (nrow(H) != n_full) return(real_solve(H, ...))
+    n_failed <<- n_failed + 1L
+    list(vcov = NA, rcond = NA_real_, pd = NA, reason = "Hessian not invertible")
+  })
+  w <- character(0)
+  fit <- withCallingHandlers(mp_fit(c(1, 0), quiet = FALSE), warning = function(c) {
+    w <<- c(w, conditionMessage(c))
+    invokeRestart("muffleWarning")
+  })
+  expect_identical(n_failed, 1L)                   # guard: only the recompute
+  expect_true(any(grepl("no standard errors are reported", w, fixed = TRUE)))
+  expect_false(is.matrix(fit$fit$vcov))
+  # Nothing describing the search's Hessian survives beside it: a finite rcond
+  # would let the weak-direction check read "examined, nothing found".
+  expect_true(is.na(fit$fit$rcond))
+  expect_true(is.na(fit$fit$pd))
+  expect_true("weak_direction_check" %in% fit$degraded)
+  # The conserved log_mu is estimated, as after a successful recompute, so
+  # AIC counts the same parameters either way.
+  expect_identical(fit$fit$fixed_mask, ok$fit$fixed_mask)
+  expect_identical(fit$fit$theta, ok$fit$theta)    # estimates are unaffected
+  expect_match(fit$degraded_causes[["standard_errors"]],
+               "Conservation-of-Events full-information variance")
+  expect_identical(fit$degraded_causes[["conserved_phase_variance"]],
+                   "Hessian not invertible")
   expect_false("cause not recorded" %in% fit$degraded_causes)
 })
 
