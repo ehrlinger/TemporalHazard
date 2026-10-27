@@ -625,6 +625,23 @@ test_that("the order check names only the columns that do not follow (#590)", {
   }
   expect_identical(.hzr_position_bound_columns(
     list(~ hid(id)), dk, c(FALSE, rep(TRUE, n - 1))), "hid(id)")
+  # The tolerance takes its spread from both evaluations, at the kept rows:
+  # a column constant in order, or an outlier on a dropped row, must not
+  # hide a mis-pairing.
+  zc <- c(1, 2, 4, 6, 7)
+  gc <- zc
+  hc <- function(a) 1e9 + a - gc[seq_along(a)]
+  expect_identical(.hzr_position_bound_columns(
+    list(~ hc(zc)), data.frame(zc = zc), c(TRUE, FALSE, TRUE, TRUE, TRUE)),
+    "hc(zc)")
+  ao <- c(1e12, 1:5)
+  go <- rep(c(0, 1), 3)
+  ho <- function(a) a + go[seq_along(a)]
+  expect_identical(.hzr_position_bound_columns(
+    list(~ ho(ao)), data.frame(ao = ao), c(FALSE, rep(TRUE, 5))), "ho(ao)")
+  # A random term with the dropped rows last is not refused.
+  expect_identical(.hzr_position_bound_columns(
+    list(~ jitter(z)), d, c(rep(TRUE, n - 2), FALSE, FALSE)), character(0))
   # The documented limit: a helper that depends on how many rows it is
   # given sees n rows in both evaluations, so it is not seen.
   hm <- function(a) a * mean(g[seq_along(a)])

@@ -1768,7 +1768,7 @@
 #' Values are compared as values: a factor by its labels, so one whose
 #' levels are taken in order of appearance passes; anything else without
 #' its class, matrices column by column, numbers to a tolerance scaled to
-#' the spread of the column. Columns of `data` named "" are dropped first,
+#' the spread of the column over both evaluations, at the kept rows only. Columns of `data` named "" are dropped first,
 #' as the fit drops them (#470). The global formula (two-sided) is read by
 #' its right-hand side.
 #'
@@ -1800,6 +1800,9 @@
   # The fit's order: kept rows first, in their order. `back` returns a value
   # computed in that order to the rows' own order.
   order_fit <- c(which(keep), which(!keep))
+  # Dropped rows already last: the fit reads every kept row's own values,
+  # and a second evaluation would only see a random term differ.
+  if (identical(order_fit, seq_len(n))) return(character(0))
   back <- match(seq_len(n), order_fit)
   # The fallback: the dropped rows replaced by the first kept row.
   patched <- take_rows(data, ifelse(keep, seq_len(n), which(keep)[1L]))
@@ -1827,7 +1830,7 @@
     fin <- is.finite(a) & is.finite(b)
     if (!identical(a[!fin], b[!fin])) return(TRUE)
     if (!any(fin)) return(FALSE)
-    spread <- diff(range(a[fin]))
+    spread <- diff(range(a[fin], b[fin]))
     tol <- 1e-8 * if (spread > 0) spread else max(1, abs(a[fin]))
     any(abs(a[fin] - b[fin]) > tol)
   }
@@ -1837,8 +1840,15 @@
     if (is.null(a)) return(NA)
     b <- value(expr, take_rows(d, order_fit), env)
     if (is.null(b)) return(TRUE)
-    b <- if (is.matrix(b) || is.data.frame(b)) b[back, , drop = FALSE] else
-      b[back]
+    # Compared at the kept rows only: the dropped rows are not fitted, and
+    # an outlier among them would widen the tolerance.
+    if (is.matrix(a) || is.data.frame(a)) {
+      a <- a[keep, , drop = FALSE]
+      b <- b[back, , drop = FALSE][keep, , drop = FALSE]
+    } else {
+      a <- a[keep]
+      b <- b[back][keep]
+    }
     differs(a, b)
   }
   unique(unlist(lapply(forms, function(fm) {
