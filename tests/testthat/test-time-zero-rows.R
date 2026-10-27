@@ -375,6 +375,28 @@ test_that("a helper reading an outside vector by position is refused (#590)", {
     theta = c(0.3, 1, 0), fit = TRUE)))
 })
 
+test_that("a helper removed by subtraction does not refuse the fit (#590)", {
+  withr::local_seed(5)
+  n <- 50
+  dd <- data.frame(time = c(0, 0, stats::rexp(n - 2, 0.3)),
+                   status = stats::rbinom(n, 1, 0.7),
+                   age = stats::rnorm(n, 50, 10))
+  g <- stats::rnorm(n)
+  hf <- function(a) a + g[seq_along(a)]
+  fit <- suppressWarnings(hazard(
+    survival::Surv(time, status) ~ age + hf(age) - hf(age), data = dd,
+    dist = "weibull", theta = c(0.3, 1, 0), fit = TRUE))
+  expect_identical(colnames(fit$data$x), "age")
+  fit <- suppressWarnings(hazard(
+    survival::Surv(time, status) ~ 1, data = dd, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                                    fixed = "shapes",
+                                    formula = ~ age + hf(age) - hf(age)),
+                  const = hzr_phase("constant")),
+    fit = TRUE, control = list(n_starts = 1)))
+  expect_identical(fit$data$dropped_time_zero, 2L)
+})
+
 test_that("a global formula with `.` beside the helper is checked (#590)", {
   # The global formula, with `.` beside the helper and a Surv() response
   # that reads a column through an expression.
@@ -642,6 +664,13 @@ test_that("the order check names only the columns that do not follow (#590)", {
   # A random term with the dropped rows last is not refused.
   expect_identical(.hzr_position_bound_columns(
     list(~ jitter(z)), d, c(rep(TRUE, n - 2), FALSE, FALSE)), character(0))
+  # A term removed by subtraction is not in the design and is not checked;
+  # one used only inside an interaction is.
+  expect_identical(.hzr_position_bound_columns(
+    list(~ age + hf(z) - hf(z)), d, c(FALSE, rep(TRUE, n - 1))),
+    character(0))
+  expect_identical(.hzr_position_bound_columns(
+    list(~ age + age:hf(z)), d, c(FALSE, rep(TRUE, n - 1))), "hf(z)")
   # The documented limit: a helper that depends on how many rows it is
   # given sees n rows in both evaluations, so it is not seen.
   hm <- function(a) a * mean(g[seq_along(a)])

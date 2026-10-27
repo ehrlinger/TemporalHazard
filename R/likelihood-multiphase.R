@@ -1859,6 +1859,15 @@
     tt <- tryCatch(stats::terms(rhs, data = data), error = function(e) NULL)
     if (is.null(tt)) return(character(0))
     vars <- as.list(attr(tt, "variables"))[-1L]
+    # Only the variables a remaining term uses, interactions included: one
+    # that `- hf(age)` removed keeps its entry in `variables`, with a row of
+    # zeros in `factors`, and is not in the design.
+    fac <- attr(tt, "factors")
+    vars <- if (length(fac) && nrow(fac) == length(vars)) {
+      vars[rowSums(fac != 0) > 0]
+    } else {
+      list()
+    }
     hit <- vapply(vars, function(expr) {
       out <- mis_paired(expr, data, env)
       if (is.na(out)) out <- mis_paired(expr, patched, env)
