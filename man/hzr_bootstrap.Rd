@@ -34,11 +34,14 @@ hzr_bootstrap(
 replicate (default 1.0 for full bootstrap; < 1 for bagging).}
 
 \item{seed}{Optional integer random seed for reproducibility. When
-supplied, the resampling runs from that seed and the caller's RNG
-state is restored on exit, so the call neither resets nor advances
-the caller's stream. Pass \code{NULL} (the default) to resample from the
-caller's current RNG state instead, which the bootstrap then
-advances as it draws.}
+supplied, the call runs \code{set.seed(seed)} and resamples from there, so
+the same seed gives the same replicates. This sets the session's
+random number stream, as \code{set.seed()} would: after the call it
+continues from where the bootstrap's draws left it, not from where it
+was before. To keep a stream of your own, save \code{.Random.seed} before
+the call and restore it after, or use \code{withr::with_preserve_seed()}.
+Pass \code{NULL} (the default) to resample from the caller's current
+stream instead, which the bootstrap then advances as it draws.}
 
 \item{verbose}{Logical; if \code{TRUE}, display a text progress bar over the
 \code{n_boot} replicates (via \code{\link[utils:txtProgressBar]{utils::txtProgressBar()}}).}
