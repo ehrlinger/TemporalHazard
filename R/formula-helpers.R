@@ -152,6 +152,17 @@
 #' @keywords internal
 #' @noRd
 .hzr_expand_rhs <- function(formula, data) {
+  # `.` is written out only where it is a term of its own. Inside a call,
+  # terms() leaves it alone -- or, beside a bare `.`, substitutes the SUM of
+  # the columns -- and lm() stops with "object '.' not found".
+  inside <- .hzr_dot_in_calls(formula[[length(formula)]])
+  if (length(inside) > 0L) {
+    stop("`.` can stand only as a term of its own, as in `~ .` or ",
+         "`~ . - age`; it is inside a function call in ",
+         paste0("`", inside, "`", collapse = ", "),
+         ", where it is not written out column by column. Write those ",
+         "terms out with the column names.", call. = FALSE)
+  }
   rhs_formula <- stats::formula(
     stats::delete.response(stats::terms(formula, data = data))
   )
@@ -169,6 +180,31 @@
     rhs_formula <- stats::reformulate("1", env = environment(rhs_formula))
   }
   rhs_formula
+}
+
+#' Find the terms of a formula that use `.` inside a function call
+#'
+#' Walks the formula operators (`+ - * / : ^ ( %in%`), where `.` is a term
+#' of its own, and returns each other call that reaches a `.` symbol. The
+#' name after `$` is not a symbol lookup, so `cfg$.` is not reported.
+#'
+#' @param e A formula right-hand side (a call or symbol).
+#' @return Character vector of deparsed offending terms, possibly empty.
+#' @keywords internal
+#' @noRd
+.hzr_dot_in_calls <- function(e) {
+  if (!is.call(e)) return(character(0))
+  head <- e[[1L]]
+  ops <- c("+", "-", "*", "/", ":", "(", "%in%")
+  if (is.symbol(head) && as.character(head) %in% ops) {
+    return(unlist(lapply(as.list(e)[-1L], .hzr_dot_in_calls)))
+  }
+  # The exponent of `^` is a number, never a term.
+  if (identical(head, as.symbol("^"))) return(.hzr_dot_in_calls(e[[2L]]))
+  if ("." %in% .hzr_mask_symbols(e)) {
+    return(paste(deparse(e), collapse = " "))
+  }
+  character(0)
 }
 
 #' Drop the columns of `data` named ""
