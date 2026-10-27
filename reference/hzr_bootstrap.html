@@ -112,11 +112,14 @@ replicate (default 1.0 for full bootstrap; &lt; 1 for bagging).</p></dd>
 
 <dt id="arg-seed">seed<a class="anchor" aria-label="anchor" href="#arg-seed"></a></dt>
 <dd><p>Optional integer random seed for reproducibility. When
-supplied, the resampling runs from that seed and the caller's RNG
-state is restored on exit, so the call neither resets nor advances
-the caller's stream. Pass <code>NULL</code> (the default) to resample from the
-caller's current RNG state instead, which the bootstrap then
-advances as it draws.</p></dd>
+supplied, the call runs <code>set.seed(seed)</code> and resamples from there, so
+the same seed gives the same replicates. This sets the session's
+random number stream, as <code><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed()</a></code> would: after the call it
+continues from where the bootstrap's draws left it, not from where it
+was before. To keep a stream of your own, save <code>.Random.seed</code> before
+the call and restore it after, or use <code><a href="https://withr.r-lib.org/reference/with_seed.html" class="external-link">withr::with_preserve_seed()</a></code>.
+Pass <code>NULL</code> (the default) to resample from the caller's current
+stream instead, which the bootstrap then advances as it draws.</p></dd>
 
 
 <dt id="arg-verbose">verbose<a class="anchor" aria-label="anchor" href="#arg-verbose"></a></dt>

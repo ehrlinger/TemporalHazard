@@ -48,10 +48,15 @@ print(x, digits = 4, ...)
 - seed:
 
   Optional integer random seed for reproducibility. When supplied, the
-  resampling runs from that seed and the caller's RNG state is restored
-  on exit, so the call neither resets nor advances the caller's stream.
-  Pass `NULL` (the default) to resample from the caller's current RNG
-  state instead, which the bootstrap then advances as it draws.
+  call runs `set.seed(seed)` and resamples from there, so the same seed
+  gives the same replicates. This sets the session's random number
+  stream, as [`set.seed()`](https://rdrr.io/r/base/Random.html) would:
+  after the call it continues from where the bootstrap's draws left it,
+  not from where it was before. To keep a stream of your own, save
+  `.Random.seed` before the call and restore it after, or use
+  [`withr::with_preserve_seed()`](https://withr.r-lib.org/reference/with_seed.html).
+  Pass `NULL` (the default) to resample from the caller's current stream
+  instead, which the bootstrap then advances as it draws.
 
 - verbose:
 
