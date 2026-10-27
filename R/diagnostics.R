@@ -1908,6 +1908,67 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
   NULL
 }
 
+# hzr_bootstrap(id =) as one value per row of the fit's `data` (or, without
+# a `data` frame, per stored row). A character scalar names a column of
+# `data`; anything else is the identifier vector itself (#667).
+.hzr_bootstrap_resolve_id <- function(id, orig_data, n_obs) {
+  if (is.null(id)) return(NULL)
+  if (is.character(id) && length(id) == 1L && n_obs != 1L) {
+    if (is.null(orig_data)) {
+      stop("hzr_bootstrap(id = \"", id, "\") names a column, but this fit ",
+           "stores no `data` frame to look it up in. Pass the identifier ",
+           "vector itself, one value per row.", call. = FALSE)
+    }
+    if (!id %in% names(orig_data)) {
+      stop("hzr_bootstrap(id = \"", id, "\"): no column '", id, "' in the ",
+           "fit's `data`.", call. = FALSE)
+    }
+    id <- orig_data[[id]]
+  }
+  if (length(id) != n_obs) {
+    stop("hzr_bootstrap(id =) needs one value per row the fit kept (",
+         n_obs, "), not ", length(id), ". hazard() drops rows, such as ",
+         "those at time 0, so pass the column name, id = \"<column>\", ",
+         "which is looked up in the rows it kept.", call. = FALSE)
+  }
+  if (anyNA(id)) {
+    stop("hzr_bootstrap(id =) has ", sum(is.na(id)), " missing value(s); ",
+         "every row must name its patient.", call. = FALSE)
+  }
+  id
+}
+
+# One replicate's row index. With `id`, draws patients with replacement and
+# keeps every row of each one drawn, as SAS %HAZBOOT does under `_TVC=1`
+# (bootstrap.hazard.sas): a patient drawn k times contributes k copies of each
+# of its rows, and `fraction` counts patients. Without `id`, rows are drawn.
+.hzr_bootstrap_index <- function(n_obs, fraction, id = NULL) {
+  if (is.null(id)) {
+    return(sample.int(n_obs, size = max(1L, as.integer(n_obs * fraction)),
+                      replace = TRUE))
+  }
+  # Group on the ids present, by exact value. split(, id) would count a
+  # factor's unused levels as patients that contribute no rows, so the number
+  # drawn varied by replicate, and it compares numeric ids as 15-digit text.
+  rows_of <- split(seq_len(n_obs), match(id, unique(id)))
+  n_id <- length(rows_of)
+  drawn <- sample.int(n_id, size = max(1L, as.integer(n_id * fraction)),
+                      replace = TRUE)
+  unlist(rows_of[drawn], use.names = FALSE)
+}
+
+# Does a fit's stored data carry genuine counting-process entry times, the
+# sign that its rows may be patient segments rather than patients? `fd` is
+# `object$data`: `time`, `status` (-1 left, 0 right, 1 event, 2 interval) and
+# `time_lower`, which is NULL when none was given.
+.hzr_bootstrap_has_entry <- function(fd) {
+  if (is.null(fd$time_lower)) return(FALSE)
+  # hazard()'s genuine-entry rule: on status 0/1 rows, 0 < time_lower < time.
+  # On status 2 rows time_lower is an interval bound, not an entry.
+  any(fd$status %in% c(0, 1) & fd$time_lower > 0 & fd$time_lower < fd$time,
+      na.rm = TRUE)
+}
+
 #' Bootstrap resampling for hazard model coefficients
 #'
 #' Resample data with replacement, refit the hazard model on each
@@ -1984,6 +2045,21 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'   backward screen does not read `scope`. For a backward screen on each
 #'   replicate, pass an empty scope such as `~ 1`. See [hzr_stepwise()] for
 #'   definitions and defaults.
+#' @param id Optional patient identifier, for data with more than one row per
+#'   patient, such as time-varying covariates in counting-process form
+#'   (`Surv(start, stop, event)` or `time_lower =`). Either the name of a
+#'   column of the fit's `data`, or a vector with one value per row the fit
+#'   kept. Prefer the column name: when `hazard()` drops rows, such as those
+#'   at time 0, a vector built from the original data is the wrong length,
+#'   and a column is looked up in the rows the fit kept. When
+#'   given, each replicate draws patients with replacement and keeps every row
+#'   of each patient drawn, so a patient drawn twice contributes all of its
+#'   rows twice, and `fraction` counts patients rather than rows. This is SAS
+#'   `%HAZBOOT` with `_TVC=1, _IDVAR=`. The default, `NULL`, resamples rows,
+#'   which treats each row as a patient: it splits a patient's segments across
+#'   replicates when they are not. A fit with entry times and no `id` draws a
+#'   warning saying so, because the rows may not be patients; with one row per
+#'   patient (plain left truncation), the warning can be ignored.
 #' @param ... Additional arguments forwarded to [hzr_stepwise()] (e.g.
 #'   `control = list(maxit = 500)`, which every `dist` reads) when `scope`
 #'   is supplied. Only `control` and an `objective` equal to the fit's are
@@ -2165,7 +2241,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
                            slentry = 0.30, slstay = 0.20,
                            max_steps = 50L, max_move = 4L,
                            force_in = character(), force_out = character(),
-                           ...) {
+                           id = NULL, ...) {
   if (!inherits(object, "hazard")) {
     stop("'object' must be a fitted hazard object.", call. = FALSE)
   }
@@ -2439,7 +2515,15 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
          "`data =`, or call hazard() with `time =` and `status =` and no ",
          "`formula`, and bootstrap that.", call. = FALSE)
   }
-  sample_size <- max(1L, as.integer(n_obs * fraction))
+  boot_id <- .hzr_bootstrap_resolve_id(id, orig_data, n_obs)
+  if (is.null(boot_id) && .hzr_bootstrap_has_entry(object$data)) {
+    warning("hzr_bootstrap(): this fit has entry times (time_lower), so its ",
+            "rows may be segments of patients rather than patients. Rows are ",
+            "resampled, which splits a patient's segments across replicates. ",
+            "For time-varying covariates or repeated events, pass the patient ",
+            "identifier as `id =`; with one row per patient, ignore this.",
+            call. = FALSE)
+  }
 
   # Observation weights, if any, must be resampled in lockstep with the data.
   # Prefer the weights already evaluated and stored on the fitted object: they
@@ -2692,8 +2776,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   if (!is.null(seed)) set.seed(seed)
 
   for (b in seq_len(n_boot)) {
-    # Resample with replacement
-    idx <- sample.int(n_obs, size = sample_size, replace = TRUE)
+    # Resample with replacement: rows, or whole patients under `id =`
+    idx <- .hzr_bootstrap_index(n_obs, fraction, boot_id)
     boot_data <- orig_data[idx, , drop = FALSE] # nolint: object_usage_linter.
     # boot_weights is referenced via quote() inside eval -- lintr cannot trace it
     boot_weights <- if (is.null(orig_weights)) NULL else orig_weights[idx] # nolint: object_usage_linter.
