@@ -95,16 +95,25 @@ data-dependent term such as \code{scale(age)} uses the retained rows. Two
 inputs are refused because they cannot follow the rows: a response
 whose values change once the rows are dropped, such as
 \code{Surv(time - min(time), status)}, and a formula that reads a per-row
-value from outside \code{data}. That check reads the formula's own
-variables, so it cannot see inside a function: a helper that indexes a
-vector from outside \code{data} by position, such as
-\code{function(a) a + g[seq_along(a)]}, sees only the retained rows and pairs
-them with the first elements of \code{g}, so every row after the first
-dropped one is paired with the wrong value. Only the drop itself is
-warned about; the mis-pairing is not.
-\code{stats::lm(subset = )} is not a guide here: it evaluates the terms on
-every row and subsets afterwards, so the same helper pairs correctly
-there. Put such a vector in \code{data}, where it is dropped with its rows.
+value from outside \code{data}. The second is read two ways. A variable
+named in the formula is refused when it is not a column of \code{data}. A
+helper that reads an outside vector inside its body, such as
+\code{function(a) a + g[seq_along(a)]}, names no such variable, and on the
+retained rows would pair them with the first elements of \code{g}. So the
+formula's variables are evaluated on every row in order, and again with
+the retained rows first, in their order, as the fit sees them; a
+variable that then gives a retained row a different value is refused
+(#590). Both times every row is present, so \code{scale()}, \code{poly()},
+\code{ns()} and factors pass, including a factor whose levels are taken in
+order of appearance. A term that cannot be evaluated on the dropped
+rows, such as \code{poly()} over an NA only they carry, is evaluated with
+those rows replaced by a copy of a retained one. A term that depends on
+the order of the rows, such as \code{cumsum(age)}, or is random, such as
+\code{jitter(age)}, is refused unless the dropped rows are the last ones. A
+helper that depends on how many rows it is given, such as
+\code{tail(g, length(a))} or \code{a * mean(g[seq_along(a)])}, is not caught,
+because both evaluations see every row. Put such a vector in \code{data}, where it is
+dropped with its rows.
 A caller-supplied row-aligned input whose row count differs from
 \code{time}'s is refused before any row is dropped: \code{x} and \code{weights} on the
 \verb{time =}/\verb{status =} interface, and \code{data} wherever a formula reads it row
