@@ -1939,11 +1939,14 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #' @param fraction Numeric in (0, 1]: fraction of data to sample per
 #'   replicate (default 1.0 for full bootstrap; < 1 for bagging).
 #' @param seed Optional integer random seed for reproducibility. When
-#'   supplied, the resampling runs from that seed and the caller's RNG
-#'   state is restored on exit, so the call neither resets nor advances
-#'   the caller's stream. Pass `NULL` (the default) to resample from the
-#'   caller's current RNG state instead, which the bootstrap then
-#'   advances as it draws.
+#'   supplied, the call runs `set.seed(seed)` and resamples from there, so
+#'   the same seed gives the same replicates. This sets the session's
+#'   random number stream, as `set.seed()` would: after the call it
+#'   continues from where the bootstrap's draws left it, not from where it
+#'   was before. To keep a stream of your own, save `.Random.seed` before
+#'   the call and restore it after, or use `withr::with_preserve_seed()`.
+#'   Pass `NULL` (the default) to resample from the caller's current
+#'   stream instead, which the bootstrap then advances as it draws.
 #' @param verbose Logical; if `TRUE`, display a text progress bar over the
 #'   `n_boot` replicates (via [utils::txtProgressBar()]).
 #' @param scope **Experimental.** Candidate variable scope for embedded
@@ -2404,12 +2407,10 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   }
 
   # Seeded after the refusals above, so a refused call leaves the caller's
-  # random number stream alone. local_seed() puts the caller's stream back on
-  # exit, error exits included, so a script that seeded once at the top keeps
-  # its own stream after this call (#611). It writes .Random.seed into
-  # .GlobalEnv to do so, as .hzr_start_perturbations() does by hand; 1.0.3
-  # removed this package's own write over CRAN policy, so the 1.3.0
-  # submission should confirm the restore is acceptable.
+  # random number stream alone. A plain set.seed(), with no restore (#653):
+  # restoring the caller's stream (#611) meant writing .Random.seed into
+  # .GlobalEnv, which CRAN policy forbids. The documentation says that
+  # `seed =` sets the session's stream, as set.seed() does.
   # Validated as control$start_seed is (.hzr_optim_multiphase()): set.seed()
   # truncates 1.7 to 1 and takes the first of c(1, 2), so either would
   # silently repeat seed 1, and an NA or out-of-range value failed with a
@@ -2420,7 +2421,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       stop("`seed` must be NULL or a single whole number no larger in ",
            "magnitude than ", .Machine$integer.max, ".", call. = FALSE)
     }
-    withr::local_seed(seed)
+    set.seed(seed)
   }
 
   # A vector fit made without `data =` has no frame to count rows in, and

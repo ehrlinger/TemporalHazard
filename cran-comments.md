@@ -233,6 +233,19 @@ CRAN incoming-feasibility aspell check is expected to report:
   effect on the CRAN aspell check, which offers no package-level suppression
   mechanism, so this NOTE recurs by design on every submission.
 
+## Random number streams
+
+`hzr_bootstrap(seed = )` calls `set.seed(seed)` on a seed the user supplies
+and does not restore the stream afterwards; its documentation says so. It no
+longer writes `.Random.seed` into the global environment (#653, decided by
+the maintainer on 2026-10-27).
+
+One save-and-restore of `.Random.seed` remains, and is to be decided before
+the 1.3.0 submission: `.hzr_start_perturbations()` draws the offsets for a
+multiphase fit's extra optimization starts (`n_starts > 1`) from an internal
+seed, `control$start_seed`, default 3, and restores the caller's stream on
+exit so that fitting neither reseeds nor advances it.
+
 ## Background
 
 * The package contains five clinical reference datasets (~120 KB compressed)
