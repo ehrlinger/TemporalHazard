@@ -444,8 +444,9 @@ NULL
 #'
 #' Restricts the sandwich to the parameters the prediction uses. A parameter
 #' held fixed (`fixed`, from the fit's `fixed_mask`; e.g. `fixed = "shapes"`)
-#' with an NA row is dropped as known. (The CoE-conserved `log_mu` is one when
-#' its full-information recompute failed; the caller warns.) A fixed one with
+#' with an NA row is dropped as known. (The CoE-conserved `log_mu` is one in
+#' an object saved before #652 whose full-information recompute failed; the
+#' caller warns. A fit made since has no vcov in that case.) A fixed one with
 #' a variance, such as a shape a g3 constraint derives, stays in. An NA
 #' variance on a parameter that is NOT fixed was masked by `.hzr_safe_solve()`
 #' as non-positive: it withholds the standard error if the prediction uses
@@ -551,19 +552,23 @@ NULL
 
 #' Warn when a failed CoE recompute leaves a phase's variance out (#586)
 #'
-#' The conserved `log_mu` is then held fixed in `fixed_mask` and dropped from
-#' the sandwich, and the object does not record which position it is.
+#' Reached only by an object saved before #652: a fit made since has no vcov
+#' when the recompute fails, and the caller returns before this. In such an
+#' object the conserved `log_mu` is held fixed in `fixed_mask` and dropped
+#' from the sandwich, and the object does not record which position it is.
 #' @noRd
 .hzr_warn_conserved_variance <- function(object) {
   if ("conserved_phase_variance" %in% object$degraded) {
     warning("Conservation of Events could not recompute the conserved ",
             "phase's variance for this fit, so these standard errors leave ",
-            "it out and may be understated.", call. = FALSE)
+            "it out and may be wrong in either direction. Refit with this ",
+            "version, which reports none in this case.", call. = FALSE)
   }
   invisible(NULL)
 }
 
-# When the failed recompute leaves a prediction reading no estimated
+# Like the warning above, reached only by an object saved before #652. When
+# the failed recompute leaves a prediction reading no estimated
 # parameter at all -- the conserved phase alone -- its SE is unknown, and the
 # empty sandwich would report it as exactly 0 (#586). Only a decomposed
 # component can: CoE applies with two or more phases, no phase's log_mu can

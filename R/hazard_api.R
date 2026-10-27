@@ -3312,10 +3312,11 @@ coef.hazard <- function(object, ...) {
 #'   is still usable. For Conservation-of-Events fits the conserved phase
 #'   \code{log_mu} \emph{normally} carries a variance: it is removed from the
 #'   optimizer search but the vcov is the full-information matrix at the optimum
-#'   (the CoE solution is the unconstrained MLE). That recomputation requires
-#'   \pkg{numDeriv} and an invertible Hessian; if either is unavailable the fit
-#'   emits a warning and the conserved \code{log_mu} stays \code{NA} (the rest
-#'   of the matrix is unaffected). For a Weibull fit whose scale \code{mu}, or
+#'   (the CoE solution is the unconstrained MLE). That recomputation needs a
+#'   Hessian (analytic, or from \pkg{numDeriv} for left- or interval-censored
+#'   rows) that can be inverted; if it fails the fit warns, records why in
+#'   \code{degraded_causes}, and has no covariance matrix, so \code{vcov()}
+#'   returns \code{NA}. For a Weibull fit whose scale \code{mu}, or
 #'   its variance, cannot be represented, \code{mu}'s row and column are
 #'   \code{NA}, the reason is recorded in the fit's \code{degraded_causes},
 #'   and \code{summary()} shows the variance of \code{log(mu)} instead.
@@ -3334,8 +3335,8 @@ vcov.hazard <- function(object, ...) {
   # rather than collapsing the whole matrix to a scalar NA -- a multiphase fit
   # legitimately has NA rows for parameters held fixed (e.g. early shapes),
   # which carry no Hessian-based variance. (The CoE-conserved log_mu is
-  # normally NOT NA -- it gets the full-information variance -- but stays NA if
-  # that recomputation was unavailable; the fit warns in that case.)
+  # NOT NA -- it gets the full-information variance; when that recomputation
+  # fails the fit has no matrix at all and returns NA above.)
   # The finite free-parameter block is still usable.
   theta <- object$fit$theta
   nm <- names(theta)

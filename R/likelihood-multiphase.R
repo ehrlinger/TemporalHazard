@@ -2898,15 +2898,29 @@
         }
       }
       if (!recomputed) {
-        # Fall back to the reduced (search-only) vcov, in which the conserved
-        # log_mu has no variance. Warn loudly so the understated uncertainty is
-        # visible rather than silent, and record it, so it is not only a
-        # warning that scrolled past.
+        # The reduced (search-only) vcov is no fallback (#652). It inverts the
+        # Hessian with the conserved log_mu held fixed, as if it were known,
+        # and it was taken at the start's conserved log_mu, not the re-solved
+        # one, so its SEs can be wrong in either direction. On avc it put one
+        # SE at 0.17 of its full-information value and another at 1.3. No
+        # standard errors are reported rather than wrong ones, and the reason
+        # is recorded, so it is not only a warning that scrolled past.
         warning(
           "Could not compute the full-information variance for the ",
-          "Conservation-of-Events-conserved phase 'log_mu' (", cv_reason,
-          "). Its standard error stays NA and downstream standard errors / ",
-          "confidence limits for that phase may be understated.", call. = FALSE)
+          "Conservation-of-Events fit (", .hzr_reason_or_unrecorded(cv_reason),
+          "), so no standard ",
+          "errors are reported. The search-only variance holds the conserved ",
+          "phase's 'log_mu' fixed and would misstate them.", call. = FALSE)
+        best_result$vcov  <- NA
+        best_result$rcond <- NA_real_
+        best_result$pd    <- NA
+        # The conserved log_mu is estimated, by the CoE solve, whether or not
+        # its variance could be computed: counted as fixed, a failed recompute
+        # gave an AIC 2 below the same fit with a successful one.
+        best_result$fixed_mask <- !free_unc
+        best_result$se_unavailable_reason <- paste0(
+          "Conservation-of-Events full-information variance could not be ",
+          "computed (", .hzr_reason_or_unrecorded(cv_reason), ")")
         best_result$conserved_variance_reason <- .hzr_reason_or_unrecorded(cv_reason)
       }
     }

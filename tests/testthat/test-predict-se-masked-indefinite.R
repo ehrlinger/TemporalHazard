@@ -198,14 +198,16 @@ test_that("an NA variance on a fixed parameter is still dropped as known (#586)"
   expect_true(all(is.finite(got$val$se.fit) & got$val$se.fit > 0))
 })
 
-test_that("a failed CoE variance recompute warns once and keeps the SEs (#586)", {
+test_that("a failed CoE recompute gives no SEs; a pre-#652 object warns once (#586)", {
   set.seed(17)
   df <- data.frame(time = stats::rexp(60, 0.3),
                    status = stats::rbinom(60, 1, 0.6))
   # With the shapes fixed, the search estimates one log_mu and conserves the
   # other; the recompute inverts a 2 x 2 Hessian over both. Fail only that
-  # inversion.
+  # inversion, and keep the search's vcov as it is expanded.
   real_solve <- .hzr_safe_solve
+  real_expand <- .hzr_expand_vcov
+  search <- NULL
   testthat::local_mocked_bindings(
     .hzr_safe_solve = function(H, ...) {
       if (is.matrix(H) && nrow(H) == 2L) {
@@ -213,22 +215,45 @@ test_that("a failed CoE variance recompute warns once and keeps the SEs (#586)",
                     reason = "mocked recompute failure"))
       }
       real_solve(H, ...)
+    },
+    .hzr_expand_vcov = function(vcov, idx, ...) {
+      v <- real_expand(vcov, idx, ...)
+      search <<- list(vcov = v, idx = idx)
+      v
     }
   )
-  fit <- suppressWarnings(hazard(
+  new_fit <- suppressWarnings(hazard(
     survival::Surv(time, status) ~ 1, data = df, dist = "multiphase",
     phases = list(early = hzr_phase("cdf", t_half = 0.3, nu = 1, m = 1,
                                     fixed = "shapes"),
                   constant = hzr_phase("constant")),
     fit = TRUE, control = list(conserve = TRUE, n_starts = 1)))
-  # Premise: CoE ran, its recompute failed, and the reduced vcov stands with
-  # the conserved log_mu held fixed beside the three shapes.
-  expect_true(fit$spec$control$conserve_applied)
-  expect_true("conserved_phase_variance" %in% fit$degraded)
+  # A fit made since #652 reports no SEs at all, and counts the conserved
+  # log_mu as estimated: only the three shapes are fixed.
+  expect_true(new_fit$spec$control$conserve_applied)
+  expect_true("conserved_phase_variance" %in% new_fit$degraded)
+  expect_false(is.matrix(new_fit$fit$vcov))
+  expect_equal(sum(new_fit$fit$fixed_mask), 3L)
+  nd <- data.frame(time = c(0.5, 2, 6))
+  none <- .p586_run(predict(new_fit, newdata = nd, type = "cumulative_hazard",
+                            se.fit = TRUE))
+  expect_true(all(is.na(none$val$se.fit)))
+  expect_length(none$msgs, 1L)
+  expect_match(none$msgs, "Variance-covariance matrix is unavailable",
+               fixed = TRUE)
+
+  # The rest is about an object saved before #652, which kept the search's
+  # vcov with the conserved log_mu held fixed beside the three shapes.
+  # Rebuilt from the search's own matrix, captured above.
+  expect_length(search$idx, 1L)                    # guard: the search's vcov
+  conserved <- setdiff(which(!new_fit$fit$fixed_mask), search$idx)
+  expect_length(conserved, 1L)
+  fit <- new_fit
+  fit$fit$vcov <- search$vcov
+  fit$fit$fixed_mask[conserved] <- TRUE
   expect_true(is.matrix(fit$fit$vcov))
   expect_equal(sum(fit$fit$fixed_mask), 4L)
 
-  nd <- data.frame(time = c(0.5, 2, 6))
   got <- .p586_run(predict(fit, newdata = nd, type = "cumulative_hazard",
                            se.fit = TRUE))
   expect_true(all(is.finite(got$val$se.fit) & got$val$se.fit > 0))

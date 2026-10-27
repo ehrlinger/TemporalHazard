@@ -259,5 +259,6 @@ needs no carried-up reason.
 **Conservation of Events follows from the mask.** After a successful
 recompute the conserved `log_mu` is estimated (`fixed_mask <- !free_unc`),
 so a masked variance there lists `standard_errors`. After a failed recompute
-it stays fixed in the mask, and `conserved_phase_variance` records it, as
-before. Nothing is counted twice.
+the fit has no `vcov` at all (#652), so `standard_errors` lists it, and
+`conserved_phase_variance` records why. The conserved `log_mu` is estimated
+in the mask on both paths. Nothing is counted twice.

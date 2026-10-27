@@ -2023,8 +2023,8 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     parameter whose `sd` is 0, to within rounding, across two or more
 #'     replicates draws a warning naming it: the replicates did not
 #'     re-estimate it. Parameters the fit holds fixed are exempt: those held
-#'     by `hzr_phase(fixed = )`, shapes a constraint derives, and a conserved
-#'     `log_mu`.}
+#'     by `hzr_phase(fixed = )` and shapes a constraint derives. A conserved
+#'     `log_mu` is not exempt: it is re-solved in every replicate.}
 #'   \item{n_success}{Number of successfully converged replicates.}
 #'   \item{n_failed}{Number of replicates that failed: the refit stopped with
 #'     an error, returned something other than a fit, returned a non-finite
@@ -2902,7 +2902,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       }
       # fixed_mask is NULL when nothing is fixed (every single-distribution
       # fit); otherwise it is aligned with theta. It also marks shapes a
-      # constraint derives and a conserved log_mu, which are exempt too.
+      # constraint derives, which are exempt too; a conserved log_mu is
+      # estimated, and re-solved per replicate, so it is not marked (#652).
       fixed_names <- union(fixed_names,
                            names_b[as.logical(boot_fit$fit$fixed_mask)])
       rep_list[[b]] <- data.frame(
