@@ -23,6 +23,7 @@ hzr_bootstrap(
   max_move = 4L,
   force_in = character(),
   force_out = character(),
+  id = NULL,
   ...
 )
 
@@ -109,6 +110,26 @@ print(x, digits = 4, ...)
   if it is not installed; a multiphase fit uses the analytic Hessian
   instead and does not need it. See
   [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md).
+
+- id:
+
+  Optional patient identifier, for data with more than one row per
+  patient, such as time-varying covariates in counting-process form
+  (`Surv(start, stop, event)` or `time_lower =`). Either the name of a
+  column of the fit's `data`, or a vector with one value per row the fit
+  kept. Prefer the column name: when
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  drops rows, such as those at time 0, a vector built from the original
+  data is the wrong length, and a column is looked up in the rows the
+  fit kept. When given, each replicate draws patients with replacement
+  and keeps every row of each patient drawn, so a patient drawn twice
+  contributes all of its rows twice, and `fraction` counts patients
+  rather than rows. This is SAS `%HAZBOOT` with `_TVC=1, _IDVAR=`. The
+  default, `NULL`, resamples rows, which treats each row as a patient:
+  it splits a patient's segments across replicates when they are not. A
+  fit with entry times and no `id` draws a warning saying so, because
+  the rows may not be patients; with one row per patient (plain left
+  truncation), the warning can be ignored.
 
 - ...:
 

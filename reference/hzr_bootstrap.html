@@ -86,6 +86,7 @@ This is the R equivalent of the SAS <code>bootstrap.hazard.sas</code> macro.</p>
 <span>  max_move <span class="op">=</span> <span class="fl">4L</span>,</span>
 <span>  force_in <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">character</a></span><span class="op">(</span><span class="op">)</span>,</span>
 <span>  force_out <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">character</a></span><span class="op">(</span><span class="op">)</span>,</span>
+<span>  id <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  <span class="va">...</span></span>
 <span><span class="op">)</span></span>
 <span></span>
@@ -168,6 +169,24 @@ fits, <code>"score"</code> computes the observed information numerically via the
 suggested <span class="pkg">numDeriv</span> package and errors if it is not installed; a
 multiphase fit uses the analytic Hessian instead and does not need it.
 See <code><a href="hzr_stepwise.html">hzr_stepwise()</a></code>.</p></dd>
+
+
+<dt id="arg-id">id<a class="anchor" aria-label="anchor" href="#arg-id"></a></dt>
+<dd><p>Optional patient identifier, for data with more than one row per
+patient, such as time-varying covariates in counting-process form
+(<code>Surv(start, stop, event)</code> or <code>time_lower =</code>). Either the name of a
+column of the fit's <code>data</code>, or a vector with one value per row the fit
+kept. Prefer the column name: when <code><a href="hazard.html">hazard()</a></code> drops rows, such as those
+at time 0, a vector built from the original data is the wrong length,
+and a column is looked up in the rows the fit kept. When
+given, each replicate draws patients with replacement and keeps every row
+of each patient drawn, so a patient drawn twice contributes all of its
+rows twice, and <code>fraction</code> counts patients rather than rows. This is SAS
+<code>%HAZBOOT</code> with <code>_TVC=1, _IDVAR=</code>. The default, <code>NULL</code>, resamples rows,
+which treats each row as a patient: it splits a patient's segments across
+replicates when they are not. A fit with entry times and no <code>id</code> draws a
+warning saying so, because the rows may not be patients; with one row per
+patient (plain left truncation), the warning can be ignored.</p></dd>
 
 
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
