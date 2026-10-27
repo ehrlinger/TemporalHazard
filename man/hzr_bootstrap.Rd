@@ -87,7 +87,10 @@ See \code{\link[=hzr_stepwise]{hzr_stepwise()}}.}
 \item{id}{Optional patient identifier, for data with more than one row per
 patient, such as time-varying covariates in counting-process form
 (\code{Surv(start, stop, event)} or \verb{time_lower =}). Either the name of a
-column of the fit's \code{data}, or a vector with one value per row. When
+column of the fit's \code{data}, or a vector with one value per row the fit
+kept. Prefer the column name: when \code{hazard()} drops rows, such as those
+at time 0, a vector built from the original data is the wrong length,
+and a column is looked up in the rows the fit kept. When
 given, each replicate draws patients with replacement and keeps every row
 of each patient drawn, so a patient drawn twice contributes all of its
 rows twice, and \code{fraction} counts patients rather than rows. This is SAS

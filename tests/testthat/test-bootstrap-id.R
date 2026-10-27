@@ -44,6 +44,30 @@ test_that(".hzr_bootstrap_index() draws whole patients", {
                           integer(1)))
     expect_identical(n_drawn, 5L)
   }
+  # And the draw varies: a "resample" that took the same patients every
+  # time would pass every assertion above.
+  set.seed(3)
+  draws <- replicate(20, paste(sort(id[TemporalHazard:::.hzr_bootstrap_index(
+    length(id), 1, id)]), collapse = ""))
+  expect_gt(length(unique(draws)), 1L)
+})
+
+test_that("a factor id's unused levels are not patients", {
+  # 40 patients, 80 levels: a subset of a larger frame. Grouping on the
+  # levels drew between 26 and 50 patients per replicate.
+  id <- factor(rep(1:40, each = 2), levels = 1:80)
+  set.seed(1)
+  n <- replicate(200, length(TemporalHazard:::.hzr_bootstrap_index(
+    80L, 1, id)) / 2)
+  expect_identical(unique(n), 40)
+})
+
+test_that("numeric ids are grouped by exact value", {
+  # split() compares these as 15-digit text and merges the first two.
+  id <- c(0.1 + 0.2, 0.3, 1)
+  set.seed(2)
+  idx <- TemporalHazard:::.hzr_bootstrap_index(3L, 1, id)
+  expect_length(idx, 3L)
 })
 
 test_that(".hzr_bootstrap_index() row-level default is unchanged", {
@@ -88,13 +112,23 @@ test_that("patient resampling changes the replicates", {
   # Same seed, different resampling unit: the replicates must differ.
   expect_false(isTRUE(all.equal(b_row$replicates$estimate,
                                 b_id$replicates$estimate)))
+  # The replicates re-estimate: a free coefficient varies across them.
+  beta <- b_id$replicates$estimate[b_id$replicates$parameter == "beta"]
+  expect_length(beta, 5L)
+  expect_gt(stats::sd(beta), 0)
 })
 
 test_that("entry times without id = warn once; with id = they do not", {
   d <- tvc_fixture()
   fit <- tvc_fit(d)
-  expect_warning(hzr_bootstrap(fit, n_boot = 2, seed = 1),
-                 "id =", fixed = TRUE)
+  msgs <- character()
+  withCallingHandlers(
+    hzr_bootstrap(fit, n_boot = 3, seed = 1),
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+  expect_identical(sum(grepl("entry times", msgs, fixed = TRUE)), 1L)
   expect_no_warning(hzr_bootstrap(fit, n_boot = 2, seed = 1, id = "pid"))
 
   # No entry times: no warning.

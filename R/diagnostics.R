@@ -1926,8 +1926,10 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
     id <- orig_data[[id]]
   }
   if (length(id) != n_obs) {
-    stop("hzr_bootstrap(id =) needs one value per row of the fit's data (",
-         n_obs, "), not ", length(id), ".", call. = FALSE)
+    stop("hzr_bootstrap(id =) needs one value per row the fit kept (",
+         n_obs, "), not ", length(id), ". hazard() drops rows, such as ",
+         "those at time 0, so pass the column name, id = \"<column>\", ",
+         "which is looked up in the rows it kept.", call. = FALSE)
   }
   if (anyNA(id)) {
     stop("hzr_bootstrap(id =) has ", sum(is.na(id)), " missing value(s); ",
@@ -1945,7 +1947,10 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
     return(sample.int(n_obs, size = max(1L, as.integer(n_obs * fraction)),
                       replace = TRUE))
   }
-  rows_of <- split(seq_len(n_obs), id)
+  # Group on the ids present, by exact value. split(, id) would count a
+  # factor's unused levels as patients that contribute no rows, so the number
+  # drawn varied by replicate, and it compares numeric ids as 15-digit text.
+  rows_of <- split(seq_len(n_obs), match(id, unique(id)))
   n_id <- length(rows_of)
   drawn <- sample.int(n_id, size = max(1L, as.integer(n_id * fraction)),
                       replace = TRUE)
@@ -2043,7 +2048,10 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #' @param id Optional patient identifier, for data with more than one row per
 #'   patient, such as time-varying covariates in counting-process form
 #'   (`Surv(start, stop, event)` or `time_lower =`). Either the name of a
-#'   column of the fit's `data`, or a vector with one value per row. When
+#'   column of the fit's `data`, or a vector with one value per row the fit
+#'   kept. Prefer the column name: when `hazard()` drops rows, such as those
+#'   at time 0, a vector built from the original data is the wrong length,
+#'   and a column is looked up in the rows the fit kept. When
 #'   given, each replicate draws patients with replacement and keeps every row
 #'   of each patient drawn, so a patient drawn twice contributes all of its
 #'   rows twice, and `fraction` counts patients rather than rows. This is SAS
