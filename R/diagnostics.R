@@ -176,22 +176,9 @@ hzr_deciles <- function(object, time, groups = 10L,
       # stored design, the one the likelihood and .hzr_cumhaz_at_entry() use.
       at <- object
       at$data$time <- times
-      tw <- object$spec$time_windows
-      if ((horizon || !identical(as.numeric(times),
-                                 as.numeric(object$data$time))) &&
-            !is.null(tw)) {
-        at$fit$x_list <- lapply(
-          stats::setNames(nm = names(object$fit$x_list)), function(nm) {
-            m <- object$fit$x_list[[nm]]
-            if (is.null(m) || ncol(m) == 0 ||
-                  !.hzr_phase_inherits_global(object, nm)) {
-              return(m)
-            }
-            .hzr_expand_time_varying_design(
-              x = object$data$x, time = times, time_windows = tw
-            )
-          }
-        )
+      if (!is.null(object$spec$time_windows) &&
+            (horizon || .hzr_times_moved(object, times))) {
+        at$fit$x_list <- .hzr_windowed_x_list(object, times)
       }
       stats::predict(at, type = "cumulative_hazard")
     } else if (!is.null(object$data$x) && ncol(object$data$x) > 0) {
@@ -364,10 +351,43 @@ hzr_deciles <- function(object, time, groups = 10L,
         x = object$data$x, time = exit_time, time_windows = tw)
       at_entry$spec$time_windows <- NULL
     }
+    # Multiphase likewise: H(entry) takes the design expanded at the exit
+    # time, so a caller's exit_time in another window must rebuild it, as
+    # hzr_deciles() rebuilds H(exit). Keeping the stored x_list mixed two
+    # windows' coefficients and could give negative expected counts.
+    if (.hzr_times_moved(object, exit_time)) {
+      at_entry$fit$x_list <- .hzr_windowed_x_list(object, exit_time)
+    }
     h_entry[has_entry] <-
       stats::predict(at_entry, type = "cumulative_hazard")[has_entry]
   }
   h_entry
+}
+
+# TRUE when a multiphase time_windows fit is asked about times other than its
+# stored exit times, so its stored per-phase designs (expanded at those exit
+# times) no longer apply.
+.hzr_times_moved <- function(object, times) {
+  identical(object$spec$dist, "multiphase") &&
+    !is.null(object$spec$time_windows) &&
+    !identical(as.numeric(times), as.numeric(object$data$time))
+}
+
+# The per-phase designs of a multiphase time_windows fit, with each phase that
+# took the global x re-expanded at `times`; a phase's own formula keeps its
+# design (#629, #658).
+.hzr_windowed_x_list <- function(object, times) {
+  lapply(stats::setNames(nm = names(object$fit$x_list)), function(nm) {
+    m <- object$fit$x_list[[nm]]
+    if (is.null(m) || ncol(m) == 0 ||
+          !.hzr_phase_inherits_global(object, nm)) {
+      return(m)
+    }
+    .hzr_expand_time_varying_design(
+      x = object$data$x, time = times,
+      time_windows = object$spec$time_windows
+    )
+  })
 }
 
 #' Print method for hzr_deciles

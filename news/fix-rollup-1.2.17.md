@@ -4,7 +4,10 @@
   subject's stored exit time, so a row whose `event_time` fell in another
   window was charged that window's coefficient in the expected events, with
   no warning. The design is now expanded at `event_time` whenever it differs
-  from the stored times. The default `event_time` is unaffected.
+  from the stored times, for both H(`event_time`) and, on a left-truncated
+  fit, the H(entry) subtracted from it, so the two use the same window and
+  an expected count cannot go negative. The default `event_time` is
+  unaffected.
 * **`hzr_bootstrap()`'s warning on dropped replicates now says what the
   summary is conditional on.** Dropping the replicates whose likelihood is
   flat or still rising leaves a summary over only the resamples in which the

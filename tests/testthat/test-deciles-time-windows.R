@@ -205,3 +205,34 @@ test_that("multiphase time_windows: a caller's event_time uses its own window", 
   expect_equal(dc$expected, as.numeric(tapply(ref_ev, ref_group, sum)),
                tolerance = 1e-12)
 })
+
+test_that("multiphase time_windows: entry and exit share event_time's window", {
+  # With entry times, H(entry) kept the stored design while H(event_time)
+  # took the caller's window, so the subtraction mixed two windows'
+  # coefficients (Codex review of #670). The reference is analytic: one
+  # constant phase, so H(t) - H(entry) is the window's rate times the time
+  # at risk, both ends in window 1.
+  set.seed(670)
+  n <- 400
+  x <- matrix(stats::rnorm(n), ncol = 1, dimnames = list(NULL, "x"))
+  tt <- stats::runif(n, 0.75, 8)
+  st <- stats::rbinom(n, 1, stats::plogis(
+    -0.2 + ifelse(tt > 2, 2 * x[, 1], -0.5 * x[, 1])))
+  f <- suppressWarnings(hazard(
+    time = tt, status = st, time_lower = rep(0.5, n), x = x,
+    dist = "multiphase", time_windows = 2,
+    phases = list(constant = hzr_phase("constant")), fit = TRUE
+  ))
+  expect_true(isTRUE(f$fit$converged))
+  # Premise: many stored exits are in window 2.
+  expect_gt(sum(tt > 2), 100)
+  th <- f$fit$theta
+  want <- sum(exp(th[[1]] + th[[2]] * x[, 1]) * (1.5 - 0.5))
+  got <- sum(hzr_deciles(f, time = 6, event_time = rep(1.5, n),
+                         groups = 4)$expected)
+  expect_equal(got, want, tolerance = 1e-10)
+
+  # Every requested exit is after the entry, so no group can be negative.
+  dn <- hzr_deciles(f, time = 6, event_time = rep(2.01, n), groups = n)
+  expect_false(any(dn$expected < 0))
+})
