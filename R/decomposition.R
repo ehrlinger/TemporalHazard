@@ -437,13 +437,16 @@ hzr_decompos <- function(time, t_half, nu, m) {
     bt    <- nu * time / rho
     btnu  <- bt^(-1 / nu)
     G     <- exp(-btnu)
-    g     <- G * (bt^num1) / rho
+    # On the log scale: near t = 0, G underflows to 0 while bt^num1
+    # overflows, and the product G * bt^num1 was 0 * Inf = NaN where the
+    # limit is 0 (#672).
+    log_g <- -btnu + num1 * log(bt) - log(rho)
+    g     <- exp(log_g)
     if (cdf_only) return(list(G = G, g = g))
     # -log(G) = btnu = bt^(-1/nu), carried as its log (#578). Near t = 0,
     # or where bt underflows, that log overflows, and log(1 - G) is 0.
     L        <- -log(bt) / nu
     log_surv <- .hzr_log1mexp_of_log(L)
-    log_g    <- -btnu + num1 * log(bt) - log(rho)
     # num1 * log(bt) and log(1 - G) share -log(bt) / nu, huge for a tiny nu;
     # cancelled: log_h = -btnu - log(bt) - log(rho) - excess(L).
     log_h    <- -btnu - log(bt) - log(rho) - .hzr_log1mexp_of_log_excess(L)
