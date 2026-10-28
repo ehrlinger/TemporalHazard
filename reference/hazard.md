@@ -277,27 +277,32 @@ hazard(
 An object of class `hazard`, a named list with components: `call` (the
 matched call), `spec` (model specification: `dist`, `control`,
 `time_windows`, `phases`), `data` (input data: `time`, `status`, `x`,
-`weights`, etc.), `fit` (optimisation results: `theta`, `objective`,
-`converged`, `se`, `vcov`, `counts`, `message`, and `rel_gradient`,
-`rel_gradient_reason` and `polish_code`, the SAS/C acceptance test
-described under "Convergence"; all `NULL` when `fit = FALSE`; multiphase
-fits add `starts`, one row per optimisation start with its `status`
-(`"ok"`, `"nonconverged"`, `"infeasible"`, `"nonfinite"` or `"error"`),
-`objective` (`NA` unless the start reached a point where the likelihood
-is defined, and recorded as the optimizer returned it, before any
-Conservation of Events adjustment to the conserved phase's scale),
-`convergence` (the [`optim`](https://rdrr.io/r/stats/optim.html) code,
-`0` for success), whether it was the `best` and so the reported fit, and
-the `message` of any error. A start that stops at `maxit` has a finite
-`objective` and can win the selection, so `status` distinguishes it from
-one that converged. Every fit carries `weak`, which takes one of three
-values: a list, when the likelihood is near-flat along a parameter
-combination, giving the `params` spanning that direction, their squared
-loadings (`weights`), the strongest pairwise `correlation` among them,
-the Hessian `rcond` and `n_directions`, the number of near-flat
-directions found (when a single parameter carries the direction on its
-own, the list has one `params` entry, `single = TRUE`, its `estimate`,
-and `correlation = NA`, and `se_metric`, its standard error on the log
+`weights`, etc.), `fit` (optimisation results: `theta`, `objective`, the
+maximized log-likelihood, so larger is better, or PROC HAZARD's
+objective under `objective = "sas"`
+([`summary()`](https://rdrr.io/r/base/summary.html) reports which, as
+its `objective`); `converged`, `se`, `vcov`, `counts`, `message`, and
+`rel_gradient`, `rel_gradient_reason` and `polish_code`, the SAS/C
+acceptance test described under "Convergence"; all `NULL` when
+`fit = FALSE`; multiphase fits add `starts`, one row per optimisation
+start with its `status` (`"ok"`, `"nonconverged"`, `"infeasible"`,
+`"nonfinite"` or `"error"`), `objective` (on the same scale as the
+fit's, so the best start has the largest; `NA` unless the start reached
+a point where the likelihood is defined, and recorded as the optimizer
+returned it, before any Conservation of Events adjustment to the
+conserved phase's scale), `convergence` (the
+[`optim`](https://rdrr.io/r/stats/optim.html) code, `0` for success),
+whether it was the `best` and so the reported fit, and the `message` of
+any error. A start that stops at `maxit` has a finite `objective` and
+can win the selection, so `status` distinguishes it from one that
+converged. Every fit carries `weak`, which takes one of three values: a
+list, when the likelihood is near-flat along a parameter combination,
+giving the `params` spanning that direction, their squared loadings
+(`weights`), the strongest pairwise `correlation` among them, the
+Hessian `rcond` and `n_directions`, the number of near-flat directions
+found (when a single parameter carries the direction on its own, the
+list has one `params` entry, `single = TRUE`, its `estimate`, and
+`correlation = NA`, and `se_metric`, its standard error on the log
 scale; only a g3 shape, `gamma`, `alpha` or `eta`, is named this way);
 `NULL` when the fit was examined and is well identified; and `NA` when
 the check could not run because no usable Hessian was available, which
@@ -418,15 +423,16 @@ Control parameters:
   `fit$fit$phase_share`. Raise it to catch marginal phases, set it to 0
   to silence the check.
 
-- `reltol`: Relative convergence tolerance on the objective, the
-  negative log-likelihood (default 1e-5). BFGS stops when an iteration
-  reduces it by less than `reltol * (|objective| + reltol)`, so the
-  stopping gap grows with the size of the log-likelihood: about 0.0024
-  at a log-likelihood of -240. On a flat surface plain BFGS can stop
-  that far short of the optimum and still report convergence, so
-  `hazard()` then applies SAS/C HAZARD's relative-gradient test and,
-  when the stop fails it, continues with
-  [`stats::nlm()`](https://rdrr.io/r/stats/nlm.html); see the
+- `reltol`: Relative convergence tolerance on the objective the
+  optimizer minimizes, the negative log-likelihood (default 1e-5). The
+  stored `fit$fit$objective` has the opposite sign (see Value). BFGS
+  stops when an iteration reduces it by less than
+  `reltol * (|objective| + reltol)`, so the stopping gap grows with the
+  size of the log-likelihood: about 0.0024 at a log-likelihood of -240.
+  On a flat surface plain BFGS can stop that far short of the optimum
+  and still report convergence, so `hazard()` then applies SAS/C
+  HAZARD's relative-gradient test and, when the stop fails it, continues
+  with [`stats::nlm()`](https://rdrr.io/r/stats/nlm.html); see the
   "Convergence" section.
 
 - `conserve`: Apply Conservation of Events (**`dist = "multiphase"`
@@ -774,10 +780,10 @@ summary(fit2)
 #> Coefficients:
 #>          estimate   std_error     z_stat      p_value
 #> mu    0.121938323 0.062299561  1.9572902 5.031335e-02
-#> nu    1.143693956 0.084297244 13.5673944 6.250475e-42
+#> nu    1.143693955 0.084297244 13.5673944 6.250475e-42
 #> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01
 #> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02
-#> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01
+#> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01
 
 # \donttest{
 # -- Parametric survival with Kaplan-Meier overlay -----------------
@@ -837,7 +843,7 @@ summary(fit_mp)
 #>   phase 2:      late - cdf (late risk)
 #>   engine:       native-r-m2 
 #>   converged:    TRUE 
-#>   gradient:     relative 3.74e-10 (SAS/C requires <= 6.06e-06; met, nlm code 1)
+#>   gradient:     relative 3.75e-10 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -321.926 
 #>   Not done in this run: none
 #>   evaluations: fn=26, gr=7

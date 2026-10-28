@@ -322,15 +322,18 @@ conventions.</p></dd>
 <code>time_windows</code>, <code>phases</code>),
 <code>data</code> (input data: <code>time</code>, <code>status</code>, <code>x</code>,
 <code>weights</code>, etc.),
-<code>fit</code> (optimisation results: <code>theta</code>, <code>objective</code>,
-<code>converged</code>, <code>se</code>, <code>vcov</code>, <code>counts</code>, <code>message</code>,
+<code>fit</code> (optimisation results: <code>theta</code>, <code>objective</code>, the
+maximized log-likelihood, so larger is better, or PROC HAZARD's objective
+under <code>objective = "sas"</code> (<code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> reports which, as its
+<code>objective</code>); <code>converged</code>, <code>se</code>, <code>vcov</code>, <code>counts</code>, <code>message</code>,
 and <code>rel_gradient</code>, <code>rel_gradient_reason</code> and
 <code>polish_code</code>, the SAS/C acceptance
 test described under "Convergence";
 all <code>NULL</code> when <code>fit = FALSE</code>; multiphase fits add
 <code>starts</code>, one row per optimisation start with its <code>status</code>
 (<code>"ok"</code>, <code>"nonconverged"</code>, <code>"infeasible"</code>,
-<code>"nonfinite"</code> or <code>"error"</code>), <code>objective</code> (<code>NA</code>
+<code>"nonfinite"</code> or <code>"error"</code>), <code>objective</code> (on the same
+scale as the fit's, so the best start has the largest; <code>NA</code>
 unless the start reached a point where the likelihood is defined, and
 recorded as the optimizer returned it, before any Conservation of Events
 adjustment to the conserved phase's scale), <code>convergence</code> (the
@@ -462,8 +465,9 @@ bounds; the saturated warning says so where such points exist, rather
 than claiming the likelihood is unchanged (#228). The measured shares are
 kept on the fit as <code>fit$fit$phase_share</code>. Raise it to catch marginal
 phases, set it to 0 to silence the check.</p></li>
-<li><p><code>reltol</code>: Relative convergence tolerance on the objective, the negative
-log-likelihood (default 1e-5). BFGS stops when an iteration reduces it by
+<li><p><code>reltol</code>: Relative convergence tolerance on the objective the optimizer
+minimizes, the negative log-likelihood (default 1e-5). The stored
+<code>fit$fit$objective</code> has the opposite sign (see Value). BFGS stops when an iteration reduces it by
 less than <code>reltol * (|objective| + reltol)</code>, so the stopping gap grows
 with the size of the log-likelihood: about 0.0024 at a log-likelihood of
 -240. On a flat surface plain BFGS can stop that far short of the optimum
@@ -767,10 +771,10 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coefficients:</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>          estimate   std_error     z_stat      p_value</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> mu    0.121938323 0.062299561  1.9572902 5.031335e-02</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> nu    1.143693956 0.084297244 13.5673944 6.250475e-42</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> nu    1.143693955 0.084297244 13.5673944 6.250475e-42</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="co"># -- Parametric survival with Kaplan-Meier overlay -----------------</span></span></span>
@@ -830,7 +834,7 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-out co"><span class="r-pr">#&gt;</span>   phase 2:      late - cdf (late risk)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   engine:       native-r-m2 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   converged:    TRUE </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   gradient:     relative 3.74e-10 (SAS/C requires &lt;= 6.06e-06; met, nlm code 1)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   gradient:     relative 3.75e-10 (SAS/C requires &lt;= 6.06e-06; met, nlm code 1)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -321.926 </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   Not done in this run: none</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=26, gr=7</span>
