@@ -1,5 +1,186 @@
 # Changelog
 
+## TemporalHazard 1.2.17
+
+- **[`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md)
+  ranked a multiphase `time_windows` fit by the wrong window’s
+  coefficients
+  ([\#629](https://github.com/ehrlinger/TemporalHazard/issues/629)).**
+  For the horizon ranking it read each subject’s stored design, which
+  `time_windows` had expanded at that subject’s *exit* time, so a
+  subject who exited in one window was ranked with that window’s
+  coefficient even when the horizon falls in another. On two 400-subject
+  examples, 12 and 85 subjects landed in the wrong risk group, and
+  `mean_survival` was wrong in every group, with no warning. The horizon
+  design is now built at the horizon through
+  [`predict()`](https://rdrr.io/r/stats/predict.html), as
+  [`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
+  and the single-distribution path already do. A caller’s `event_time`
+  is handled the same way: the design is expanded at `event_time`
+  whenever it differs from the stored times, for H(`event_time`) and, on
+  a left-truncated fit, for the H(entry) subtracted from it, so the two
+  use the same window. Expected events at the default `event_time`, each
+  subject’s own exit time, are unchanged.
+
+- **On a multiphase `time_windows` fit saved by 1.2.9 or earlier,
+  `predict(newdata = )` and
+  [`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
+  could swap a phase formula’s own covariates for the global ones
+  ([\#658](https://github.com/ehrlinger/TemporalHazard/issues/658)).**
+  Such a fit has no record of which phases took the global design, so it
+  was read from the stored design’s column names. A phase formula can
+  use columns named like the window-expanded global ones (`x1_w1`,
+  `x1_w2`) that hold other covariates, and that phase was read as
+  inheriting. `predict(newdata = )` was then off by up to 77% relative
+  in one example, and
+  [`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)’s
+  curve moved, with no warning. A phase is now read as inheriting only
+  when its stored design equals the global design, expanded at the
+  stored times, in values as well as names. Fits saved with the record,
+  and every fit made by a current version, are unchanged.
+
+- **[`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md)
+  miscounted expected events when a caller’s `event_time` disagreed with
+  a row’s `time_lower`
+  ([\#656](https://github.com/ehrlinger/TemporalHazard/issues/656)).**
+  Both cases were silent. An `event_time` at or below a left-truncated
+  row’s entry dropped the entry correction, H(entry), so the row counted
+  H(event_time) expected events where none are defined; that is now an
+  error naming the first such row. And a row with `time_lower` equal to
+  its stored time, which the likelihood reads as having no entry, was
+  read as truncated once `event_time` was later than that time, losing
+  H(time). Truncation is now decided as the likelihood decides it:
+  status 0 or 1 with `0 < time_lower < time` at the stored time. Calls
+  that leave `event_time` at its default, and
+  [`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md),
+  are unchanged.
+
+- **[`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+  pooled replicates with no finite maximum
+  ([\#654](https://github.com/ehrlinger/TemporalHazard/issues/654)).** A
+  resample with separation, such as no events at one level of a factor,
+  has a likelihood that keeps rising as a coefficient, the intercept or
+  a phase’s `log_mu` runs to infinity. The refit stops where the slope
+  falls below the optimizer’s tolerance and reports convergence with a
+  small gradient, so it passed every check and its estimate was pooled.
+  In one example 12 of 40 replicates ran out to between -7 and -15
+  against -1.4 on the full data, and the coefficient’s bootstrap sd was
+  5.0 where the other 28 give 0.51, with no warning. Each replicate is
+  now tested by stepping further out from its estimate: along each
+  coefficient, and along the direction its standard errors, or failing
+  those its Hessian, say is flattest, which is the one a separation
+  along a combination of parameters takes. When the log-likelihood does
+  not fall, the replicate fails with the reason
+  `"likelihood flat or still rising (no unique finite maximum)"`, it
+  leaves the summary, and a warning gives the count. A replicate whose
+  design is rank-deficient, such as a factor level absent from the
+  resample or a column that is an exact combination of others, is
+  dropped the same way: its estimates are not determined by the data.
+  The fit being bootstrapped is tested the same way first, and warned
+  about if it fails, as a multiphase phase with covariates but few
+  events of its own can. The step is sized on the whole linear
+  predictor, intercept included, and the tolerance scales with the mean
+  weight, so a covariate far from zero or very small weights do not make
+  a genuine maximum read as flat. The warning also says what the summary
+  is now conditional on: only the resamples in which the model is
+  identified, which understates the uncertainty and moves the other
+  parameters’ intervals too. On `avc` with a constant phase carrying
+  `mal`, 17 of 30 replicates were dropped and the `constant.mal`
+  interval narrowed from about \[-19, 12\] to \[-0.1, 1.8\]. When 20% or
+  more of the replicates are dropped, the warning says to treat the
+  summary as unreliable.
+
+- **A Conservation of Events fit could report wrong standard errors when
+  its full-information variance could not be computed
+  ([\#652](https://github.com/ehrlinger/TemporalHazard/issues/652)).**
+  The variance from the search holds the conserved phase’s `log_mu`
+  fixed, so it treats that parameter as known, and it was taken at the
+  starting value of `log_mu` rather than the solved one. When the
+  full-information Hessian could not be computed or inverted, the fit
+  fell back to that variance and reported a standard error for every
+  other parameter, while the warning named only the conserved `log_mu`.
+  On `avc` with two phases, one standard error was 0.17 of its
+  full-information value and another 1.3 times it. Such a fit now
+  reports no standard errors, warns that none are reported, and records
+  why in `degraded_causes`;
+  [`vcov()`](https://rdrr.io/r/stats/vcov.html) returns `NA`. The
+  estimates are unchanged. The conserved `log_mu` is also now counted as
+  estimated, as it is when the recompute succeeds, so the fit’s AIC no
+  longer comes out 2 lower than the same fit’s with a successful
+  recompute.
+
+- **Behaviour change: `hzr_bootstrap(seed = )` now sets the session’s
+  random number stream, as
+  [`set.seed()`](https://rdrr.io/r/base/Random.html) does, and no longer
+  restores it on exit
+  ([\#653](https://github.com/ehrlinger/TemporalHazard/issues/653)).**
+  Restoring the caller’s stream
+  ([\#611](https://github.com/ehrlinger/TemporalHazard/issues/611))
+  meant writing `.Random.seed` into the global environment, which CRAN
+  policy does not allow. The replicates for a given seed are unchanged.
+  What changes is the stream after the call: it continues from where the
+  bootstrap’s draws left it, so a script that seeded once at the top and
+  draws after a seeded bootstrap now gets different numbers from those
+  draws. Save `.Random.seed` before the call and restore it after, or
+  use
+  [`withr::with_preserve_seed()`](https://withr.r-lib.org/reference/with_seed.html),
+  to keep your own stream. `withr` moves from Imports to Suggests.
+
+- **A `.` inside a function call in a formula was dropped without a
+  word.** [`terms()`](https://rdrr.io/r/stats/terms.html) writes out `.`
+  only where it is a term of its own, so
+  `Surv(time, status) ~ log(abs(.))` reached the design as `~ 1` and the
+  model was fitted with no covariates. The same held for a phase’s
+  `hzr_phase(formula = )`. Beside a bare `.`, as in `~ . + log(.)`,
+  [`terms()`](https://rdrr.io/r/stats/terms.html) substituted the sum of
+  the columns, giving one covariate `log(x1 + x2)`.
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  now stops on `.` anywhere but as a term of the formula operators,
+  naming the term, as [`lm()`](https://rdrr.io/r/stats/lm.html) stops on
+  these formulas. `~ .`, `~ . - age`, `~ (.)^2` and `~ .:age` are
+  unchanged.
+
+- **A formula helper that reads an outside vector by position is now
+  refused when rows at time 0 are dropped
+  ([\#590](https://github.com/ehrlinger/TemporalHazard/issues/590)).**
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  drops a row at time 0 before fitting, and builds the design on the
+  rows that remain. A helper such as `function(a) a + g[seq_along(a)]`,
+  with `g` aligned to every row given, then paired the remaining rows
+  with the first values of `g`, with no warning. In one example all 48
+  of 48 rows were paired with the wrong value; in another, an
+  alternating treatment arm read this way fitted its coefficient with
+  the sign reversed. The existing check reads only the variables the
+  formula names, so it could not see `g` inside the function.
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  now also evaluates the formula’s variables on every row in order and
+  again with the remaining rows first, as the fit sees them, and refuses
+  a variable that then gives a remaining row a value other than its own,
+  naming it. Terms computed from the rows as a set, such as
+  [`scale()`](https://rdrr.io/r/base/scale.html),
+  [`poly()`](https://rdrr.io/r/stats/poly.html), `ns()` and factors,
+  pass and still use the remaining rows. A term that depends on the
+  order of the rows, such as `cumsum(age)`, or is random, such as
+  `jitter(age)`, is now refused when rows other than the last are
+  dropped, where it was fitted before. A helper that depends on how many
+  rows it is given, such as `tail(g, length(a))` or
+  `a * mean(g[seq_along(a)])`, is not caught. Put such a vector in
+  `data`, where it is dropped with its rows.
+
+- **`hzr_bootstrap(id =)` resamples patients, not rows
+  ([\#667](https://github.com/ehrlinger/TemporalHazard/issues/667)).**
+  Data with several rows per patient, such as time-varying covariates in
+  counting-process form (`Surv(start, stop, event)` or `time_lower =`),
+  were resampled row by row, so a replicate could hold some of a
+  patient’s segments and not others, or one of them twice. `id` names
+  the patient, as a column of `data` or a vector with one value per row;
+  each replicate then draws patients with replacement and keeps every
+  row of each one drawn, and `fraction` counts patients. This is SAS
+  `%HAZBOOT` with `_TVC=1, _IDVAR=`. The default, `id = NULL`, resamples
+  rows as before, and the same `seed` gives the same replicates as
+  before. A fit with entry times and no `id` now draws a warning that
+  its rows may not be patients.
+
 ## TemporalHazard 1.2.16
 
 - The SAS-parity data resolvers no longer fall back to a hard-coded
