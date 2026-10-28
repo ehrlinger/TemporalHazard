@@ -433,23 +433,26 @@ hzr_decompos <- function(time, t_half, nu, m) {
 
   } else if (m == 0 && nu > 0) {
     # Case 1L: Weibull-like (m -> 0 limit)
-    rho   <- nu * t_half * (log(2)^nu)
-    bt    <- nu * time / rho
-    btnu  <- bt^(-1 / nu)
-    G     <- exp(-btnu)
+    # bt = nu * time / rho, carried as its log from its parts: near t = 0,
+    # or with a large t_half, bt itself underflows to 0 and log(bt) would be
+    # -Inf (#672).
+    log_rho <- log(nu) + log(t_half) + nu * log(log(2))
+    log_bt  <- log(nu) + log(time) - log_rho
+    btnu    <- exp(-log_bt / nu)
+    G       <- exp(-btnu)
     # On the log scale: near t = 0, G underflows to 0 while bt^num1
     # overflows, and the product G * bt^num1 was 0 * Inf = NaN where the
     # limit is 0 (#672).
-    log_g <- -btnu + num1 * log(bt) - log(rho)
+    log_g <- -btnu + num1 * log_bt - log_rho
     g     <- exp(log_g)
     if (cdf_only) return(list(G = G, g = g))
     # -log(G) = btnu = bt^(-1/nu), carried as its log (#578). Near t = 0,
-    # or where bt underflows, that log overflows, and log(1 - G) is 0.
-    L        <- -log(bt) / nu
+    # or with a large t_half, that log is large, and log(1 - G) is 0.
+    L        <- -log_bt / nu
     log_surv <- .hzr_log1mexp_of_log(L)
     # num1 * log(bt) and log(1 - G) share -log(bt) / nu, huge for a tiny nu;
     # cancelled: log_h = -btnu - log(bt) - log(rho) - excess(L).
-    log_h    <- -btnu - log(bt) - log(rho) - .hzr_log1mexp_of_log_excess(L)
+    log_h    <- -btnu - log_bt - log_rho - .hzr_log1mexp_of_log_excess(L)
 
   } else if (m < 0 && nu > 0) {
     # Case 2: heavy-tailed.  `1 - 2^m` loses every significant digit once

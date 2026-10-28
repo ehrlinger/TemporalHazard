@@ -15,6 +15,20 @@ test_that("Case 1L g and the phase hazard at t = 0 equal their limit", {
     h0 <- hzr_phase_hazard(0, t_half = 1, nu = nu, m = 0)
     expect_identical(h0, 0, info = paste("nu =", nu))
   }
+  # A large finite t_half: there even the clamped time 0 underflows bt
+  # itself to 0, so log(bt) was -Inf and h as well as g was NaN.
+  for (th in c(1e20, exp(709.75))) {
+    d <- hzr_decompos(c(0, 1e-300, 1), t_half = th, nu = 1, m = 0)
+    expect_identical(d$g, c(0, 0, 0), info = paste("t_half", th))
+    expect_identical(d$h, c(0, 0, 0), info = paste("t_half", th))
+    expect_identical(d$log_surv, c(0, 0, 0), info = paste("t_half", th))
+    expect_identical(hzr_phase_hazard(0, t_half = th, nu = 1, m = 0), 0)
+  }
+  # And a large finite t_half with a moderate time still gives the Weibull
+  # value: h = nu * t^(nu - 1) / rho^nu ... at nu = 1, h = 1 / rho.
+  th <- 1e20
+  expect_equal(hzr_decompos(5, t_half = th, nu = 1, m = 0)$h,
+               1 / (th * log(2)), tolerance = 1e-12)
   # Above 0 too: with a small nu, G underflows while bt^num1 overflows, and
   # the product was NaN at times the likelihood reads.
   g_small <- hzr_decompos(c(1e-4, 1e-3, 5e-3), t_half = 10, nu = 0.01, m = 0)$g
