@@ -6,8 +6,9 @@
   hazard with it: `predict(type = "hazard")` at time 0 returned `NaN`, with
   no message, even for the constant phase's share. Scoring start/stop data
   reaches this, because every first segment starts at 0. The same `0 * Inf`
-  struck at times above 0 when `nu` is small or `t_half` is near the largest
-  double, and there the likelihood did read it. Such a point was treated as
+  struck at times above 0 when `nu` is small or `t_half` is large (1e20 is
+  enough near t = 0, where `h` was `NaN` as well), and there the likelihood
+  did read it. Such a point was treated as
   one where the likelihood is not defined, so a fit could be steered away
   from it or fail outright: one with an early phase at `nu = 0.01` and three
   events before t = 0.002 stopped with "no usable fit", and now converges.
