@@ -186,12 +186,32 @@ test_that("the optimizer's gradient stays finite at an infeasible scale (#262)",
       weights = captured$weights
     )
   }
-  # 800 and -800 overflow and underflow exp(); 709.75 is just short of the
-  # overflow, where a perturbation of another parameter lands on a finite
-  # likelihood and the old quotient was +-Inf.
-  for (ls in c(800, -800, 709.75)) {
+  # 800 and -800 overflow and underflow exp(); just past
+  # log(.Machine$double.xmax) t_half itself is Inf.
+  edge <- log(.Machine$double.xmax)
+  for (ls in c(800, -800, edge + 1e-9)) {
     expect_identical(score(ls), rep(0, 5L), info = paste("log_t_half", ls))
   }
+  # 709.75, just short of the overflow, read as infeasible until #672: the
+  # early phase's density there was 0 * Inf = NaN, so the likelihood was
+  # -Inf. It is a feasible point, and its score is the likelihood's slope:
+  # the early phase has no reach there, and the constant phase's log_mu
+  # carries the whole slope.
+  ll <- function(th) {
+    captured$logl_fn(
+      theta = th, time = captured$time, status = captured$status,
+      time_lower = captured$time_lower, time_upper = captured$time_upper,
+      x = captured$x, weights = captured$weights
+    )
+  }
+  th <- c(log(0.1), 709.75, 1, 0, log(0.05))
+  expect_true(is.finite(ll(th)))
+  h <- 1e-5
+  fd <- (ll(th + c(0, 0, 0, 0, h)) - ll(th - c(0, 0, 0, 0, h))) / (2 * h)
+  near <- score(709.75)
+  expect_identical(near[1:4], rep(0, 4L))
+  expect_equal(near[5], fd, tolerance = 1e-6)
+  expect_gt(abs(near[5]), 1)
   # Feasible control: the fallback is not reached, the score is not zero.
   feasible <- score(log(3))
   expect_true(all(is.finite(feasible)))
