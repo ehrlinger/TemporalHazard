@@ -839,6 +839,23 @@ test_that("a DATA step that runs other code, after the grid, refuses it", {
   }
 })
 
+test_that("an open-code DATA &DS after the grid refuses it (#655)", {
+  # SAS resolves &DS to PRED and predicts at AGE = 70. Before #628 the name
+  # failed the dataset regex, so no write was recorded and the AGE = 50 grid
+  # was emitted with no row.
+  rebuild <- "AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;"
+  job <- translate_494(c(fit_macro_grid, "%LET DS=PRED;",
+                         paste("DATA &DS;", rebuild), hazpred_macro_grid))
+  expect_match(refused_494(job), "`DATA &DS` names its dataset through a macro variable",
+               fixed = TRUE)
+  expect_false(any(grepl("^grid", names(job$calls))))
+  # Known positive: the same step naming PRED is read, and is the grid.
+  job <- translate_494(c(fit_macro_grid, paste("DATA PRED;", rebuild),
+                         hazpred_macro_grid))
+  expect_equal(grid_494(job)$AGE, c(70, 70, 70))
+  expect_equal(nrow(grid_rows_allow(job)), 0L)
+})
+
 test_that("a statement outside every step refuses the grid, wherever it stands", {
   job <- translate_494(c(
     "AGE=70;",
