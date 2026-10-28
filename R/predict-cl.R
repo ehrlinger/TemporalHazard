@@ -96,7 +96,9 @@ NULL
     log_mu_t <- log_mu + log(time)
     H <- exp(nu * log_mu_t + eta)
     J[, 1L] <- nu * H
-    J[, 2L] <- log_mu_t * H
+    # At time 0, log_mu_t is -Inf and H is 0; the product's limit is 0, but
+    # -Inf * 0 is NaN (#619 item 22).
+    J[, 2L] <- ifelse(H == 0, 0, log_mu_t * H)
     if (length(beta) > 0L && !is.null(x)) {
       J[, (n_shape + 1L):p] <- x * H
     }

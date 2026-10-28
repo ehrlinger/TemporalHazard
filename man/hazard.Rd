@@ -223,15 +223,18 @@ An object of class \code{hazard}, a named list with components:
 \code{time_windows}, \code{phases}),
 \code{data} (input data: \code{time}, \code{status}, \code{x},
 \code{weights}, etc.),
-\code{fit} (optimisation results: \code{theta}, \code{objective},
-\code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message},
+\code{fit} (optimisation results: \code{theta}, \code{objective}, the
+maximized log-likelihood, so larger is better, or PROC HAZARD's objective
+under \code{objective = "sas"} (\code{summary()} reports which, as its
+\code{objective}); \code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message},
 and \code{rel_gradient}, \code{rel_gradient_reason} and
 \code{polish_code}, the SAS/C acceptance
 test described under "Convergence";
 all \code{NULL} when \code{fit = FALSE}; multiphase fits add
 \code{starts}, one row per optimisation start with its \code{status}
 (\code{"ok"}, \code{"nonconverged"}, \code{"infeasible"},
-\code{"nonfinite"} or \code{"error"}), \code{objective} (\code{NA}
+\code{"nonfinite"} or \code{"error"}), \code{objective} (on the same
+scale as the fit's, so the best start has the largest; \code{NA}
 unless the start reached a point where the likelihood is defined, and
 recorded as the optimizer returned it, before any Conservation of Events
 adjustment to the conserved phase's scale), \code{convergence} (the
@@ -371,8 +374,9 @@ bounds; the saturated warning says so where such points exist, rather
 than claiming the likelihood is unchanged (#228). The measured shares are
 kept on the fit as \code{fit$fit$phase_share}. Raise it to catch marginal
 phases, set it to 0 to silence the check.
-\item \code{reltol}: Relative convergence tolerance on the objective, the negative
-log-likelihood (default 1e-5). BFGS stops when an iteration reduces it by
+\item \code{reltol}: Relative convergence tolerance on the objective the optimizer
+minimizes, the negative log-likelihood (default 1e-5). The stored
+\code{fit$fit$objective} has the opposite sign (see Value). BFGS stops when an iteration reduces it by
 less than \verb{reltol * (|objective| + reltol)}, so the stopping gap grows
 with the size of the log-likelihood: about 0.0024 at a log-likelihood of
 -240. On a flat surface plain BFGS can stop that far short of the optimum
