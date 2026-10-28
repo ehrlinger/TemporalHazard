@@ -15,6 +15,10 @@ test_that("Case 1L g and the phase hazard at t = 0 equal their limit", {
     h0 <- hzr_phase_hazard(0, t_half = 1, nu = nu, m = 0)
     expect_identical(h0, 0, info = paste("nu =", nu))
   }
+  # Above 0 too: with a small nu, G underflows while bt^num1 overflows, and
+  # the product was NaN at times the likelihood reads.
+  g_small <- hzr_decompos(c(1e-4, 1e-3, 5e-3), t_half = 10, nu = 0.01, m = 0)$g
+  expect_identical(g_small, c(0, 0, 0))
   # Away from 0 the values are unchanged: the log form is the same quantity.
   tt <- c(1e-6, 0.1, 1, 10)
   d <- hzr_decompos(tt, t_half = 2, nu = 1.5, m = 0)

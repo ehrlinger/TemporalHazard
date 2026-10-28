@@ -189,7 +189,20 @@ test_that("the optimizer's gradient stays finite at an infeasible scale (#262)",
   # 800 and -800 overflow and underflow exp(); just past
   # log(.Machine$double.xmax) t_half itself is Inf.
   edge <- log(.Machine$double.xmax)
-  for (ls in c(800, -800, edge + 1e-9)) {
+  # Just below where exp() underflows to 0, t_half is 0 (infeasible) while
+  # the fallback's forward step in log_t_half, about 1.1e-5 here, lands on
+  # the smallest subnormal and a finite likelihood: the quotient is +Inf,
+  # the case the zeroing must also catch.
+  lo <- -746
+  hi <- -744
+  for (k in 1:80) {
+    mid <- (lo + hi) / 2
+    if (exp(mid) == 0) lo <- mid else hi <- mid
+  }
+  under <- hi - 5e-6
+  expect_identical(exp(under), 0)
+  expect_gt(exp(under + sqrt(.Machine$double.eps) * abs(under)), 0)
+  for (ls in c(800, -800, edge + 1e-9, under)) {
     expect_identical(score(ls), rep(0, 5L), info = paste("log_t_half", ls))
   }
   # 709.75, just short of the overflow, read as infeasible until #672: the
