@@ -433,24 +433,30 @@ hzr_decompos <- function(time, t_half, nu, m) {
 
   } else if (m == 0 && nu > 0) {
     # Case 1L: Weibull-like (m -> 0 limit)
-    # bt = nu * time / rho, carried as its log from its parts: near t = 0,
-    # or with a large t_half, bt itself underflows to 0 and log(bt) would be
-    # -Inf (#672).
+    # bt = nu * time / rho = (time / t_half) * log(2)^(-nu), carried as its
+    # log from its parts: near t = 0, or with a large t_half, bt itself
+    # underflows to 0 and log(bt) would be -Inf (#672). nu is cancelled
+    # before the logs are taken, not after: log(nu) on both sides lost
+    # G(t_half) = 1/2 for a tiny nu.
     log_rho <- log(nu) + log(t_half) + nu * log(log(2))
-    log_bt  <- log(nu) + log(time) - log_rho
-    btnu    <- exp(-log_bt / nu)
+    log_bt  <- log(time) - log(t_half) - nu * log(log(2))
+    # a = -log(bt) / nu = log(btnu), formed as one term: for a tiny nu, -1/nu
+    # overflows while log(bt) rounds to 0, and their product was -Inf * 0.
+    # At t = t_half it is log(log(2)) exactly.
+    a       <- (log(t_half) - log(time)) / nu + log(log(2))
+    btnu    <- exp(a)
     G       <- exp(-btnu)
     # On the log scale: near t = 0, G underflows to 0 while bt^num1
     # overflows, and the product G * bt^num1 was 0 * Inf = NaN where the
-    # limit is 0 (#672).
-    log_g <- -btnu + num1 * log_bt - log_rho
+    # limit is 0 (#672). num1 * log(bt) = a - log(bt).
+    log_g <- -btnu + a - log_bt - log_rho
     g     <- exp(log_g)
     if (cdf_only) return(list(G = G, g = g))
-    # -log(G) = btnu = bt^(-1/nu), carried as its log (#578). Near t = 0,
-    # or with a large t_half, that log is large, and log(1 - G) is 0.
-    L        <- -log_bt / nu
+    # -log(G) = btnu = bt^(-1/nu), carried as its log, a (#578). Near t = 0,
+    # or with a large t_half, a is large, and log(1 - G) is 0.
+    L        <- a
     log_surv <- .hzr_log1mexp_of_log(L)
-    # num1 * log(bt) and log(1 - G) share -log(bt) / nu, huge for a tiny nu;
+    # num1 * log(bt) and log(1 - G) share a, huge for a tiny nu;
     # cancelled: log_h = -btnu - log(bt) - log(rho) - excess(L).
     log_h    <- -btnu - log_bt - log_rho - .hzr_log1mexp_of_log_excess(L)
 

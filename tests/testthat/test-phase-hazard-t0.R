@@ -24,11 +24,30 @@ test_that("Case 1L g and the phase hazard at t = 0 equal their limit", {
     expect_identical(d$log_surv, c(0, 0, 0), info = paste("t_half", th))
     expect_identical(hzr_phase_hazard(0, t_half = th, nu = 1, m = 0), 0)
   }
-  # And a large finite t_half with a moderate time still gives the Weibull
-  # value: h = nu * t^(nu - 1) / rho^nu ... at nu = 1, h = 1 / rho.
-  th <- 1e20
-  expect_equal(hzr_decompos(5, t_half = th, nu = 1, m = 0)$h,
-               1 / (th * log(2)), tolerance = 1e-12)
+  # At t = t_half, Case 1L has G = 1/2, g = log(2) / (2 nu t_half) and
+  # h = log(2) / (nu t_half), at any scale and any nu > 0, including one so
+  # small that -1/nu overflows. Compared as ratios: an absolute tolerance
+  # cannot tell these values from 0.
+  # The one combination whose true h exceeds the largest double is left out,
+  # by name, so the loop cannot quietly shrink.
+  n_checked <- 0L
+  for (th in c(1, 10, 1e20)) {
+    for (nu in c(1e-309, 1e-12, 0.01, 1, 5)) {
+      if (!is.finite(log(2) / (nu * th))) {
+        expect_identical(c(th, nu), c(1, 1e-309))
+        next
+      }
+      n_checked <- n_checked + 1L
+      d <- hzr_decompos(th, t_half = th, nu = nu, m = 0)
+      lab <- paste("t_half", th, "nu", nu)
+      expect_equal(d$G, 0.5, tolerance = 1e-12, info = lab)
+      expect_equal(d$g / (log(2) / (2 * nu * th)), 1, tolerance = 1e-12,
+                   info = lab)
+      expect_equal(d$h / (log(2) / (nu * th)), 1, tolerance = 1e-12,
+                   info = lab)
+    }
+  }
+  expect_identical(n_checked, 14L)
   # Above 0 too: with a small nu, G underflows while bt^num1 overflows, and
   # the product was NaN at times the likelihood reads.
   g_small <- hzr_decompos(c(1e-4, 1e-3, 5e-3), t_half = 10, nu = 0.01, m = 0)$g
