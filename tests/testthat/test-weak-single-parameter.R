@@ -84,17 +84,155 @@ test_that("a pair the correlation reading finds is still reported as the pair", 
   expect_setequal(w$params, c("early.m", "early.nu"))
 })
 
-test_that("a coefficient or log-scale parameter is never named on its own", {
+test_that("a coefficient is never named on its own; a log-scale parameter only when listed", {
   # A covariate in units of 1e-4 opens the rcond gate by scaling alone, and
   # its well-identified coefficient dominated the flattest direction.
+  logs <- c("late.log_mu", "late.log_tau")
   v <- diag(c(0.01, 0.02, (0.1 * th[3])^2, 0.001, 565^2))
   w <- .hzr_weak_direction(v, gated, c(nm, "late.x2"),
                            theta = c(th, 2641),
-                           shape_names = shapes)
+                           shape_names = shapes, log_names = logs)
   expect_null(w)
+  # A log_mu with a standard error of 100 is named once hazard() lists it as
+  # log-scale (#673), and not by a caller that does not.
   v2 <- diag(c(1e4, 0.02, (0.1 * th[3])^2, 0.001))
   expect_null(.hzr_weak_direction(v2, gated, nm, theta = th,
                            shape_names = shapes))
+  w2 <- .hzr_weak_direction(v2, gated, nm, theta = th, shape_names = shapes,
+                            log_names = logs)
+  expect_identical(w2$params, "late.log_mu")
+  expect_true(isTRUE(w2$single))
+  # The same dominant direction with a log-scale standard error of 5, under
+  # the bar of 10: a determined log_mu, so nothing is named.
+  v3 <- diag(c(25, 1e-6, (1e-3 * th[3])^2, 1e-6))
+  expect_null(.hzr_weak_direction(v3, gated, nm, theta = th,
+                                  shape_names = shapes, log_names = logs))
+  # The bar is on the parameter's own standard error, not the direction's:
+  # here log_mu's is 9.97 and the flattest direction's 10.02 (#677 review).
+  v4 <- diag(c(99.5, 1, (1e-3 * th[3])^2, 1e-10))
+  v4[1, 2] <- v4[2, 1] <- 9
+  expect_gt(sqrt(eigen(v4, symmetric = TRUE)$values[1]), 10)
+  expect_null(.hzr_weak_direction(v4, gated, nm, theta = th,
+                                  shape_names = shapes, log_names = logs))
+})
+
+test_that("a log-scale parameter is named whatever a coefficient's units (#677, Codex)", {
+  # log_mu has standard error 100. A coefficient with one of 1000 took the
+  # flattest raw direction and hid it; with one of 1 it did not.
+  cn <- c("constant.log_mu", "constant.x", "other.x")
+  for (se_x in c(1, 1000)) {
+    v <- diag(c(100^2, se_x^2, 1e-5))
+    w <- .hzr_weak_direction(v, gated, cn, theta = c(-28, 0, 0),
+                             log_names = "constant.log_mu")
+    expect_identical(w$params, "constant.log_mu", info = se_x)
+    expect_equal(w$se_metric, 100, info = se_x)
+    expect_true(is.na(w$weights), info = se_x)
+    expect_match(.hzr_weak_direction_message(w), "(standard error 100,",
+                 fixed = TRUE, info = se_x)
+  }
+  # se_metric is the parameter's own standard error, not the direction's.
+  v <- diag(c(100.0904, 2.109603, 1e-7))
+  v[1, 2] <- v[2, 1] <- 14.175366
+  w <- .hzr_weak_direction(v, gated, cn, theta = c(-28, 0, 0),
+                           log_names = "constant.log_mu")
+  expect_gt(sqrt(eigen(v, symmetric = TRUE)$values[1]) / sqrt(v[1, 1]), 1.005)
+  expect_equal(w$se_metric, sqrt(v[1, 1]), tolerance = 1e-12)
+})
+
+# A constant-phase fit whose covariate `x` is z in units of `unit`, so a
+# large unit opens the rcond gate by scaling alone (#673 review).
+unit_fit <- function(unit = 1e4, covariate = "x") {
+  withr::local_seed(2)
+  n <- 400
+  z <- stats::rnorm(n)
+  te <- stats::rexp(n, 0.3 * exp(0.4 * z))
+  ce <- stats::runif(n, 0, 8)
+  d <- data.frame(time = pmin(te, ce), status = as.integer(te <= ce))
+  d[[covariate]] <- unit * z
+  suppressWarnings(hazard(
+    stats::as.formula(paste("survival::Surv(time, status) ~", covariate)),
+    data = d, dist = "multiphase",
+    phases = list(constant = hzr_phase("constant")),
+    fit = TRUE, control = list(n_starts = 1)))
+}
+
+test_that("a determined log_mu is not named when covariate units open the gate (#673)", {
+  fit <- unit_fit(1e4)
+  # The premise: the gate is open, and log_mu is well determined.
+  expect_lt(fit$fit$rcond, .hzr_rcond_tol)
+  expect_lt(sqrt(diag(fit$fit$vcov))[[1]], 1)
+  expect_null(fit$fit$weak)
+})
+
+test_that("a covariate named like a log-scale parameter is never named (#673 review)", {
+  # A column called `log_mu` makes a second `constant.log_mu`, the
+  # coefficient (z about 7). The name cannot say which parameter it is.
+  fit <- unit_fit(1e-4, covariate = "log_mu")
+  expect_identical(names(fit$fit$theta), rep("constant.log_mu", 2L))
+  expect_lt(fit$fit$rcond, .hzr_rcond_tol)
+  expect_null(fit$fit$weak)
+})
+
+# Nobody dies late, so a constant phase beside an early one has nothing to fit.
+boundary_data <- function(x_unit = NULL) {
+  withr::local_seed(1)
+  n <- 300
+  te <- stats::rexp(n, 2)
+  dies <- stats::runif(n) < 0.25
+  d <- data.frame(time = ifelse(dies, pmin(te, 1.5), stats::runif(n, 2, 10)),
+                  status = as.integer(dies))
+  if (!is.null(x_unit)) d$x <- x_unit * stats::rnorm(n)
+  d
+}
+boundary_fit <- function(d, rhs) {
+  hazard(stats::update(survival::Surv(time, status) ~ 1, rhs), data = d,
+         dist = "multiphase",
+         phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 2, m = 1,
+                                         fixed = c("nu", "m")),
+                       constant = hzr_phase("constant")),
+         fit = TRUE, control = list(n_starts = 1))
+}
+
+test_that("a conserved phase switched off at the boundary is not identified (#673)", {
+  # Nobody dies late, so the constant phase has nothing to fit: its log_mu
+  # runs to about -28 with a standard error near 3.5e4, and the Hessian's
+  # rcond is about 1e-11. Before #673 the single-parameter reading looked
+  # only at g3 shapes and fit$fit$weak was NULL, "checked, identified".
+  d <- boundary_data()
+  fit <- NULL
+  w <- testthat::capture_warnings(fit <- boundary_fit(d, ~ 1))
+  # The premise: the gate is open and log_mu is undetermined.
+  expect_lt(fit$fit$rcond, .hzr_rcond_tol)
+  expect_lt(fit$fit$theta[["constant.log_mu"]], -20)
+  j <- match("constant.log_mu", names(fit$fit$theta))
+  expect_gt(sqrt(diag(fit$fit$vcov))[[j]], 1e3)
+  expect_identical(fit$fit$weak$params, "constant.log_mu")
+  expect_true(isTRUE(fit$fit$weak$single))
+  expect_true(any(grepl("'constant.log_mu'", w, fixed = TRUE)))
+})
+
+test_that("a covariate's units do not hide the boundary phase (#677, Codex)", {
+  # With x in units of 0.01 its coefficient's standard error is about 5e6,
+  # larger than log_mu's 5.7e4, and it took the flattest raw direction:
+  # weak was NULL.
+  fit <- suppressWarnings(boundary_fit(boundary_data(0.01), ~ x))
+  nms <- names(fit$fit$theta)
+  se <- sqrt(diag(fit$fit$vcov))
+  j <- match("constant.log_mu", nms)
+  expect_lt(fit$fit$rcond, .hzr_rcond_tol)
+  expect_gt(se[[j]], 1e3)
+  expect_gt(max(se[-j], na.rm = TRUE), se[[j]])
+  expect_identical(fit$fit$weak$params, "constant.log_mu")
+  # The same covariance with x in units of 1 (the coefficients' rows and
+  # columns divided by 100) names the same parameter.
+  v <- fit$fit$vcov
+  bx <- grep("\\.x$", nms)
+  v[bx, ] <- v[bx, ] / 100
+  v[, bx] <- v[, bx] / 100
+  w <- .hzr_weak_direction(v, fit$fit$rcond, nms, theta = fit$fit$theta,
+                           log_names = c("early.log_mu", "early.log_t_half",
+                                         "constant.log_mu"))
+  expect_identical(w$params, "constant.log_mu")
 })
 
 test_that("nu is not a named shape: it is signed and 0 is legitimate", {

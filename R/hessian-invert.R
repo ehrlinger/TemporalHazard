@@ -151,6 +151,10 @@ NULL
 # two thresholds that gate the weak-identification note stay together.
 .hzr_ridge_cor_tol <- 0.99
 
+# Smallest standard error, in log units, at which the single-parameter reading
+# names a log_mu, log_t_half or log_tau on its own (#673): a factor of e^10.
+.hzr_weak_log_se_min <- 10
+
 #' Identify a ridge (weak-identification) direction in a fitted model
 #'
 #' An ill-conditioned Hessian makes standard errors unreliable.  When the
@@ -195,7 +199,10 @@ NULL
 #'   only by the single-parameter reading, which is skipped without it.
 #' @param shape_names Names of the g3 shape parameters (\code{gamma},
 #'   \code{alpha}, \code{eta}) the single-parameter reading may name; it is
-#'   skipped when empty.
+#'   skipped when both this and \code{log_names} are empty.
+#' @param log_names Names of the phases' log-scale scale parameters
+#'   (\code{log_mu}, \code{log_t_half}, \code{log_tau}) the single-parameter
+#'   reading may also name (#673).
 #' @param fixed_mask Logical, \code{TRUE} for a parameter that was not
 #'   estimated, whose \code{NA} row is by design. A row that is \code{NA}
 #'   (or not finite and positive) without being fixed is a variance the
@@ -229,7 +236,8 @@ NULL
                                      tol = .hzr_rcond_tol,
                                      cor_tol = .hzr_ridge_cor_tol,
                                      share = 0.9, theta = NULL,
-                                     shape_names = NULL, fixed_mask = NULL) {
+                                     shape_names = NULL, fixed_mask = NULL,
+                                     log_names = NULL) {
   na_because <- function(reason) list(weak = NA, reason = reason)
   looked <- function(weak) list(weak = weak, reason = NA_character_)
 
@@ -389,7 +397,7 @@ NULL
 
   if (is.null(found)) {
     found <- .hzr_weak_single_parameter(V, theta, keep, nms, rcond, cor_tol,
-                                        shape_names)
+                                        shape_names, log_names)
     # Nothing was found among the parameters that could be examined. That is
     # a clean result only if they were all of the estimated ones.
     if (is.null(found) && unexamined) {
@@ -413,8 +421,9 @@ NULL
 #' well-determined one. It is read instead from the covariance in a metric
 #' where the positive g3 shapes (`gamma`, `alpha`, `eta`) are on the log
 #' scale, so their variance is relative, and everything else is as it is
-#' (already log-scale, or a coefficient). Only a g3 shape can be NAMED; see
-#' the comment at the naming step for why. Scaling every parameter by its own value instead -- the
+#' (already log-scale, or a coefficient). Only a g3 shape or a log-scale
+#' scale parameter can be NAMED; see the comment at the naming step for why.
+#' Scaling every parameter by its own value instead -- the
 #' candidate measured in #415 -- named `log_mu` on fits whose `gamma` had run
 #' to 1e7, because a log-scale estimate near 0 inflates its relative
 #' variance without bound.
@@ -429,16 +438,21 @@ NULL
 #' 34 fits (#415's design, FIXGE2, n = 300; identified fits at n = 1500; the
 #' ill-scaled-covariate control): it fires on 12 of the 14 gated degenerate
 #' fits it can read, naming gamma on 11 and alpha on 1, and on none of the
-#' 10 identified fits, whose largest loading is 0.972 even ungated.
+#' 10 identified fits, whose largest loading is 0.972 even ungated. That
+#' measurement covers the g3 shapes only. The log-scale parameters were added
+#' later (#673) and are read differently: not from the direction, which a
+#' coefficient can take over through its covariate's units, but from their own
+#' standard error against `.hzr_weak_log_se_min`.
 #'
 #' @return `NULL`, or the `$weak` list with `single = TRUE`, one `params`
 #'   entry, its `estimate`, and `se_metric`, its standard error in the
-#'   metric above.
+#'   metric above. `weights` is its squared loading for a g3 shape, and `NA`
+#'   for a log-scale parameter, which is not read from a loading.
 #' @noRd
 .hzr_weak_single_parameter <- function(V, theta, keep, nms, rcond, cor_tol,
-                                       shape_names) {
+                                       shape_names, log_names = NULL) {
   if (is.null(theta) || length(theta) < max(keep)) return(NULL)
-  if (!length(shape_names)) return(NULL)
+  if (!length(shape_names) && !length(log_names)) return(NULL)
   th <- unname(theta)[keep]
   if (anyNA(th) || any(!is.finite(th))) return(NULL)
   # The g3 shapes are named by the CALLER from the phase specs, not guessed
@@ -451,17 +465,33 @@ NULL
   if (is.null(e) || !is.finite(e$values[1])) return(NULL)
   v1 <- e$vectors[, 1]
   j <- which.max(abs(v1))
-  # Only a positive g3 shape is named. A coefficient or a log-scale
-  # parameter can dominate this direction through its UNITS alone: a
-  # covariate recorded in units of 1e-4 opened the rcond gate and named its
-  # well-identified coefficient (z = 4.7) as undetermined. Its flatness is
-  # not distinguishable from scaling without a natural unit, and the g3
-  # shapes are the parameters with one. (`nu` is excluded: it is signed, and
-  # 0 is a legitimate limiting value, so relative variance near it is noise.)
-  if (abs(v1[j]) < cor_tol || !positive_shape[j]) return(NULL)
-  list(params = nms[j], weights = v1[j]^2, correlation = NA_real_,
-       rcond = rcond, n_directions = 1L, single = TRUE,
-       estimate = th[j], se_metric = sqrt(e$values[1]))
+  named <- function(j, weights) {
+    list(params = nms[j], weights = weights, correlation = NA_real_,
+         rcond = rcond, n_directions = 1L, single = TRUE,
+         estimate = th[j], se_metric = sqrt(S[j, j]))
+  }
+  # A positive g3 shape is named when it dominates this direction. A
+  # coefficient never is: it can dominate through its covariate's UNITS
+  # alone, and a covariate recorded in units of 1e-4 opened the rcond gate and
+  # named its well-identified coefficient (z = 4.7) as undetermined. The g3
+  # shapes have a natural unit. (`nu` is excluded: it is signed, and 0 is a
+  # legitimate limiting value, so relative variance near it is noise.)
+  if (abs(v1[j]) >= cor_tol && positive_shape[j]) return(named(j, v1[j]^2))
+  # A phase's `log_mu`, `log_t_half` or `log_tau` is read from its own
+  # standard error, not from this direction (#673). A change of time unit
+  # shifts them and leaves their variance alone, so a bar on it is unit-free.
+  # The direction is not: a coefficient with a larger raw variance takes it
+  # over whatever its covariate's units, and hid a log_mu with standard error
+  # 5.7e4 behind one of 5e6. Nor is the rcond gate, which a covariate in units
+  # of 1e4 opened over a log_mu with standard error 0.068. A conserved phase
+  # switched off at the boundary has a log_mu near -28 with a standard error
+  # of 3e4 to 1e5. The pairwise reading has found no trade-off by this point,
+  # so the largest such standard error over the bar is the phase's own.
+  lg <- which(nms %in% log_names)
+  if (!length(lg)) return(NULL)
+  se <- sqrt(diag(S)[lg])
+  if (max(se) <= .hzr_weak_log_se_min) return(NULL)
+  named(lg[which.max(se)], NA_real_)
 }
 
 # The shape every existing caller relies on: list / NULL / NA, unchanged.
@@ -469,11 +499,13 @@ NULL
                                 tol = .hzr_rcond_tol,
                                 cor_tol = .hzr_ridge_cor_tol,
                                 share = 0.9, theta = NULL,
-                                shape_names = NULL, fixed_mask = NULL) {
+                                shape_names = NULL, fixed_mask = NULL,
+                                log_names = NULL) {
   .hzr_weak_direction_impl(vcov, rcond, param_names = param_names,
                            tol = tol, cor_tol = cor_tol, share = share,
                            theta = theta, shape_names = shape_names,
-                           fixed_mask = fixed_mask)$weak
+                           fixed_mask = fixed_mask,
+                           log_names = log_names)$weak
 }
 
 #' Warning text for a detected ridge direction
@@ -486,10 +518,16 @@ NULL
 #' @noRd
 .hzr_weak_direction_message <- function(weak) {
   if (isTRUE(weak$single)) {
+    # A log-scale parameter is read from its standard error, not a loading.
+    how <- if (is.na(weak$weights)) {
+      paste0("standard error ", format(weak$se_metric, digits = 3))
+    } else {
+      paste0("loading ", format(sqrt(weak$weights), digits = 3))
+    }
     return(paste0(
       "weakly identified fit: '", weak$params, "' = ",
       format(weak$estimate, digits = 4), " carries a near-flat direction ",
-      "on its own (loading ", format(sqrt(weak$weights), digits = 3),
+      "on its own (", how,
       ", Hessian rcond = ", format(weak$rcond, digits = 3), "). Its point ",
       "estimate -- not just its standard error -- is not pinned down by the ",
       "data, and it may be running to a boundary of its range."
