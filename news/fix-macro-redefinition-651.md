@@ -5,8 +5,9 @@
   the rewritten grid). The reverse order no longer refuses a grid over a body
   defined after the call, and a call before any definition is read as a macro
   the file does not define, which SAS does not resolve. A macro defined inside
-  another macro, including one that redefines itself, now refuses the grid at
-  each call: SAS compiles that definition only when the outer macro runs, and
-  each such job had emitted the earlier grid with no row. When the definition enclosing it holds a statement this cannot
-  read, such as `OPTIONS OBS=`, the call refuses the grid wherever it stands,
-  before the grid's first step too (#651).
+  another macro, including one that redefines itself, is now one this cannot
+  read: SAS compiles that definition only when the outer macro runs, and each
+  such job had emitted the earlier grid with no row. Its calls follow the rule
+  for any unread call, and when the enclosing definition holds a statement
+  this cannot read, such as `OPTIONS OBS=`, the call refuses the grid wherever
+  it stands (#651).
