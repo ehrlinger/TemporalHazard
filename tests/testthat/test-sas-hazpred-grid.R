@@ -561,6 +561,36 @@ test_that("a call runs the definition completed before it, not the last one (#65
   job <- translate_494(c(fit_macro_grid, "%SW;", writes, hazpred_macro_grid))
   expect_match(refused_494(job), "calls a macro this file does not define",
                fixed = TRUE)
+  # With two definitions before the call, the later one runs.
+  job <- translate_494(c(fit_macro_grid, writes, reads, "%SW;", hazpred_macro_grid))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+  job <- translate_494(c(fit_macro_grid, reads, writes, "%SW;", hazpred_macro_grid))
+  expect_match(refused_494(job), "PRED is written by %SW", fixed = TRUE)
+})
+
+test_that("a macro defined inside another macro refuses the grid (#651 review)", {
+  # SAS compiles an inner definition only when the outer macro runs. Each
+  # job below emitted the AGE = 50 grid with no row; SAS predicts at 70.
+  writes <- "%MACRO SW; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN; %MEND SW;"
+  jobs <- list(
+    # The outer macro is never called, so the first SW still stands.
+    never_run = c(writes, "%MACRO A; %MACRO SW; OPTIONS LS=80; %MEND SW; %MEND A;",
+                  fit_macro_grid, "%SW;", hazpred_macro_grid),
+    # %A redefines SW as the writer before the grid's step.
+    run_first = c("%MACRO A;", writes, "%MEND A;",
+                  "%MACRO SW; OPTIONS LS=80; %MEND SW;", "%A;",
+                  fit_macro_grid, "%SW;", hazpred_macro_grid),
+    # SW writes PRED, then redefines itself.
+    self = c(paste("%MACRO SW; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+                   "%MACRO SW; OPTIONS LS=80; %MEND SW; %MEND SW;"),
+             fit_macro_grid, "%SW;", hazpred_macro_grid)
+  )
+  for (nm in names(jobs)) {
+    job <- translate_494(jobs[[nm]])
+    expect_match(refused_494(job), "defined inside another macro", fixed = TRUE,
+                 info = nm)
+    expect_false(any(grepl("^grid", names(job$calls))), info = nm)
+  }
 })
 
 test_that("a call before the grid's step is recorded; macro statements add no row", {

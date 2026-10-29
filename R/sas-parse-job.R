@@ -2270,18 +2270,19 @@
 }
 
 #' The `%MACRO ... %MEND` definitions among a job's statements.
-#' @return `list(scope, bodies)`: `scope[i]` numbers the outermost
-#'   definition statement `i` belongs to, `%MACRO` and `%MEND` included, and
-#'   is 0 outside every definition; `bodies` holds each macro's statements,
-#'   named by the macro, from its LAST definition; `ends` holds, per name,
-#'   the `%MEND` index of each definition and `versions` the body each one
-#'   compiled, in file order, for `.hzr_sas_macro_body_at()`.
+#' @return `list(scope, ends, versions, nested)`: `scope[i]` numbers the
+#'   outermost definition statement `i` belongs to, `%MACRO` and `%MEND`
+#'   included, and is 0 outside every definition; `ends` holds, per name, the
+#'   `%MEND` index of each definition and `versions` the body each one
+#'   compiled, in file order, for `.hzr_sas_macro_body_at()`; `nested` names
+#'   every macro with a definition inside another definition.
 #' @noRd
 .hzr_sas_macro_defs <- function(stmts) {
   scope <- integer(length(stmts))
   bodies <- list()
   ends <- list()
   versions <- list()
+  nested <- character(0)
   depth <- 0L
   n_def <- 0L
   open <- character(0)
@@ -2299,6 +2300,7 @@
     scope[[i]] <- n_def
     if (grepl("^%MEND( |$)", t)) {
       nm <- open[[depth]]
+      if (depth > 1L) nested <- c(nested, nm)
       ends[[nm]] <- c(ends[[nm]], i)
       versions[[nm]] <- c(versions[[nm]], list(bodies[[nm]]))
       open <- open[-depth]
@@ -2307,7 +2309,7 @@
     }
     for (nm in open) bodies[[nm]] <- c(bodies[[nm]], t)
   }
-  list(scope = scope, bodies = bodies, ends = ends, versions = versions)
+  list(scope = scope, ends = ends, versions = versions, nested = nested)
 }
 
 #' The body a call of `mac` at statement `i` runs (#651).
@@ -2316,9 +2318,16 @@
 #' replaces it, so a call runs the definition most recently completed before
 #' it. A call with none before it is not resolved (SAS warns "Apparent
 #' invocation of macro ... not resolved" and runs nothing this file shows).
-#' @return The body's statements, or `NULL` when no definition precedes `i`.
+#'
+#' A definition inside another macro is compiled only when that macro runs,
+#' which the file's order does not show, and a macro that redefines itself
+#' loses its outer body in the reading above. Either makes the macro one this
+#' cannot read, so every call of it is `NULL` (#651 review).
+#' @return The body's statements, or `NULL` when no definition precedes `i`
+#'   or any definition of `mac` is nested.
 #' @noRd
 .hzr_sas_macro_body_at <- function(defs, mac, i) {
+  if (mac %in% defs$nested) return(NULL)
   k <- which(defs$ends[[mac]] < i)
   if (!length(k)) return(NULL)
   defs$versions[[mac]][[max(k)]]
@@ -2691,6 +2700,9 @@
       if (is.null(body)) {
         flag(p, "call", call_text, if (identical(mac, "INCLUDE")) {
           "runs code from another file, which hzr_translate_sas() cannot read"
+        } else if (macros && mac %in% defs$nested) {
+          paste("calls a macro defined inside another macro, whose body depends",
+                "on when that macro runs, which hzr_translate_sas() cannot follow")
         } else {
           "calls a macro this file does not define, which hzr_translate_sas() cannot read"
         })

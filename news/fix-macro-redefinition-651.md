@@ -4,4 +4,7 @@
   body, and the grid was emitted with no `$untranslated` row (SAS predicts at
   the rewritten grid). The reverse order no longer refuses a grid over a body
   defined after the call, and a call before any definition is read as a macro
-  the file does not define, which SAS does not resolve (#651).
+  the file does not define, which SAS does not resolve. A macro defined inside
+  another macro, including one that redefines itself, now refuses the grid at
+  each call: SAS compiles that definition only when the outer macro runs, and
+  each such job had emitted the earlier grid with no row (#651).
