@@ -480,7 +480,7 @@ NULL
   # standard error 0.068. A g3 shape has no such bar (see above), but a
   # log-scale standard error is unit-free, and a conserved phase at the
   # boundary reports one of 3e4 or more.
-  log_ok <- nms[j] %in% log_names && sqrt(e$values[1]) > .hzr_weak_log_se_min
+  log_ok <- nms[j] %in% log_names && sqrt(S[j, j]) > .hzr_weak_log_se_min
   if (abs(v1[j]) < cor_tol || !(positive_shape[j] || log_ok)) {
     return(NULL)
   }

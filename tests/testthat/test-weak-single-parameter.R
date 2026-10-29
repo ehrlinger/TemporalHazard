@@ -107,6 +107,13 @@ test_that("a coefficient is never named on its own; a log-scale parameter only w
   v3 <- diag(c(25, 1e-6, (1e-3 * th[3])^2, 1e-6))
   expect_null(.hzr_weak_direction(v3, gated, nm, theta = th,
                                   shape_names = shapes, log_names = logs))
+  # The bar is on the parameter's own standard error, not the direction's:
+  # here log_mu's is 9.97 and the flattest direction's 10.02 (#677 review).
+  v4 <- diag(c(99.5, 1, (1e-3 * th[3])^2, 1e-10))
+  v4[1, 2] <- v4[2, 1] <- 9
+  expect_gt(sqrt(eigen(v4, symmetric = TRUE)$values[1]), 10)
+  expect_null(.hzr_weak_direction(v4, gated, nm, theta = th,
+                                  shape_names = shapes, log_names = logs))
 })
 
 # A constant-phase fit whose covariate `x` is z in units of `unit`, so a
