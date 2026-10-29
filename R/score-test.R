@@ -740,7 +740,9 @@
   }
   xl <- current$fit$x_list
   inputs <- c(
-    list(status = input(d$status, .hzr_status_column(call)),
+    list(status = input(d$status, .hzr_status_column(
+      call, .hzr_is_formula_fit(current, is.null(call$status))
+    )),
          `time_lower` = input(d$time_lower, .hzr_call_column(call$time_lower)),
          `time_upper` = input(d$time_upper, .hzr_call_column(call$time_upper)),
          weights = input(d$weights, .hzr_call_column(call$weights))),
@@ -788,10 +790,12 @@
 #' `Surv(time, event)` on the formula interface's left-hand side.
 #'
 #' @param call The fit's stored call.
+#' @param formula_fit Whether the fit took the formula interface; a
+#'   `status =` beside a formula is not the one used (#432).
 #' @return A single string, `NA` when no column is named.
 #' @noRd
-.hzr_status_column <- function(call) {
-  if (!is.null(call$status)) return(.hzr_call_column(call$status))
+.hzr_status_column <- function(call, formula_fit = is.null(call$status)) {
+  if (!formula_fit) return(.hzr_call_column(call$status))
   f <- call$formula
   if (!is.call(f) || !identical(f[[1L]], as.name("~")) || length(f) != 3L) {
     return(NA_character_)
@@ -905,12 +909,13 @@
     # calls it. Every other criterion refits through .hzr_refit_with_scope(),
     # and that pairs `data`, read by position, with per-row vectors stored
     # on the fit: `time`, `status`, `time_lower` and `time_upper` on the
-    # vector interface (which it keys on the same `call$formula`), and
+    # vector interface (which it keys on the same interface test), and
     # `weights` on both. Its other stored inputs, `time_windows`, the phase
     # specs and the objective, are not per row. A formula fit with no stored
     # weights rebuilds every per-row input from `data`, so it alone is
     # consistent with any row order.
-    stored_rows <- is.null(current$call$formula) ||
+    stored_rows <- !.hzr_is_formula_fit(current,
+                                        !is.null(current$call$formula)) ||
       !is.null(current$data$weights)
     if (stored_rows) {
       moved <- .hzr_score_rows_moved(current, data)

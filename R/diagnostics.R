@@ -2468,7 +2468,13 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # select-mode refit reused it for the base model and dropped it from the
   # candidates. Every replicate reported success either way, so it is
   # refused.
-  if (is.null(cl$formula) && !is.null(cl$time) && !is.null(cl$x)) {
+  vector_interface <- !.hzr_is_formula_fit(
+    object, !is.null(cl$formula) || is.null(cl$time)
+  )
+  # A replicate re-evaluates the call, so a vector fit's `formula = fml` would
+  # read `fml` again, and at top level it may have been rebound since (#432).
+  if (vector_interface) cl$formula <- NULL
+  if (vector_interface && !is.null(cl$x)) {
     stop("hzr_bootstrap(): this fit's design matrix was passed directly as ",
          "`x`, which replicates cannot resample with the rows: each would ",
          "pair resampled outcomes with the original design. Refit with the ",
@@ -2501,7 +2507,6 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # A select-mode screen draws its candidate columns from the fit's `data`. A
   # vector fit made without `data =` has none, so its candidates would be read
   # from the environment and never resampled with the rows.
-  vector_interface <- is.null(cl$formula) && !is.null(cl$time)
   if (select_mode && vector_interface && is.null(orig_data)) {
     stop("hzr_bootstrap(): `scope` selection draws its candidate columns ",
          "from the fit's `data =`, and this vector-interface fit was made ",
@@ -2531,8 +2536,9 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     nrow(orig_data)
   }
   # A call can name a formula that was NULL when it ran (a wrapper forwarding
-  # `formula = fml`), which makes a vector fit the test above does not
-  # recognise. With no `data` frame either there are no rows to count, and
+  # `formula = fml`). A fit saved before hazard() recorded its interface
+  # (#432) is then not recognised as the vector fit it is, and with no `data`
+  # frame either there are no rows to count, and
   # sample.int() stopped with "length(n) == 1L is not TRUE" (#343).
   if (!is.numeric(n_obs) || length(n_obs) != 1L) {
     stop("hzr_bootstrap() cannot count the rows to resample: this fit ",
