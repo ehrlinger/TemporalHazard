@@ -636,6 +636,10 @@ Figure 3: Nelson-Aalen cumulative hazard for CABGKUL: three-phase shape visible
 <span><span class="co">#&gt; at any observed time. Such a phase has not started by the end of follow-up, so</span></span>
 <span><span class="co">#&gt; neither its 'mu' nor its shape is identified: the fit converges and those</span></span>
 <span><span class="co">#&gt; parameters drift freely.</span></span>
+<span><span class="co">#&gt; Warning: weakly identified fit: 'constant.log_mu' = -26.93 carries a near-flat</span></span>
+<span><span class="co">#&gt; direction on its own (standard error 12400, Hessian rcond = 1.03e-10). Its</span></span>
+<span><span class="co">#&gt; point estimate -- not just its standard error -- is not pinned down by the</span></span>
+<span><span class="co">#&gt; data, and it may be running to a boundary of its range.</span></span>
 <span></span>
 <span><span class="co"># Scale magnitudes. A tiny exp(log_mu) does not by itself mark an unneeded</span></span>
 <span><span class="co"># phase; judge each phase by its contribution, from predict(..., decompose = TRUE)</span></span>

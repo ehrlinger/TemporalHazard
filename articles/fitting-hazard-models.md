@@ -703,6 +703,10 @@ fit_3ph <- hazard(
 #> at any observed time. Such a phase has not started by the end of follow-up, so
 #> neither its 'mu' nor its shape is identified: the fit converges and those
 #> parameters drift freely.
+#> Warning: weakly identified fit: 'constant.log_mu' = -26.93 carries a near-flat
+#> direction on its own (standard error 12400, Hessian rcond = 1.03e-10). Its
+#> point estimate -- not just its standard error -- is not pinned down by the
+#> data, and it may be running to a boundary of its range.
 
 # Scale magnitudes. A tiny exp(log_mu) does not by itself mark an unneeded
 # phase; judge each phase by its contribution, from predict(..., decompose = TRUE)
