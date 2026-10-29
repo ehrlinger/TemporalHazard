@@ -593,6 +593,27 @@ test_that("a macro defined inside another macro refuses the grid (#651 review)",
   }
 })
 
+test_that("a nested macro whose definition sets OBS= refuses, even before the grid (#678 review)", {
+  # A call before the grid's first step keeps the grid with a row, unless
+  # what it runs is unread. SW sets OBS=2 and then redefines itself: SAS
+  # keeps two rows of PRED. Main emitted all three with no row.
+  obs <- list(
+    self = "%MACRO SW; OPTIONS OBS=2; %MACRO SW; OPTIONS LS=80; %MEND SW; %MEND SW;",
+    inner = "%MACRO A; %MACRO SW; OPTIONS OBS=2; %MEND SW; %MEND A;"
+  )
+  for (nm in names(obs)) {
+    job <- translate_494(c(obs[[nm]], "%SW;", fit_macro_grid, hazpred_macro_grid))
+    expect_match(refused_494(job), "whose definition holds `OPTIONS OBS=2`",
+                 fixed = TRUE, info = nm)
+  }
+  # Control: a nested macro whose definitions read cleanly keeps the
+  # call-before-the-grid rule, a grid and a row.
+  job <- translate_494(c("%MACRO A; %MACRO SW; OPTIONS LS=80; %MEND SW; %MEND A;",
+                         "%SW;", fit_macro_grid, hazpred_macro_grid))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+  expect_match(macro_rows(job)$reason, "defined inside another macro", fixed = TRUE)
+})
+
 test_that("a call before the grid's step is recorded; macro statements add no row", {
   # Approved change (2026-10-09): the calls before the grid's step each get a
   # row, since they may set session state the grid reads. %LET, %PUT and a

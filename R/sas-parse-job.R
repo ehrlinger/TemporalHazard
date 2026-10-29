@@ -2270,12 +2270,14 @@
 }
 
 #' The `%MACRO ... %MEND` definitions among a job's statements.
-#' @return `list(scope, ends, versions, nested)`: `scope[i]` numbers the
+#' @return `list(scope, ends, versions, nested, nested_in)`: `scope[i]` numbers the
 #'   outermost definition statement `i` belongs to, `%MACRO` and `%MEND`
 #'   included, and is 0 outside every definition; `ends` holds, per name, the
 #'   `%MEND` index of each definition and `versions` the body each one
 #'   compiled, in file order, for `.hzr_sas_macro_body_at()`; `nested` names
-#'   every macro with a definition inside another definition.
+#'   every macro with a definition inside another definition, and
+#'   `nested_in` holds, per such name, the `scope` numbers of the outermost
+#'   definitions that enclose one.
 #' @noRd
 .hzr_sas_macro_defs <- function(stmts) {
   scope <- integer(length(stmts))
@@ -2283,6 +2285,7 @@
   ends <- list()
   versions <- list()
   nested <- character(0)
+  nested_in <- list()
   depth <- 0L
   n_def <- 0L
   open <- character(0)
@@ -2300,7 +2303,10 @@
     scope[[i]] <- n_def
     if (grepl("^%MEND( |$)", t)) {
       nm <- open[[depth]]
-      if (depth > 1L) nested <- c(nested, nm)
+      if (depth > 1L) {
+        nested <- c(nested, nm)
+        nested_in[[nm]] <- c(nested_in[[nm]], n_def)
+      }
       ends[[nm]] <- c(ends[[nm]], i)
       versions[[nm]] <- c(versions[[nm]], list(bodies[[nm]]))
       open <- open[-depth]
@@ -2309,7 +2315,8 @@
     }
     for (nm in open) bodies[[nm]] <- c(bodies[[nm]], t)
   }
-  list(scope = scope, ends = ends, versions = versions, nested = nested)
+  list(scope = scope, ends = ends, versions = versions, nested = nested,
+       nested_in = nested_in)
 }
 
 #' The body a call of `mac` at statement `i` runs (#651).
@@ -2697,7 +2704,24 @@
       # A dataset the arguments name as written is an event at the call.
       for (nm in .hzr_sas_written_names(call_text)) add(p, nm, "opaque", what = paste0("%", mac))
       body <- if (macros) .hzr_sas_macro_body_at(defs, mac, i)
-      if (is.null(body)) {
+      # A nested macro's body is not known, but the definition enclosing it
+      # is text this file shows. An unread statement anywhere in it (OPTIONS
+      # OBS= in the outer body, or in any version of the inner one) may be
+      # what the call runs, so it is unread at the call, wherever it stands.
+      enclosing_unread <- if (macros && mac %in% defs$nested) {
+        k <- which(defs$scope %in% defs$nested_in[[mac]] &
+                     !grepl("^%(MACRO|MEND)( |$)", st$text))
+        enc_txt <- paste0(paste(st$text[k], collapse = "; "), ";")
+        Filter(function(e) identical(e$kind, "unread"),
+               .hzr_sas_dataset_events(enc_txt, .hzr_sas_blocks(enc_txt),
+                                       macros = FALSE))
+      }
+      if (length(enclosing_unread)) {
+        flag(p, "unread", call_text, paste0(
+          "calls a macro defined inside another macro whose definition holds `",
+          enclosing_unread[[1L]]$what %||% enclosing_unread[[1L]]$name,
+          "`, which hzr_translate_sas() cannot read"))
+      } else if (is.null(body)) {
         flag(p, "call", call_text, if (identical(mac, "INCLUDE")) {
           "runs code from another file, which hzr_translate_sas() cannot read"
         } else if (macros && mac %in% defs$nested) {

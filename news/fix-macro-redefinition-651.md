@@ -7,4 +7,6 @@
   the file does not define, which SAS does not resolve. A macro defined inside
   another macro, including one that redefines itself, now refuses the grid at
   each call: SAS compiles that definition only when the outer macro runs, and
-  each such job had emitted the earlier grid with no row (#651).
+  each such job had emitted the earlier grid with no row. When the definition enclosing it holds a statement this cannot
+  read, such as `OPTIONS OBS=`, the call refuses the grid wherever it stands,
+  before the grid's first step too (#651).
