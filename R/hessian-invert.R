@@ -151,6 +151,10 @@ NULL
 # two thresholds that gate the weak-identification note stay together.
 .hzr_ridge_cor_tol <- 0.99
 
+# Smallest standard error, in log units, at which the single-parameter reading
+# names a log_mu, log_t_half or log_tau on its own (#673): a factor of e^10.
+.hzr_weak_log_se_min <- 10
+
 #' Identify a ridge (weak-identification) direction in a fitted model
 #'
 #' An ill-conditioned Hessian makes standard errors unreliable.  When the
@@ -434,7 +438,10 @@ NULL
 #' 34 fits (#415's design, FIXGE2, n = 300; identified fits at n = 1500; the
 #' ill-scaled-covariate control): it fires on 12 of the 14 gated degenerate
 #' fits it can read, naming gamma on 11 and alpha on 1, and on none of the
-#' 10 identified fits, whose largest loading is 0.972 even ungated.
+#' 10 identified fits, whose largest loading is 0.972 even ungated. That
+#' measurement covers the g3 shapes only. The log-scale parameters were added
+#' later (#673) with a standard-error bar instead, since the gate alone named
+#' a well-determined log_mu when a large-unit covariate opened it.
 #'
 #' @return `NULL`, or the `$weak` list with `single = TRUE`, one `params`
 #'   entry, its `estimate`, and `se_metric`, its standard error in the
@@ -463,10 +470,18 @@ NULL
   # shapes have a natural unit, and so do `log_mu`, `log_t_half` and
   # `log_tau`: a change of time unit shifts them and leaves their variance
   # alone. A conserved phase switched off at the boundary has a `log_mu` near
-  # -28 with a standard error of 1e5, and was reported as identified (#673).
+  # -28 with a standard error of 3e4 to 1e5, and was reported as identified (#673).
   # (`nu` is excluded: it is signed, and 0 is a legitimate limiting value, so
   # relative variance near it is noise.)
-  if (abs(v1[j]) < cor_tol || !(positive_shape[j] || nms[j] %in% log_names)) {
+  #     A log-scale parameter also needs a standard error above
+  # .hzr_weak_log_se_min. The rcond gate opens on covariate units too: a
+  # covariate recorded in units of 1e4 gave rcond 8e-9, a coefficient with a
+  # tiny raw variance, and so a flattest direction loading 1 on a log_mu with
+  # standard error 0.068. A g3 shape has no such bar (see above), but a
+  # log-scale standard error is unit-free, and a conserved phase at the
+  # boundary reports one of 3e4 or more.
+  log_ok <- nms[j] %in% log_names && sqrt(e$values[1]) > .hzr_weak_log_se_min
+  if (abs(v1[j]) < cor_tol || !(positive_shape[j] || log_ok)) {
     return(NULL)
   }
   list(params = nms[j], weights = v1[j]^2, correlation = NA_real_,

@@ -1925,7 +1925,10 @@ hazard <- function(formula = NULL,
       }
     }))
   }
-  # And each phase's log-scale scale parameters (#673).
+  # And each phase's log-scale scale parameters (#673). A covariate can share
+  # one of their names (a column called `log_mu` makes a second
+  # `constant.log_mu`), and a name that appears twice cannot say which
+  # parameter it is, so it is never named.
   weak_logs <- if (dist == "multiphase" && length(phases)) {
     unlist(lapply(seq_along(phases), function(k) {
       scale <- switch(phases[[k]]$type, g3 = "log_tau", constant = NULL,
@@ -1933,6 +1936,7 @@ hazard <- function(formula = NULL,
       paste0(names(phases)[[k]], ".", c("log_mu", scale))
     }))
   }
+  weak_logs <- setdiff(weak_logs, weak_names[duplicated(weak_names)])
   weak_check <- .hzr_weak_direction_impl(weak_vcov, fit_state$rcond,
                                          weak_names, theta = fit_state$par,
                                          shape_names = weak_shapes,

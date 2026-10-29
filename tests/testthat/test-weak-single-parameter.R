@@ -102,6 +102,45 @@ test_that("a coefficient is never named on its own; a log-scale parameter only w
                             log_names = logs)
   expect_identical(w2$params, "late.log_mu")
   expect_true(isTRUE(w2$single))
+  # The same dominant direction with a log-scale standard error of 5, under
+  # the bar of 10: a determined log_mu, so nothing is named.
+  v3 <- diag(c(25, 1e-6, (1e-3 * th[3])^2, 1e-6))
+  expect_null(.hzr_weak_direction(v3, gated, nm, theta = th,
+                                  shape_names = shapes, log_names = logs))
+})
+
+# A constant-phase fit whose covariate `x` is z in units of `unit`, so a
+# large unit opens the rcond gate by scaling alone (#673 review).
+unit_fit <- function(unit = 1e4, covariate = "x") {
+  withr::local_seed(2)
+  n <- 400
+  z <- stats::rnorm(n)
+  te <- stats::rexp(n, 0.3 * exp(0.4 * z))
+  ce <- stats::runif(n, 0, 8)
+  d <- data.frame(time = pmin(te, ce), status = as.integer(te <= ce))
+  d[[covariate]] <- unit * z
+  suppressWarnings(hazard(
+    stats::as.formula(paste("survival::Surv(time, status) ~", covariate)),
+    data = d, dist = "multiphase",
+    phases = list(constant = hzr_phase("constant")),
+    fit = TRUE, control = list(n_starts = 1)))
+}
+
+test_that("a determined log_mu is not named when covariate units open the gate (#673)", {
+  fit <- unit_fit(1e4)
+  # The premise: the gate is open, and log_mu is well determined.
+  expect_lt(fit$fit$rcond, .hzr_rcond_tol)
+  expect_lt(sqrt(diag(fit$fit$vcov))[[1]], 1)
+  expect_null(fit$fit$weak)
+})
+
+test_that("a covariate named like a log-scale parameter is never named (#673 review)", {
+  # A column called `log_mu` makes a second `constant.log_mu`, the
+  # coefficient (z about 7). The name cannot say which parameter it is.
+  fit <- unit_fit(1e-4, covariate = "log_mu")
+  expect_identical(names(fit$fit$theta), rep("constant.log_mu", 2L))
+  expect_lt(fit$fit$rcond, .hzr_rcond_tol)
+  expect_null(fit$fit$weak)
 })
 
 test_that("a conserved phase switched off at the boundary is not identified (#673)", {
