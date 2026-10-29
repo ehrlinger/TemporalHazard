@@ -542,6 +542,94 @@ test_that("calling a macro whose body writes the grid refuses the grid", {
   expect_match(refused_494(job), "PRED is written by %ALTGRID", fixed = TRUE)
 })
 
+test_that("a call runs the definition completed before it, not the last one (#651)", {
+  # SAS compiles a macro at %MEND, and a second %MACRO SW replaces it from
+  # there on. Main read every call against the last body.
+  writes <- "%MACRO SW; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN; %MEND SW;"
+  reads <- "%MACRO SW; OPTIONS LS=80; %MEND SW;"
+  # The call runs the body that writes PRED: SAS predicts at AGE = 70. Main
+  # emitted the AGE = 50 grid with no row.
+  job <- translate_494(c(fit_macro_grid, writes, "%SW;", reads, hazpred_macro_grid))
+  expect_match(refused_494(job), "PRED is written by %SW", fixed = TRUE)
+  # Reversed, the call runs the body that only sets an option, so the grid
+  # is SAS's AGE = 50. Main refused it over a body defined after the call.
+  job <- translate_494(c(fit_macro_grid, reads, "%SW;", writes, hazpred_macro_grid))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+  expect_equal(nrow(job$untranslated), 0L)
+  # A call before any definition is not resolved by SAS, so it is a macro
+  # this file does not define at that point.
+  job <- translate_494(c(fit_macro_grid, "%SW;", writes, hazpred_macro_grid))
+  expect_match(refused_494(job), "calls a macro this file does not define",
+               fixed = TRUE)
+  # With two definitions before the call, the later one runs.
+  job <- translate_494(c(fit_macro_grid, writes, reads, "%SW;", hazpred_macro_grid))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+  job <- translate_494(c(fit_macro_grid, reads, writes, "%SW;", hazpred_macro_grid))
+  expect_match(refused_494(job), "PRED is written by %SW", fixed = TRUE)
+})
+
+test_that("a macro defined inside another macro refuses the grid (#651 review)", {
+  # SAS compiles an inner definition only when the outer macro runs. Each
+  # job below emitted the AGE = 50 grid with no row; SAS predicts at 70.
+  writes <- "%MACRO SW; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN; %MEND SW;"
+  jobs <- list(
+    # The outer macro is never called, so the first SW still stands.
+    never_run = c(writes, "%MACRO A; %MACRO SW; OPTIONS LS=80; %MEND SW; %MEND A;",
+                  fit_macro_grid, "%SW;", hazpred_macro_grid),
+    # %A redefines SW as the writer before the grid's step.
+    run_first = c("%MACRO A;", writes, "%MEND A;",
+                  "%MACRO SW; OPTIONS LS=80; %MEND SW;", "%A;",
+                  fit_macro_grid, "%SW;", hazpred_macro_grid),
+    # SW writes PRED, then redefines itself.
+    self = c(paste("%MACRO SW; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+                   "%MACRO SW; OPTIONS LS=80; %MEND SW; %MEND SW;"),
+             fit_macro_grid, "%SW;", hazpred_macro_grid)
+  )
+  for (nm in names(jobs)) {
+    job <- translate_494(jobs[[nm]])
+    expect_match(refused_494(job), "defined inside another macro", fixed = TRUE,
+                 info = nm)
+    expect_false(any(grepl("^grid", names(job$calls))), info = nm)
+  }
+})
+
+test_that("a %MACRO inside a call's quoted argument is not a definition (#678, Codex)", {
+  # %NRSTR masks the semicolons and the %MACRO, and %EMPTY consumes the
+  # text, so no SW is defined there and %SW runs the first, PRED-writing
+  # body: SAS predicts at AGE = 70. Read as a definition, the quoted SW was
+  # the one completed before the call, and the AGE = 50 grid was emitted
+  # with no row.
+  writes <- "%MACRO SW; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN; %MEND SW;"
+  job <- translate_494(c(
+    writes, "%MACRO EMPTY(TEXT); %MEND EMPTY;",
+    "%EMPTY(%NRSTR(ignored; %MACRO SW; OPTIONS LS=80; %MEND SW;));",
+    fit_macro_grid, "%SW;", writes, hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "PRED is written by %SW", fixed = TRUE)
+  expect_false(any(grepl("^grid", names(job$calls))))
+})
+
+test_that("a nested macro whose definition sets OBS= refuses, even before the grid (#678 review)", {
+  # A call before the grid's first step keeps the grid with a row, unless
+  # what it runs is unread. SW sets OBS=2 and then redefines itself: SAS
+  # keeps two rows of PRED. Main emitted all three with no row.
+  obs <- list(
+    self = "%MACRO SW; OPTIONS OBS=2; %MACRO SW; OPTIONS LS=80; %MEND SW; %MEND SW;",
+    inner = "%MACRO A; %MACRO SW; OPTIONS OBS=2; %MEND SW; %MEND A;"
+  )
+  for (nm in names(obs)) {
+    job <- translate_494(c(obs[[nm]], "%SW;", fit_macro_grid, hazpred_macro_grid))
+    expect_match(refused_494(job), "whose definition holds `OPTIONS OBS=2`",
+                 fixed = TRUE, info = nm)
+  }
+  # Control: a nested macro whose definitions read cleanly keeps the
+  # call-before-the-grid rule, a grid and a row.
+  job <- translate_494(c("%MACRO A; %MACRO SW; OPTIONS LS=80; %MEND SW; %MEND A;",
+                         "%SW;", fit_macro_grid, hazpred_macro_grid))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+  expect_match(macro_rows(job)$reason, "defined inside another macro", fixed = TRUE)
+})
+
 test_that("a call before the grid's step is recorded; macro statements add no row", {
   # Approved change (2026-10-09): the calls before the grid's step each get a
   # row, since they may set session state the grid reads. %LET, %PUT and a

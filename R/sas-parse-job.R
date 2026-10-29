@@ -2270,19 +2270,45 @@
 }
 
 #' The `%MACRO ... %MEND` definitions among a job's statements.
-#' @return `list(scope, bodies)`: `scope[i]` numbers the outermost
-#'   definition statement `i` belongs to, `%MACRO` and `%MEND` included, and
-#'   is 0 outside every definition; `bodies` holds each macro's statements,
-#'   named by the macro.
+#' @return `list(scope, ends, versions, nested, nested_in)`: `scope[i]` numbers the
+#'   outermost definition statement `i` belongs to, `%MACRO` and `%MEND`
+#'   included, and is 0 outside every definition; `ends` holds, per name, the
+#'   `%MEND` index of each definition and `versions` the body each one
+#'   compiled, in file order, for `.hzr_sas_macro_body_at()`; `nested` names
+#'   every macro with a definition inside another definition, and
+#'   `nested_in` holds, per such name, the `scope` numbers of the outermost
+#'   definitions that enclose one.
 #' @noRd
 .hzr_sas_macro_defs <- function(stmts) {
   scope <- integer(length(stmts))
   bodies <- list()
+  ends <- list()
+  versions <- list()
+  nested <- character(0)
+  nested_in <- list()
+  arg_bal <- 0L
   depth <- 0L
   n_def <- 0L
   open <- character(0)
   for (i in seq_along(stmts)) {
     t <- stmts[[i]]
+    # A macro call's argument list runs to the parenthesis that closes it and
+    # can hold semicolons, so it spans statements, as at the call site. A
+    # `%MACRO` in it is argument text, often quoted (`%NRSTR(...)`), not a
+    # definition (#678, Codex): read as one, it became the definition a later
+    # call ran. A list that never closes keeps everything after it out of
+    # every definition, so a later call finds none and refuses.
+    if (arg_bal > 0L) {
+      arg_bal <- arg_bal + .hzr_sas_paren_balance(t)
+      if (depth > 0L) {
+        scope[[i]] <- n_def
+        for (nm in open) bodies[[nm]] <- c(bodies[[nm]], t)
+      }
+      next
+    }
+    if (!is.null(.hzr_sas_macro_call(t))) {
+      arg_bal <- max(0L, .hzr_sas_paren_balance(t))
+    }
     if (grepl("^%MACRO ", t)) {
       if (depth == 0L) n_def <- n_def + 1L
       depth <- depth + 1L
@@ -2294,13 +2320,42 @@
     if (depth == 0L) next
     scope[[i]] <- n_def
     if (grepl("^%MEND( |$)", t)) {
+      nm <- open[[depth]]
+      if (depth > 1L) {
+        nested <- c(nested, nm)
+        nested_in[[nm]] <- c(nested_in[[nm]], n_def)
+      }
+      ends[[nm]] <- c(ends[[nm]], i)
+      versions[[nm]] <- c(versions[[nm]], list(bodies[[nm]]))
       open <- open[-depth]
       depth <- depth - 1L
       next
     }
     for (nm in open) bodies[[nm]] <- c(bodies[[nm]], t)
   }
-  list(scope = scope, bodies = bodies)
+  list(scope = scope, ends = ends, versions = versions, nested = nested,
+       nested_in = nested_in)
+}
+
+#' The body a call of `mac` at statement `i` runs (#651).
+#'
+#' SAS compiles a macro at its `%MEND` and a later `%MACRO` of the same name
+#' replaces it, so a call runs the definition most recently completed before
+#' it. A call with none before it is not resolved (SAS warns "Apparent
+#' invocation of macro ... not resolved" and runs nothing this file shows).
+#'
+#' A definition inside another macro is compiled only when that macro runs,
+#' which the file's order does not show, and a macro that redefines itself
+#' loses its outer body in the reading above. Either makes the macro one this
+#' cannot read, so every call of it is `NULL` (#651 review).
+#' @return The body's statements, or `NULL` when no definition precedes `i`
+#'   or any definition of `mac` is nested.
+#' @noRd
+.hzr_sas_macro_body_at <- function(defs, mac, i) {
+  if (mac %in% defs$nested) return(NULL)
+  k <- which(defs$ends[[mac]] < i)
+  if (!length(k)) return(NULL)
+  defs$versions[[mac]][[max(k)]]
 }
 
 #' The definition the statement holding offset `pos` stands in, or 0.
@@ -2666,10 +2721,30 @@
       }
       # A dataset the arguments name as written is an event at the call.
       for (nm in .hzr_sas_written_names(call_text)) add(p, nm, "opaque", what = paste0("%", mac))
-      body <- if (macros) defs$bodies[[mac]]
-      if (is.null(body)) {
+      body <- if (macros) .hzr_sas_macro_body_at(defs, mac, i)
+      # A nested macro's body is not known, but the definition enclosing it
+      # is text this file shows. An unread statement anywhere in it (OPTIONS
+      # OBS= in the outer body, or in any version of the inner one) may be
+      # what the call runs, so it is unread at the call, wherever it stands.
+      enclosing_unread <- if (macros && mac %in% defs$nested) {
+        k <- which(defs$scope %in% defs$nested_in[[mac]] &
+                     !grepl("^%(MACRO|MEND)( |$)", st$text))
+        enc_txt <- paste0(paste(st$text[k], collapse = "; "), ";")
+        Filter(function(e) identical(e$kind, "unread"),
+               .hzr_sas_dataset_events(enc_txt, .hzr_sas_blocks(enc_txt),
+                                       macros = FALSE))
+      }
+      if (length(enclosing_unread)) {
+        flag(p, "unread", call_text, paste0(
+          "calls a macro defined inside another macro whose definition holds `",
+          enclosing_unread[[1L]]$what %||% enclosing_unread[[1L]]$name,
+          "`, which hzr_translate_sas() cannot read"))
+      } else if (is.null(body)) {
         flag(p, "call", call_text, if (identical(mac, "INCLUDE")) {
           "runs code from another file, which hzr_translate_sas() cannot read"
+        } else if (macros && mac %in% defs$nested) {
+          paste("calls a macro defined inside another macro, whose body depends",
+                "on when that macro runs, which hzr_translate_sas() cannot follow")
         } else {
           "calls a macro this file does not define, which hzr_translate_sas() cannot read"
         })
