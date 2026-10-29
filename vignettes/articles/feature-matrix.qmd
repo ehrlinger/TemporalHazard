@@ -1,0 +1,71 @@
+---
+title: "Feature test matrix"
+subtitle: "What each feature is tested against, and how far the evidence goes"
+format:
+  html:
+    toc: true
+    toc-location: left
+---
+
+```{r}
+#| include: false
+src <- "feature-matrix.csv"
+meta <- sub("^# ", "", grep("^#", readLines(src), value = TRUE))
+meta <- stats::setNames(sub("^[a-z_]+: ", "", meta), sub(":.*", "", meta))
+m <- utils::read.csv(src, comment.char = "#", stringsAsFactors = FALSE)
+```
+
+This page lists each TemporalHazard feature, the tests that cover it, and
+whether it is compared with an external reference. It is generated from one
+saved run of the full test suite by `tools/feature-matrix.R`, which refuses to
+write it unless the run is of the current tree and has no failure.
+
+**Measured at `r meta[["measured_at"]]` on `r meta[["measured_on"]]`, version
+`r meta[["version"]]`.** That run: `r meta[["suite"]]`. A page older than the
+code it describes is still possible: regenerate it at each release.
+
+## How to read it
+
+- **Status** is a judgment, set by hand in `tools/feature-matrix-map.csv`.
+  *Tested*: covered by the package's own tests. *In progress*: a known gap,
+  named in the notes. *Shipped* is reserved for a feature handed to
+  biostatistics for critique.
+- **Tests** and **expectations** count what ran in that run, across the
+  feature's test files. A test file can count towards more than one feature.
+- **Skipped** counts tests that did not run there, usually because a reference
+  file, the C binary or the study data was not available.
+- **Reference** says whether the feature is compared with something outside
+  the package: SAS listings, the C `hazard` binary, or an independent oracle.
+  "*n* of *m* tests ran" is how many of those comparisons actually ran in this
+  run, not how many exist.
+- **Default start** says whether a test shows a fit started from the
+  package's defaults reaching the reference estimates. A reference test that
+  starts from the estimates SAS reported shows that the likelihood agrees at
+  that point, not that `hazard()` finds it on its own.
+
+```{r}
+#| echo: false
+#| results: asis
+for (a in unique(m$area)) {
+  cat("\n## ", a, "\n\n", sep = "")
+  d <- m[m$area == a, c("feature", "status", "tests", "expectations",
+                        "skipped", "reference", "default_start", "notes")]
+  names(d) <- c("Feature", "Status", "Tests", "Expectations", "Skipped",
+                "Reference", "Default start", "Notes")
+  print(knitr::kable(d, row.names = FALSE))
+  cat("\n")
+}
+```
+
+## Regenerating
+
+From the package root, after a full run saved as `tools/release-suite.R`
+saves it:
+
+```sh
+Rscript tools/release-suite.R results.rds
+Rscript tools/feature-matrix.R results.rds
+```
+
+The second command refuses if a test file belongs to no feature, if a pattern
+in the map matches no file, or if the run does not match the tests on disk.
