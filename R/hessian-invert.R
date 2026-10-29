@@ -440,12 +440,14 @@ NULL
 #' fits it can read, naming gamma on 11 and alpha on 1, and on none of the
 #' 10 identified fits, whose largest loading is 0.972 even ungated. That
 #' measurement covers the g3 shapes only. The log-scale parameters were added
-#' later (#673) with a standard-error bar instead, since the gate alone named
-#' a well-determined log_mu when a large-unit covariate opened it.
+#' later (#673) and are read differently: not from the direction, which a
+#' coefficient can take over through its covariate's units, but from their own
+#' standard error against `.hzr_weak_log_se_min`.
 #'
 #' @return `NULL`, or the `$weak` list with `single = TRUE`, one `params`
 #'   entry, its `estimate`, and `se_metric`, its standard error in the
-#'   metric above.
+#'   metric above. `weights` is its squared loading for a g3 shape, and `NA`
+#'   for a log-scale parameter, which is not read from a loading.
 #' @noRd
 .hzr_weak_single_parameter <- function(V, theta, keep, nms, rcond, cor_tol,
                                        shape_names, log_names = NULL) {
@@ -463,30 +465,33 @@ NULL
   if (is.null(e) || !is.finite(e$values[1])) return(NULL)
   v1 <- e$vectors[, 1]
   j <- which.max(abs(v1))
-  # Only a positive g3 shape or a phase's log-scale scale parameter is named.
-  # A coefficient can dominate this direction through its covariate's UNITS
-  # alone: a covariate recorded in units of 1e-4 opened the rcond gate and
-  # named its well-identified coefficient (z = 4.7) as undetermined. The g3
-  # shapes have a natural unit, and so do `log_mu`, `log_t_half` and
-  # `log_tau`: a change of time unit shifts them and leaves their variance
-  # alone. A conserved phase switched off at the boundary has a `log_mu` near
-  # -28 with a standard error of 3e4 to 1e5, and was reported as identified (#673).
-  # (`nu` is excluded: it is signed, and 0 is a legitimate limiting value, so
-  # relative variance near it is noise.)
-  #     A log-scale parameter also needs a standard error above
-  # .hzr_weak_log_se_min. The rcond gate opens on covariate units too: a
-  # covariate recorded in units of 1e4 gave rcond 8e-9, a coefficient with a
-  # tiny raw variance, and so a flattest direction loading 1 on a log_mu with
-  # standard error 0.068. A g3 shape has no such bar (see above), but a
-  # log-scale standard error is unit-free, and a conserved phase at the
-  # boundary reports one of 3e4 or more.
-  log_ok <- nms[j] %in% log_names && sqrt(S[j, j]) > .hzr_weak_log_se_min
-  if (abs(v1[j]) < cor_tol || !(positive_shape[j] || log_ok)) {
-    return(NULL)
+  named <- function(j, weights) {
+    list(params = nms[j], weights = weights, correlation = NA_real_,
+         rcond = rcond, n_directions = 1L, single = TRUE,
+         estimate = th[j], se_metric = sqrt(S[j, j]))
   }
-  list(params = nms[j], weights = v1[j]^2, correlation = NA_real_,
-       rcond = rcond, n_directions = 1L, single = TRUE,
-       estimate = th[j], se_metric = sqrt(e$values[1]))
+  # A positive g3 shape is named when it dominates this direction. A
+  # coefficient never is: it can dominate through its covariate's UNITS
+  # alone, and a covariate recorded in units of 1e-4 opened the rcond gate and
+  # named its well-identified coefficient (z = 4.7) as undetermined. The g3
+  # shapes have a natural unit. (`nu` is excluded: it is signed, and 0 is a
+  # legitimate limiting value, so relative variance near it is noise.)
+  if (abs(v1[j]) >= cor_tol && positive_shape[j]) return(named(j, v1[j]^2))
+  # A phase's `log_mu`, `log_t_half` or `log_tau` is read from its own
+  # standard error, not from this direction (#673). A change of time unit
+  # shifts them and leaves their variance alone, so a bar on it is unit-free.
+  # The direction is not: a coefficient with a larger raw variance takes it
+  # over whatever its covariate's units, and hid a log_mu with standard error
+  # 5.7e4 behind one of 5e6. Nor is the rcond gate, which a covariate in units
+  # of 1e4 opened over a log_mu with standard error 0.068. A conserved phase
+  # switched off at the boundary has a log_mu near -28 with a standard error
+  # of 3e4 to 1e5. The pairwise reading has found no trade-off by this point,
+  # so the largest such standard error over the bar is the phase's own.
+  lg <- which(nms %in% log_names)
+  if (!length(lg)) return(NULL)
+  se <- sqrt(diag(S)[lg])
+  if (max(se) <= .hzr_weak_log_se_min) return(NULL)
+  named(lg[which.max(se)], NA_real_)
 }
 
 # The shape every existing caller relies on: list / NULL / NA, unchanged.
@@ -513,10 +518,16 @@ NULL
 #' @noRd
 .hzr_weak_direction_message <- function(weak) {
   if (isTRUE(weak$single)) {
+    # A log-scale parameter is read from its standard error, not a loading.
+    how <- if (is.na(weak$weights)) {
+      paste0("standard error ", format(weak$se_metric, digits = 3))
+    } else {
+      paste0("loading ", format(sqrt(weak$weights), digits = 3))
+    }
     return(paste0(
       "weakly identified fit: '", weak$params, "' = ",
       format(weak$estimate, digits = 4), " carries a near-flat direction ",
-      "on its own (loading ", format(sqrt(weak$weights), digits = 3),
+      "on its own (", how,
       ", Hessian rcond = ", format(weak$rcond, digits = 3), "). Its point ",
       "estimate -- not just its standard error -- is not pinned down by the ",
       "data, and it may be running to a boundary of its range."

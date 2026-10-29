@@ -842,7 +842,8 @@ NULL
 #'   \code{correlation = NA}, and \code{se_metric}, its standard error on
 #'   the log scale; only a g3 shape, \code{gamma}, \code{alpha} or
 #'   \code{eta}, or a multiphase phase's \code{log_mu}, \code{log_t_half}
-#'   or \code{log_tau}, is named this way);
+#'   or \code{log_tau}, is named this way, the last three when their
+#'   standard error exceeds 10 log units, and with \code{weights = NA});
 #'   \code{NULL} when the fit was examined and is well identified; and
 #'   \code{NA} when the check could not run because no usable Hessian was
 #'   available, which includes an unfitted object, an install without
