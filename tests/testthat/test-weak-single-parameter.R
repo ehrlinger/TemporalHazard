@@ -84,17 +84,52 @@ test_that("a pair the correlation reading finds is still reported as the pair", 
   expect_setequal(w$params, c("early.m", "early.nu"))
 })
 
-test_that("a coefficient or log-scale parameter is never named on its own", {
+test_that("a coefficient is never named on its own; a log-scale parameter only when listed", {
   # A covariate in units of 1e-4 opens the rcond gate by scaling alone, and
   # its well-identified coefficient dominated the flattest direction.
+  logs <- c("late.log_mu", "late.log_tau")
   v <- diag(c(0.01, 0.02, (0.1 * th[3])^2, 0.001, 565^2))
   w <- .hzr_weak_direction(v, gated, c(nm, "late.x2"),
                            theta = c(th, 2641),
-                           shape_names = shapes)
+                           shape_names = shapes, log_names = logs)
   expect_null(w)
+  # A log_mu with a standard error of 100 is named once hazard() lists it as
+  # log-scale (#673), and not by a caller that does not.
   v2 <- diag(c(1e4, 0.02, (0.1 * th[3])^2, 0.001))
   expect_null(.hzr_weak_direction(v2, gated, nm, theta = th,
                            shape_names = shapes))
+  w2 <- .hzr_weak_direction(v2, gated, nm, theta = th, shape_names = shapes,
+                            log_names = logs)
+  expect_identical(w2$params, "late.log_mu")
+  expect_true(isTRUE(w2$single))
+})
+
+test_that("a conserved phase switched off at the boundary is not identified (#673)", {
+  # Nobody dies late, so the constant phase has nothing to fit: its log_mu
+  # runs to about -28 with a standard error near 3.5e4, and the Hessian's
+  # rcond is about 1e-11. Before #673 the single-parameter reading looked
+  # only at g3 shapes and fit$fit$weak was NULL, "checked, identified".
+  withr::local_seed(1)
+  n <- 300
+  te <- stats::rexp(n, 2)
+  dies <- stats::runif(n) < 0.25
+  d <- data.frame(time = ifelse(dies, pmin(te, 1.5), stats::runif(n, 2, 10)),
+                  status = as.integer(dies))
+  fit <- NULL
+  w <- testthat::capture_warnings(fit <- hazard(
+    survival::Surv(time, status) ~ 1, data = d, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 2, m = 1,
+                                    fixed = c("nu", "m")),
+                  constant = hzr_phase("constant")),
+    fit = TRUE, control = list(n_starts = 1)))
+  # The premise: the gate is open and log_mu is undetermined.
+  expect_lt(fit$fit$rcond, .hzr_rcond_tol)
+  expect_lt(fit$fit$theta[["constant.log_mu"]], -20)
+  j <- match("constant.log_mu", names(fit$fit$theta))
+  expect_gt(sqrt(diag(fit$fit$vcov))[[j]], 1e3)
+  expect_identical(fit$fit$weak$params, "constant.log_mu")
+  expect_true(isTRUE(fit$fit$weak$single))
+  expect_true(any(grepl("'constant.log_mu'", w, fixed = TRUE)))
 })
 
 test_that("nu is not a named shape: it is signed and 0 is legitimate", {

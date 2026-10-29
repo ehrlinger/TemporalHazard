@@ -252,7 +252,8 @@ single parameter carries the direction on its own, the list has one
 \code{params} entry, \code{single = TRUE}, its \code{estimate}, and
 \code{correlation = NA}, and \code{se_metric}, its standard error on
 the log scale; only a g3 shape, \code{gamma}, \code{alpha} or
-\code{eta}, is named this way);
+\code{eta}, or a multiphase phase's \code{log_mu}, \code{log_t_half}
+or \code{log_tau}, is named this way);
 \code{NULL} when the fit was examined and is well identified; and
 \code{NA} when the check could not run because no usable Hessian was
 available, which includes an unfitted object, an install without

@@ -841,7 +841,8 @@ NULL
 #'   \code{params} entry, \code{single = TRUE}, its \code{estimate}, and
 #'   \code{correlation = NA}, and \code{se_metric}, its standard error on
 #'   the log scale; only a g3 shape, \code{gamma}, \code{alpha} or
-#'   \code{eta}, is named this way);
+#'   \code{eta}, or a multiphase phase's \code{log_mu}, \code{log_t_half}
+#'   or \code{log_tau}, is named this way);
 #'   \code{NULL} when the fit was examined and is well identified; and
 #'   \code{NA} when the check could not run because no usable Hessian was
 #'   available, which includes an unfitted object, an install without
@@ -1924,10 +1925,19 @@ hazard <- function(formula = NULL,
       }
     }))
   }
+  # And each phase's log-scale scale parameters (#673).
+  weak_logs <- if (dist == "multiphase" && length(phases)) {
+    unlist(lapply(seq_along(phases), function(k) {
+      scale <- switch(phases[[k]]$type, g3 = "log_tau", constant = NULL,
+                      "log_t_half")
+      paste0(names(phases)[[k]], ".", c("log_mu", scale))
+    }))
+  }
   weak_check <- .hzr_weak_direction_impl(weak_vcov, fit_state$rcond,
                                          weak_names, theta = fit_state$par,
                                          shape_names = weak_shapes,
-                                         fixed_mask = masked)
+                                         fixed_mask = masked,
+                                         log_names = weak_logs)
   fit_state$weak <- weak_check$weak
   degraded_reasons$weak <- weak_check$reason
   if (is.list(fit_state$weak)) {

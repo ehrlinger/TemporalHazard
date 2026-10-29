@@ -195,7 +195,10 @@ NULL
 #'   only by the single-parameter reading, which is skipped without it.
 #' @param shape_names Names of the g3 shape parameters (\code{gamma},
 #'   \code{alpha}, \code{eta}) the single-parameter reading may name; it is
-#'   skipped when empty.
+#'   skipped when both this and \code{log_names} are empty.
+#' @param log_names Names of the phases' log-scale scale parameters
+#'   (\code{log_mu}, \code{log_t_half}, \code{log_tau}) the single-parameter
+#'   reading may also name (#673).
 #' @param fixed_mask Logical, \code{TRUE} for a parameter that was not
 #'   estimated, whose \code{NA} row is by design. A row that is \code{NA}
 #'   (or not finite and positive) without being fixed is a variance the
@@ -229,7 +232,8 @@ NULL
                                      tol = .hzr_rcond_tol,
                                      cor_tol = .hzr_ridge_cor_tol,
                                      share = 0.9, theta = NULL,
-                                     shape_names = NULL, fixed_mask = NULL) {
+                                     shape_names = NULL, fixed_mask = NULL,
+                                     log_names = NULL) {
   na_because <- function(reason) list(weak = NA, reason = reason)
   looked <- function(weak) list(weak = weak, reason = NA_character_)
 
@@ -389,7 +393,7 @@ NULL
 
   if (is.null(found)) {
     found <- .hzr_weak_single_parameter(V, theta, keep, nms, rcond, cor_tol,
-                                        shape_names)
+                                        shape_names, log_names)
     # Nothing was found among the parameters that could be examined. That is
     # a clean result only if they were all of the estimated ones.
     if (is.null(found) && unexamined) {
@@ -413,8 +417,9 @@ NULL
 #' well-determined one. It is read instead from the covariance in a metric
 #' where the positive g3 shapes (`gamma`, `alpha`, `eta`) are on the log
 #' scale, so their variance is relative, and everything else is as it is
-#' (already log-scale, or a coefficient). Only a g3 shape can be NAMED; see
-#' the comment at the naming step for why. Scaling every parameter by its own value instead -- the
+#' (already log-scale, or a coefficient). Only a g3 shape or a log-scale
+#' scale parameter can be NAMED; see the comment at the naming step for why.
+#' Scaling every parameter by its own value instead -- the
 #' candidate measured in #415 -- named `log_mu` on fits whose `gamma` had run
 #' to 1e7, because a log-scale estimate near 0 inflates its relative
 #' variance without bound.
@@ -436,9 +441,9 @@ NULL
 #'   metric above.
 #' @noRd
 .hzr_weak_single_parameter <- function(V, theta, keep, nms, rcond, cor_tol,
-                                       shape_names) {
+                                       shape_names, log_names = NULL) {
   if (is.null(theta) || length(theta) < max(keep)) return(NULL)
-  if (!length(shape_names)) return(NULL)
+  if (!length(shape_names) && !length(log_names)) return(NULL)
   th <- unname(theta)[keep]
   if (anyNA(th) || any(!is.finite(th))) return(NULL)
   # The g3 shapes are named by the CALLER from the phase specs, not guessed
@@ -451,14 +456,19 @@ NULL
   if (is.null(e) || !is.finite(e$values[1])) return(NULL)
   v1 <- e$vectors[, 1]
   j <- which.max(abs(v1))
-  # Only a positive g3 shape is named. A coefficient or a log-scale
-  # parameter can dominate this direction through its UNITS alone: a
-  # covariate recorded in units of 1e-4 opened the rcond gate and named its
-  # well-identified coefficient (z = 4.7) as undetermined. Its flatness is
-  # not distinguishable from scaling without a natural unit, and the g3
-  # shapes are the parameters with one. (`nu` is excluded: it is signed, and
-  # 0 is a legitimate limiting value, so relative variance near it is noise.)
-  if (abs(v1[j]) < cor_tol || !positive_shape[j]) return(NULL)
+  # Only a positive g3 shape or a phase's log-scale scale parameter is named.
+  # A coefficient can dominate this direction through its covariate's UNITS
+  # alone: a covariate recorded in units of 1e-4 opened the rcond gate and
+  # named its well-identified coefficient (z = 4.7) as undetermined. The g3
+  # shapes have a natural unit, and so do `log_mu`, `log_t_half` and
+  # `log_tau`: a change of time unit shifts them and leaves their variance
+  # alone. A conserved phase switched off at the boundary has a `log_mu` near
+  # -28 with a standard error of 1e5, and was reported as identified (#673).
+  # (`nu` is excluded: it is signed, and 0 is a legitimate limiting value, so
+  # relative variance near it is noise.)
+  if (abs(v1[j]) < cor_tol || !(positive_shape[j] || nms[j] %in% log_names)) {
+    return(NULL)
+  }
   list(params = nms[j], weights = v1[j]^2, correlation = NA_real_,
        rcond = rcond, n_directions = 1L, single = TRUE,
        estimate = th[j], se_metric = sqrt(e$values[1]))
@@ -469,11 +479,13 @@ NULL
                                 tol = .hzr_rcond_tol,
                                 cor_tol = .hzr_ridge_cor_tol,
                                 share = 0.9, theta = NULL,
-                                shape_names = NULL, fixed_mask = NULL) {
+                                shape_names = NULL, fixed_mask = NULL,
+                                log_names = NULL) {
   .hzr_weak_direction_impl(vcov, rcond, param_names = param_names,
                            tol = tol, cor_tol = cor_tol, share = share,
                            theta = theta, shape_names = shape_names,
-                           fixed_mask = fixed_mask)$weak
+                           fixed_mask = fixed_mask,
+                           log_names = log_names)$weak
 }
 
 #' Warning text for a detected ridge direction
