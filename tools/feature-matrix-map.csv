@@ -1,0 +1,28 @@
+area,feature,files,parity,from_default,status,notes
+Model,Exponential distribution,^exponential-|^entry-time-exponential$|^parity-edge-cases$,,,tested,
+Model,Weibull distribution,weibull|^interval-censoring-weibull$|^parity-core$,^parity-c-binary$,,tested,The C-binary comparison skips where the binary is not built.
+Model,Log-normal distribution,lognormal|^parity-edge-cases$,,,tested,
+Model,Log-logistic distribution,loglogistic|^parity-edge-cases$,,,tested,
+Model,Multiphase likelihood and optimizer,^multiphase-|^unbounded-phase$|^boundary-|^thalf-derivative-step$|^invariants$,^multiphase-parity$|^sas-parity$|^bhdead-sas-parity$,,tested,No criterion yet separates a genuine multiphase optimum from a stuck fit (#589).
+Model,Phase specification and shapes (hzr_phase),^phase-spec$|^phase-constraint|^phase-hazard-t0$|^g3-|^setg1-|^infeasible-shape-scale$|^math-primitives$,^phase-constraint-oracle$,,tested,
+Model,Phase identifiability and weak directions,^phase-identifiability$|^identifiability-|^weak-,,,tested,
+Model,Conservation of Events,^coe-|^conservation-of-events$,,test-coe-total-gradient.R::the default start reaches SAS's optimum on the avc model (#565),tested,"The default-start test fixes the shapes at SAS's values, so only the coefficients start from defaults."
+Data,Right censoring and data handling,^time-zero-rows$|^zero-time-rows$|^hazard-data-masking$|^numeric-values-dim$|^list-data-function-element$|^empty-column-name$|^nonsyntactic-name-matching$|^duplicate-design-columns$|^likelihood-data-error-class$,,,tested,
+Data,Interval and left censoring,^interval-censoring-|^sas-censoring$|^vector-surv-status$|^entry-time-surv-status$|^sas-interval-objective$,,,tested,
+Data,Entry times (left truncation),^entry-time-|^time-lower-entry$|^coe-left-truncation$|^gof-entry-km$,,,tested,
+Data,Observation weights,weights,^weights-sas-parity$,,in progress,SAS parity covers fractional weights; weights beside repeated events are untested (#681).
+Data,Repeated events,^repeated-events|^repeating-events$|^sas-translate-repeat$,^repeated-events-parity$|^repeated-events-renewal-parity$,,in progress,Parity runs only with the study volume; the SAS targets are not yet set (#681).
+Data,Time-varying coefficients (time_windows),^time-varying-coefficients$|^deciles-time-windows$|^phase-inherits-legacy-windows$|^gof-grid-and-windows$,,,tested,
+Data,Time-varying covariates (start/stop epochs),^repeating-events$,,,in progress,"Named as under-tested at the 2026-10-29 review. The epoch tests check that splitting a row into epochs leaves the log-likelihood unchanged. Production time-varying covariate work is under way in the Hsich and COMMENCE studies; none of it is in the test suite yet."
+Covariates,Formula and vector interfaces,^formula-|^fit-interface$|^hazard-api$|^global-formula-no-intercept$|^vector-surv-status$|^placeholder-unresolved$|^theta-|^control-|^maxit-below-one$|^argument-mapping$,,,tested,
+Covariates,Phase-specific covariates,^phase-specific-covariates$|^phase-formula-|^phase-inherits-legacy-windows$,,,tested,
+Inference,Standard errors and the Hessian,hessian|^numeric-hessian-step$|^gradient-weibull$,,,tested,
+Inference,Convergence and degraded-fit reporting,^possible-false-maximum$|^stuck-start-single-dist$|^unverified-convergence-single-dist$|^infeasible-start-single-dist$|^sas-gradient-check$|^degraded|^not-done-print$|^unfitted-warning-scope$|^multiphase-case3l-runaway$,,,in progress,Single-distribution false maxima warn (#531); the multiphase criterion is open (#589).
+Inference,Prediction (predict.hazard),^predict-|^log-surv$,,,tested,
+Inference,Decomposition and evaluation,^decompos|^decomposition$|^evaluate-at-parameters$,,,tested,
+Inference,Goodness of fit and deciles,^gof-|^deciles-|^diagnostics$,,,tested,
+Selection,Stepwise selection (hzr_stepwise),^stepwise-|^scope-resolved-pins$|^candidate-score$|^refit-|^pin-343-behaviours$,^stepwise-parity$|^bhdead-sas-parity$,,tested,
+Selection,Score and Wald tests,^score-|^wald$,,,tested,
+Selection,Bootstrap (hzr_bootstrap),^bootstrap-,,,tested,
+SAS migration,SAS job translator (hzr_translate_sas),^sas-lex$|^sas-grammar|^sas-job$|^sas-parse-|^sas-selection$|^sas-hazpred-grid$|^sas-translate-|^sas-render-|^sas-objective-label$|^translate-sas$,,,tested,
+SAS migration,SAS output readers (hzr_read_outhaz and listings),^read-outhaz$|^predict-outhaz$|^lst-parser-layouts$|^bhdead-,,,tested,
