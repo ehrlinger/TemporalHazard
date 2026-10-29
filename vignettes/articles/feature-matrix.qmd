@@ -18,7 +18,8 @@ m <- utils::read.csv(src, comment.char = "#", stringsAsFactors = FALSE)
 This page lists each TemporalHazard feature, the tests that cover it, and
 whether it is compared with an external reference. It is generated from one
 saved run of the full test suite by `tools/feature-matrix.R`, which refuses to
-write it unless the run is of the current tree and has no failure.
+write it unless the run has no failure and its recorded commit, installed
+dependencies and test names all match the tree.
 
 **Measured at `r meta[["measured_at"]]` on `r meta[["measured_on"]]`, version
 `r meta[["version"]]`.** That run: `r meta[["suite"]]`. A page older than the
@@ -30,14 +31,17 @@ code it describes is still possible: regenerate it at each release.
   *Tested*: covered by the package's own tests. *In progress*: a known gap,
   named in the notes. *Shipped* is reserved for a feature handed to
   biostatistics for critique.
-- **Tests** and **expectations** count what ran in that run, across the
-  feature's test files. A test file can count towards more than one feature.
+- **Tests run** and **expectations** count what ran in that run, across the
+  feature's test files. A skipped test is not counted as run. A test file can
+  count towards more than one feature.
 - **Skipped** counts tests that did not run there, usually because a reference
   file, the C binary or the study data was not available.
-- **Reference** says whether the feature is compared with something outside
-  the package: SAS listings, the C `hazard` binary, or an independent oracle.
-  "*n* of *m* tests ran" is how many of those comparisons actually ran in this
-  run, not how many exist.
+- **Reference** counts the tests that compare the feature with something
+  outside the package: SAS listings, the C `hazard` binary, or an independent
+  oracle. Each is cited by name in `tools/feature-matrix-references.csv`.
+  "*n* of *m* ran" means *n* of those *m* comparisons ran in this run. Tests
+  that only check a reference file is well formed, or that exercise the C
+  binary's interface, are not counted.
 - **Default start** says whether a test shows a fit started from the
   package's defaults reaching the reference estimates. A reference test that
   starts from the estimates SAS reported shows that the likelihood agrees at
@@ -48,9 +52,9 @@ code it describes is still possible: regenerate it at each release.
 #| results: asis
 for (a in unique(m$area)) {
   cat("\n## ", a, "\n\n", sep = "")
-  d <- m[m$area == a, c("feature", "status", "tests", "expectations",
+  d <- m[m$area == a, c("feature", "status", "tests_run", "expectations",
                         "skipped", "reference", "default_start", "notes")]
-  names(d) <- c("Feature", "Status", "Tests", "Expectations", "Skipped",
+  names(d) <- c("Feature", "Status", "Tests run", "Expectations", "Skipped",
                 "Reference", "Default start", "Notes")
   print(knitr::kable(d, row.names = FALSE))
   cat("\n")
@@ -59,13 +63,21 @@ for (a in unique(m$area)) {
 
 ## Regenerating
 
-From the package root, after a full run saved as `tools/release-suite.R`
-saves it:
+From the package root, on a committed tree:
 
 ```sh
-Rscript tools/release-suite.R results.rds
+Rscript tools/save-suite.R results.rds
 Rscript tools/feature-matrix.R results.rds
 ```
 
-The second command refuses if a test file belongs to no feature, if a pattern
-in the map matches no file, or if the run does not match the tests on disk.
+`tools/release-suite.R results.rds` makes the same run with the study data
+required, and its output feeds the second command too. Both attach the run's
+provenance: the commit, the installed dependency versions and the time.
+
+The second command refuses a run made on an uncommitted tree, a run of a
+commit whose tests, code or data differ from the current one, a run under
+other dependency versions, a run with a failure, and a run whose test names
+differ from those on disk. It also refuses a test file that belongs to no
+feature, a pattern in the map that matches no file, and a cited test that is
+not in the run. `Rscript tools/test-feature-matrix.R` plants each of those
+faults and checks the refusal.

@@ -1,0 +1,29 @@
+feature,file,test,reference
+Multiphase likelihood and optimizer,test-multiphase-parity.R,R log-likelihood at C reference parameters matches C output,C binary
+Multiphase likelihood and optimizer,test-multiphase-parity.R,KUL fit mu estimates are in neighborhood of C reference,C binary
+Standard errors and the Hessian,test-multiphase-parity.R,R standard errors at C params are consistent with C reference,C binary
+Multiphase likelihood and optimizer,test-sas-parity.R,hz.deadp.KUL: 3-phase fixed-shape Weibull-tail matches SAS LL/MLEs,SAS
+Multiphase likelihood and optimizer,test-sas-parity.R,hz.death.AVC: 2-phase free-shape Early matches SAS LL/MLEs,SAS
+Multiphase likelihood and optimizer,test-sas-parity.R,hm.deadp.VALVES: null model nu=0 m<0 LL matches SAS initial (Case 2L check),SAS
+Multiphase likelihood and optimizer,test-sas-parity.R,hm.death.patient: 2-phase both-phase covariate model matches SAS,SAS
+Multiphase likelihood and optimizer,test-sas-parity.R,hm.death.AVC.deciles: 2-phase multivariable model matches SAS,SAS
+Multiphase likelihood and optimizer,test-sas-parity.R,hz.te123.OMC fit 2: modulated renewal + late covariates matches SAS LL/MLEs,SAS
+Multiphase likelihood and optimizer,test-bhdead-sas-parity.R,multiphase shape fit reproduces the SAS shape fit,SAS
+Entry times (left truncation),test-sas-parity.R,hz.te123.OMC fit 1: left-truncated 2-phase shape params match SAS,SAS
+Observation weights,test-sas-parity.R,hz.tm123.OMC: morbidity-weighted 2-phase shape params match SAS,SAS
+Observation weights,test-weights-sas-parity.R,AVC fractional-weight fit: R covariate estimates match SAS,SAS
+Observation weights,test-weights-sas-parity.R,AVC fractional-weight fit: R log-likelihood matches SAS,SAS
+Prediction (predict.hazard),test-sas-parity.R,hp.death.AVC: HAZPRED survival/hazard nomogram matches SAS,SAS
+Prediction (predict.hazard),test-sas-parity.R,hp.death.AVC.hm1: patient-specific predictions (MAL 0/1) match SAS,SAS
+Prediction (predict.hazard),test-sas-parity.R,hp.death.AVC.hm2: predictions by date of repair (COM_IV 0/1) match SAS,SAS
+Goodness of fit and deciles,test-sas-parity.R,ac.death.AVC: Kaplan-Meier and Nelson-Aalen life tables match SAS,SAS
+Goodness of fit and deciles,test-sas-parity.R,hs.death.AVC.hm1: stratified observed-vs-expected calibration matches SAS,SAS
+Goodness of fit and deciles,test-sas-parity.R,hs.death.AVC.hm1: per-stratum mean survival curve matches SAS,SAS
+Stepwise selection (hzr_stepwise),test-stepwise-parity.R,AVC forward-Wald stepwise: R selects similar variables to SAS,SAS
+Stepwise selection (hzr_stepwise),test-stepwise-parity.R,R's per-step Q matches SAS's for the first entered variable,SAS
+Phase specification and shapes (hzr_phase),test-phase-constraint-oracle.R,hazard() under alpha_gamma_eta matches an independent fit,oracle
+Phase specification and shapes (hzr_phase),test-phase-constraint-oracle.R,hazard() under eta_gamma matches an independent fit,oracle
+Repeated events,test-repeated-events-parity.R,hz.ce_cardioversion_repeated.ehb: %repeat reproduces the SAS log and HAZARD's counts,SAS
+Repeated events,test-repeated-events-parity.R,hz.ce_cardioversion_repeated.ehb: the first model reproduces the listing,SAS
+Repeated events,test-repeated-events-parity.R,hz.ce_cardioversion_repeated.ehb: the stratified model reproduces the listing,SAS
+Repeated events,test-repeated-events-renewal-parity.R,"ac.reintervention: %repeat reproduces the SAS log, the .lst and library.bdrein",SAS
