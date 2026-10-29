@@ -27,3 +27,8 @@
   Visualization](https://ehrlinger.github.io/TemporalHazard/articles/prediction-visualization.md):
 - [Inference &
   Diagnostics](https://ehrlinger.github.io/TemporalHazard/articles/inference-diagnostics.md):
+
+### Project status
+
+- [Feature test
+  matrix](https://ehrlinger.github.io/TemporalHazard/articles/feature-matrix.md):

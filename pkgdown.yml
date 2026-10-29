@@ -4,13 +4,14 @@ pkgdown_sha: ~
 articles:
   ar-architecture: ar-architecture.html
   clinical-analysis-walkthrough: clinical-analysis-walkthrough.html
+  articles/feature-matrix: feature-matrix.html
   fitting-hazard-models: fitting-hazard-models.html
   getting-started: getting-started.html
   inference-diagnostics: inference-diagnostics.html
   mf-mathematical-foundations: mf-mathematical-foundations.html
   prediction-visualization: prediction-visualization.html
   sas-to-r-migration: sas-to-r-migration.html
-last_built: 2026-10-29T20:02Z
+last_built: 2026-10-29T23:21Z
 urls:
   reference: https://ehrlinger.github.io/TemporalHazard/reference
   article: https://ehrlinger.github.io/TemporalHazard/articles
