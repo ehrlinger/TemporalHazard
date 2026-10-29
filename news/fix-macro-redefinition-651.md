@@ -10,4 +10,5 @@
   such job had emitted the earlier grid with no row. Its calls follow the rule
   for any unread call, and when the enclosing definition holds a statement
   this cannot read, such as `OPTIONS OBS=`, the call refuses the grid wherever
-  it stands (#651).
+  it stands. A `%MACRO` inside a macro call's argument list, such as quoted
+  `%NRSTR()` text, is no longer read as a definition (#651).

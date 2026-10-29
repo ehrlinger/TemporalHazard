@@ -2286,11 +2286,29 @@
   versions <- list()
   nested <- character(0)
   nested_in <- list()
+  arg_bal <- 0L
   depth <- 0L
   n_def <- 0L
   open <- character(0)
   for (i in seq_along(stmts)) {
     t <- stmts[[i]]
+    # A macro call's argument list runs to the parenthesis that closes it and
+    # can hold semicolons, so it spans statements, as at the call site. A
+    # `%MACRO` in it is argument text, often quoted (`%NRSTR(...)`), not a
+    # definition (#678, Codex): read as one, it became the definition a later
+    # call ran. A list that never closes keeps everything after it out of
+    # every definition, so a later call finds none and refuses.
+    if (arg_bal > 0L) {
+      arg_bal <- arg_bal + .hzr_sas_paren_balance(t)
+      if (depth > 0L) {
+        scope[[i]] <- n_def
+        for (nm in open) bodies[[nm]] <- c(bodies[[nm]], t)
+      }
+      next
+    }
+    if (!is.null(.hzr_sas_macro_call(t))) {
+      arg_bal <- max(0L, .hzr_sas_paren_balance(t))
+    }
     if (grepl("^%MACRO ", t)) {
       if (depth == 0L) n_def <- n_def + 1L
       depth <- depth + 1L

@@ -593,6 +593,22 @@ test_that("a macro defined inside another macro refuses the grid (#651 review)",
   }
 })
 
+test_that("a %MACRO inside a call's quoted argument is not a definition (#678, Codex)", {
+  # %NRSTR masks the semicolons and the %MACRO, and %EMPTY consumes the
+  # text, so no SW is defined there and %SW runs the first, PRED-writing
+  # body: SAS predicts at AGE = 70. Read as a definition, the quoted SW was
+  # the one completed before the call, and the AGE = 50 grid was emitted
+  # with no row.
+  writes <- "%MACRO SW; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN; %MEND SW;"
+  job <- translate_494(c(
+    writes, "%MACRO EMPTY(TEXT); %MEND EMPTY;",
+    "%EMPTY(%NRSTR(ignored; %MACRO SW; OPTIONS LS=80; %MEND SW;));",
+    fit_macro_grid, "%SW;", writes, hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "PRED is written by %SW", fixed = TRUE)
+  expect_false(any(grepl("^grid", names(job$calls))))
+})
+
 test_that("a nested macro whose definition sets OBS= refuses, even before the grid (#678 review)", {
   # A call before the grid's first step keeps the grid with a row, unless
   # what it runs is unread. SW sets OBS=2 and then redefines itself: SAS
