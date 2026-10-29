@@ -2273,11 +2273,15 @@
 #' @return `list(scope, bodies)`: `scope[i]` numbers the outermost
 #'   definition statement `i` belongs to, `%MACRO` and `%MEND` included, and
 #'   is 0 outside every definition; `bodies` holds each macro's statements,
-#'   named by the macro.
+#'   named by the macro, from its LAST definition; `ends` holds, per name,
+#'   the `%MEND` index of each definition and `versions` the body each one
+#'   compiled, in file order, for `.hzr_sas_macro_body_at()`.
 #' @noRd
 .hzr_sas_macro_defs <- function(stmts) {
   scope <- integer(length(stmts))
   bodies <- list()
+  ends <- list()
+  versions <- list()
   depth <- 0L
   n_def <- 0L
   open <- character(0)
@@ -2294,13 +2298,30 @@
     if (depth == 0L) next
     scope[[i]] <- n_def
     if (grepl("^%MEND( |$)", t)) {
+      nm <- open[[depth]]
+      ends[[nm]] <- c(ends[[nm]], i)
+      versions[[nm]] <- c(versions[[nm]], list(bodies[[nm]]))
       open <- open[-depth]
       depth <- depth - 1L
       next
     }
     for (nm in open) bodies[[nm]] <- c(bodies[[nm]], t)
   }
-  list(scope = scope, bodies = bodies)
+  list(scope = scope, bodies = bodies, ends = ends, versions = versions)
+}
+
+#' The body a call of `mac` at statement `i` runs (#651).
+#'
+#' SAS compiles a macro at its `%MEND` and a later `%MACRO` of the same name
+#' replaces it, so a call runs the definition most recently completed before
+#' it. A call with none before it is not resolved (SAS warns "Apparent
+#' invocation of macro ... not resolved" and runs nothing this file shows).
+#' @return The body's statements, or `NULL` when no definition precedes `i`.
+#' @noRd
+.hzr_sas_macro_body_at <- function(defs, mac, i) {
+  k <- which(defs$ends[[mac]] < i)
+  if (!length(k)) return(NULL)
+  defs$versions[[mac]][[max(k)]]
 }
 
 #' The definition the statement holding offset `pos` stands in, or 0.
@@ -2666,7 +2687,7 @@
       }
       # A dataset the arguments name as written is an event at the call.
       for (nm in .hzr_sas_written_names(call_text)) add(p, nm, "opaque", what = paste0("%", mac))
-      body <- if (macros) defs$bodies[[mac]]
+      body <- if (macros) .hzr_sas_macro_body_at(defs, mac, i)
       if (is.null(body)) {
         flag(p, "call", call_text, if (identical(mac, "INCLUDE")) {
           "runs code from another file, which hzr_translate_sas() cannot read"

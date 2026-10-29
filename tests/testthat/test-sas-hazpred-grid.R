@@ -542,6 +542,27 @@ test_that("calling a macro whose body writes the grid refuses the grid", {
   expect_match(refused_494(job), "PRED is written by %ALTGRID", fixed = TRUE)
 })
 
+test_that("a call runs the definition completed before it, not the last one (#651)", {
+  # SAS compiles a macro at %MEND, and a second %MACRO SW replaces it from
+  # there on. Main read every call against the last body.
+  writes <- "%MACRO SW; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN; %MEND SW;"
+  reads <- "%MACRO SW; OPTIONS LS=80; %MEND SW;"
+  # The call runs the body that writes PRED: SAS predicts at AGE = 70. Main
+  # emitted the AGE = 50 grid with no row.
+  job <- translate_494(c(fit_macro_grid, writes, "%SW;", reads, hazpred_macro_grid))
+  expect_match(refused_494(job), "PRED is written by %SW", fixed = TRUE)
+  # Reversed, the call runs the body that only sets an option, so the grid
+  # is SAS's AGE = 50. Main refused it over a body defined after the call.
+  job <- translate_494(c(fit_macro_grid, reads, "%SW;", writes, hazpred_macro_grid))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+  expect_equal(nrow(job$untranslated), 0L)
+  # A call before any definition is not resolved by SAS, so it is a macro
+  # this file does not define at that point.
+  job <- translate_494(c(fit_macro_grid, "%SW;", writes, hazpred_macro_grid))
+  expect_match(refused_494(job), "calls a macro this file does not define",
+               fixed = TRUE)
+})
+
 test_that("a call before the grid's step is recorded; macro statements add no row", {
   # Approved change (2026-10-09): the calls before the grid's step each get a
   # row, since they may set session state the grid reads. %LET, %PUT and a
