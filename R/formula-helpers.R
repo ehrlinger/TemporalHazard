@@ -1119,6 +1119,7 @@
   # the rebuild, but predict() selects columns by name, so both would read
   # the first; it is not rebuilt.
   if (!is.null(object$data$x_design) || is.null(x_fit) || is.null(f) ||
+        !.hzr_is_formula_fit(object, TRUE) ||
         !is.environment(env) || !is.data.frame(frame) ||
         anyDuplicated(colnames(x_fit)) > 0L) {
     return(object)
@@ -1293,7 +1294,8 @@
     # would be a silent wrong answer, so it is refused -- as it was before,
     # when such a column made the positional match fail.
     extra <- setdiff(names(newdata), c(cols, "time"))
-    if (!is.null(object$call$formula) && length(extra) > 0L) {
+    if (.hzr_is_formula_fit(object, !is.null(object$call$formula)) &&
+          length(extra) > 0L) {
       stop("This fit was saved by an earlier version of TemporalHazard, ",
            "without a stored formula design, so 'newdata' may hold only its ",
            "design columns (", paste0("'", cols, "'", collapse = ", "),

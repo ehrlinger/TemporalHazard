@@ -111,7 +111,7 @@
   if (!is.null(inherit_blocker)) {
     return(inherit_blocker)
   }
-  if (!is.null(fit$call$formula)) {
+  if (.hzr_is_formula_fit(fit, !is.null(fit$call$formula))) {
     return(NULL)
   }
 
@@ -269,7 +269,7 @@
   fix <- paste0(". Give each phase its covariates with ",
                 "hzr_phase(formula = ~ ...), with the columns in `data`")
 
-  if (is.null(fit$call$formula)) {
+  if (!.hzr_is_formula_fit(fit, !is.null(fit$call$formula))) {
     # Ask the design that was built, not the call: an `x` argument bound to
     # NULL names `x` but built no columns, so an inheriting phase loses none.
     if (!is.null(fit$data$x) && ncol(fit$data$x) > 0L) {
@@ -404,7 +404,7 @@
   # Recover the original formula; see .hzr_stored_formula() for why this
   # cannot be a deparse. A vector-interface fit has none -- which the blocker
   # above has already established is survivable on the multiphase path only.
-  has_formula <- !is.null(current$call$formula)
+  has_formula <- .hzr_is_formula_fit(current, !is.null(current$call$formula))
   current_formula <- if (has_formula) {
     .hzr_stored_formula(current, "`current`")
   } else {

@@ -1001,6 +1001,10 @@ hazard <- function(formula = NULL,
   # model.matrix() take a classed numeric's stored doubles too (#231).
   data <- .hzr_numeric_frame_values(data)
 
+  # Recorded here because it cannot be recovered from the stored call: a
+  # wrapper writes `formula = fml` whether `fml` held a formula or NULL, and
+  # a formula given beside `time =` is the one used (#432).
+  interface <- if (is.null(formula)) "vector" else "formula"
   if (!is.null(formula)) {
     if (is.null(data)) {
       stop("'data' is required when 'formula' is provided.", call. = FALSE)
@@ -2023,7 +2027,8 @@ hazard <- function(formula = NULL,
   #                re-evaluates the stored call; it must do so here, otherwise
   #                arguments passed by symbol (theta, phases, control) cannot
   #                be resolved.
-  # $spec       -- model specification (dist, control)
+  # $spec       -- model specification (dist, control); $spec$interface
+  #                is "formula" or "vector", the route this call took
   # $data       -- raw data stored for default predict() / refit
   # $fit        -- optimisation results (see fit_state fields above)
   # $legacy_args -- pass-through ... args for SAS-migration parity
@@ -2032,7 +2037,7 @@ hazard <- function(formula = NULL,
     call = captured_call,
     call_env = captured_env,
     spec = list(dist = dist, control = control, time_windows = time_windows,
-                phases = phases, objective = objective),
+                phases = phases, objective = objective, interface = interface),
     data = list(
       time = time,
       time_lower = time_lower,
