@@ -24,5 +24,8 @@ R/likelihood-multiphase.R, the function .hzr_mt_normal()
   Transactions on Modeling and Computer Simulation, 8(1), 3-30.
   doi:10.1145/272991.272995
 
-  The authors' current distribution and its licence terms are at
+  The authors' current distribution and its license terms are at
   http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/emt.html
+
+The text of the GPL is in the file COPYING in the source package, and in R's
+share/licenses directory, or at https://www.R-project.org/Licenses/.

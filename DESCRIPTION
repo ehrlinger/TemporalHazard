@@ -22,7 +22,8 @@ Description: Provides native R implementations of the multiphase parametric
     intentionally implemented in pure R first; performance-critical paths may
     later be accelerated with 'Rcpp' without changing the public interface.
 License: GPL (>= 2)
-Copyright: See inst/COPYRIGHTS for .hzr_mt_normal().
+Copyright: See the file COPYRIGHTS in the installed package (inst/COPYRIGHTS in
+    the source) for .hzr_mt_normal().
 Encoding: UTF-8
 Language: en-US
 Roxygen: list(markdown = TRUE)

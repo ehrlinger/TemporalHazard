@@ -1658,7 +1658,7 @@
 #' The generator is that of Matsumoto and Nishimura (1998).  The seeding, the
 #' zero-word substitution and the inversion are derived from R's own
 #' `src/main/RNG.c` and `src/nmath/snorm.c`, and a test pins them against `set.seed()` and
-#' `rnorm()`.  See `inst/COPYRIGHTS`.
+#' `rnorm()`.  See `system.file("COPYRIGHTS", package = "TemporalHazard")`.
 #'
 #' @references Matsumoto M, Nishimura T (1998). Mersenne Twister: a
 #'   623-dimensionally equidistributed uniform pseudo-random number generator.
