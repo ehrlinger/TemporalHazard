@@ -88,6 +88,39 @@ for (f in names(uses)) {
   ok(paste("comment does not fire:", f), identical(r$kind, "job") && isFALSE(r[[f]]))
 }
 
+# Spaces around `=` are valid SAS, and the normaliser keeps them.
+d <- tree()
+r <- .scan_job(plant(d, "spaced", job(
+  body = "%HAZPRED(PROC HAZPRED DATA=G INHAZ = OUTEST; TIME T;);",
+  opts = "OUTHAZ = OUTEST", stmts = "PARMS TAU = 1 GAMMA = 2;"
+)))
+ok("spaced assignments are seen",
+   all(unlist(r[c("shape_late_tau", "shape_late_gamma", "outhaz", "inhaz")])))
+ok("spaced DATA= is read",
+   isFALSE(.scan_data_found("PROC HAZARD DATA = STUDY.X;",
+                            "libname study '/nonexistent/place';",
+                            file.path(d, "j.sas"))))
+
+# Which library a job means.
+lib <- tree()
+file.create(file.path(lib, "x.sas7bdat"))
+ok("a commented libname is not the job's",
+   isTRUE(.scan_data_found("PROC HAZARD DATA=STUDY.X;",
+                           c("/* libname study '/old/missing'; */",
+                             paste0("libname study '", lib, "';")),
+                           file.path(d, "j.sas"))))
+ok("a macro reference inside a path is unknown",
+   is.na(.scan_data_found("PROC HAZARD DATA=STUDY.X;",
+                          "libname study \"/data/&study\";", file.path(d, "j.sas"))))
+ok("a library on a desktop mount is unknown, and is not touched",
+   is.na(.scan_data_found("PROC HAZARD DATA=STUDY.X;",
+                          "libname study '/Volumes/stale/data';",
+                          file.path(d, "j.sas"))))
+ok("two declarations of one library are unknown",
+   is.na(.scan_data_found("PROC HAZARD DATA=STUDY.X;",
+                          c("libname study '/a';", "libname study '/b';"),
+                          file.path(d, "j.sas"))))
+
 # Kinds a job can fail into.
 d <- tree()
 ok("no block", identical(.scan_job(plant(d, "a", "data x; set y; run;"))$kind, "no_block"))
@@ -96,6 +129,12 @@ ok("own wrapper is macro_only",
 ok("a macro library file is not a job",
    identical(.scan_job(plant(d, "c", c("%macro hazboot(data=);", "%mend;")))$kind,
              "macro_definition"))
+ok("a file defining a macro and running a job is a job",
+   identical(.scan_job(plant(d, "f", c("%macro hazboot(data=);", "%mend;", job())))$kind,
+             "job"))
+ok("a commented macro definition does not hide a job",
+   identical(.scan_job(plant(d, "g", c("/* %macro hazboot(data=); */", job())))$kind,
+             "job"))
 ok("a bootstrap driver with no block is a job",
    identical(.scan_job(plant(d, "e", "%HAZBOOT(DATA=A);"))$kind, "job"))
 
@@ -171,6 +210,10 @@ q <- function(...) {
   scan_main(c(...))
 }
 ok("--out inside the tree", identical(q("--out", file.path(root, "o"), root), 1L))
+inside <- file.path(root, "new", "deeper")
+ok("--out in a new directory inside the tree", identical(q("--out", inside, root), 1L))
+ok("that refusal created nothing", !file.exists(file.path(root, "new")))
+ok("--out on a desktop mount", identical(q("--out", "/Volumes/not-a-real-mount/o", root), 1L))
 ok("--out required", identical(q(root), 1L))
 ok("bad --per-feature", identical(q("--out", out, "--per-feature", "0", root), 1L))
 ok("a tree with no .sas is a failed scan", identical(q("--out", tree(), tree()), 2L))

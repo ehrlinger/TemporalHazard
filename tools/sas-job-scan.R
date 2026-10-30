@@ -42,8 +42,8 @@
     r("phase_early", "Multiphase likelihood and optimizer", "; *EARLY[ ;]"),
     r("phase_constant", "Multiphase likelihood and optimizer", "; *CONSTANT[ ;]"),
     r("phase_late", "Multiphase likelihood and optimizer", "; *LATE[ ;]"),
-    r("shape_late_tau", "Phase specification and shapes (hzr_phase)", "\\bTAU="),
-    r("shape_late_gamma", "Phase specification and shapes (hzr_phase)", "\\bGAMMA="),
+    r("shape_late_tau", "Phase specification and shapes (hzr_phase)", "\\bTAU *="),
+    r("shape_late_gamma", "Phase specification and shapes (hzr_phase)", "\\bGAMMA *="),
     r("shape_fixed", "Phase specification and shapes (hzr_phase)",
       "\\bFIX(M|NU|DELTA|TAU|GAMMA|ALPHA|ETA|THALF|MUE|MUC|MUL)\\b"),
     r("interval_censoring", "Interval and left censoring", "; *ICENSOR[ =]"),
@@ -61,7 +61,7 @@
     r("conserve", "Conservation of Events", "\\bCONSERVE\\b"),
     r("nocov", "Standard errors and the Hessian", "\\bNOCOV\\b"),
     r("robust", "Standard errors and the Hessian", "\\b(SEMI)?ROBUST\\b"),
-    r("outhaz", "SAS output readers (hzr_read_outhaz and listings)", "\\bOUTHAZ="),
+    r("outhaz", "SAS output readers (hzr_read_outhaz and listings)", "\\bOUTHAZ *="),
     r("steepest", "Convergence and degraded-fit reporting", "\\bSTEEPEST\\b"),
     r("quasinewton", "Convergence and degraded-fit reporting",
       "\\bQUASI(NEWTON)?\\b")
@@ -74,7 +74,7 @@
   r <- .scan_rule
   rbind(
     r("hazpred", "Prediction (predict.hazard)", "(PROC |%)HAZPRED\\b"),
-    r("inhaz", "SAS output readers (hzr_read_outhaz and listings)", "\\bINHAZ="),
+    r("inhaz", "SAS output readers (hzr_read_outhaz and listings)", "\\bINHAZ *="),
     r("repeated_events", "Repeated events", "%REPEAT *[(]"),
     r("bootstrap", "Bootstrap (hzr_bootstrap)", "%(HAZBOOT|BOOTSTRAP)[A-Z_.]* *[(]"),
     r("deciles", "Goodness of fit and deciles", "%DECILES[A-Z_.]* *[(]"),
@@ -85,12 +85,17 @@
 
 .scan_features <- function() c(.scan_rules()$feature, .scan_job_rules()$feature)
 
-# The text of the job with comments gone, and its HAZARD blocks' text.
+# The text of the job with comments gone, and its HAZARD blocks' text. The body
+# of a %MACRO HAZ... or %MACRO BOOT... definition is the library, not the job, so
+# it is set aside: what is left says whether the file also runs anything.
 .scan_text <- function(lines) {
   txt <- TemporalHazard:::.hzr_sas_normalise(lines)
+  definition <- "%MACRO +(HAZ|BOOT).*?%MEND[^;]*;"
+  defines <- grepl(definition, txt, perl = TRUE)
+  if (defines) txt <- gsub(definition, " ", txt, perl = TRUE)
   blocks <- TemporalHazard:::.hzr_sas_blocks(txt)
   procs <- vapply(blocks, function(b) b$proc, character(1L))
-  list(txt = txt, n_hazard = sum(procs == "HAZARD"),
+  list(txt = txt, defines = defines, n_hazard = sum(procs == "HAZARD"),
        n_hazpred = sum(procs == "HAZPRED"), n_repeat = sum(procs == "REPEAT"),
        hazard = vapply(blocks[procs == "HAZARD"], function(b) b$text,
                        character(1L)))
@@ -100,18 +105,21 @@
 # the dataset is not there, NA when this scan cannot tell. NA is not a pass:
 # only the job's author knows what !MACRO or a %LET path means.
 .scan_data_found <- function(hazard, lines, job) {
-  d <- regmatches(hazard, regexpr("\\bDATA=[A-Z0-9_]+[.][A-Z0-9_]+", hazard))
+  d <- regmatches(hazard, regexpr("\\bDATA *= *[A-Z0-9_]+[.][A-Z0-9_]+", hazard))
   if (!length(d)) return(NA)
-  d <- strsplit(sub("^DATA=", "", d[[1L]]), ".", fixed = TRUE)[[1L]]
-  # From the original lines: the normalised text is upper case, a Unix path not.
-  src <- paste(lines, collapse = " ")
-  m <- regmatches(src, regexec(
+  d <- strsplit(sub("^DATA *= *", "", d[[1L]]), ".", fixed = TRUE)[[1L]]
+  # Comments off but case kept: the normalised text is upper case, a Unix path not.
+  src <- paste(TemporalHazard:::.hzr_sas_strip_comments(lines), collapse = " ")
+  m <- regmatches(src, gregexec(
     paste0("(?i)libname +", d[1L], "( +[a-z0-9]+)? *['\"]([^'\"]+)['\"]"),
     src, perl = TRUE
   ))[[1L]]
-  if (length(m) != 3L) return(NA)
-  path <- m[3L]
-  if (grepl("^[!&%$]", path)) return(NA)
+  # Two declarations of one library depend on the order the job runs them.
+  if (!length(m) || length(unique(m[3L, ])) != 1L) return(NA)
+  path <- m[3L, 1L]
+  if (grepl("[!&%$]", path)) return(NA)
+  # A job's own library can sit on a desktop mount, and a stale one hangs.
+  if (startsWith(path, "/Volumes/")) return(NA)
   if (!grepl("^/", path)) path <- file.path(dirname(job), path)
   if (!dir.exists(path)) return(FALSE)
   length(list.files(path, pattern = paste0("^", d[2L], "[.]sas7bdat$"),
@@ -151,14 +159,14 @@
     return(empty)
   }
   empty$md5 <- unname(tools::md5sum(path))
-  if (grepl("%MACRO +(HAZ|BOOT)", toupper(paste(lines, collapse = " ")))) {
-    empty$kind <- "macro_definition"
-    return(empty)
-  }
   # A job can reach the package's macros with no block of its own, such as a
   # bootstrap driver, and it still counts.
   by_macro <- any(vapply(.scan_job_rules()$pattern, grepl, logical(1L), s$txt))
   if (s$n_hazard == 0L && s$n_hazpred == 0L && s$n_repeat == 0L && !by_macro) {
+    if (s$defines) {
+      empty$kind <- "macro_definition"
+      return(empty)
+    }
     # %HAZARD( lexes as a block, so a macro call that reaches here is the job's
     # own wrapper, whose features this scan cannot see.
     if (grepl("%[A-Z_][A-Z0-9_.]*(HAZ|BOOT)[A-Z0-9_.]* *[(]", s$txt)) {
@@ -279,6 +287,17 @@
   invisible(feat)
 }
 
+# A path that may not exist yet, with its existing part's symlinks resolved.
+.scan_resolve <- function(path) {
+  path <- path.expand(path)
+  rest <- character()
+  while (!file.exists(path) && dirname(path) != path) {
+    rest <- c(basename(path), rest)
+    path <- dirname(path)
+  }
+  do.call(file.path, as.list(c(normalizePath(path), rest)))
+}
+
 # Returns the exit status, so a test can run it without quitting.
 scan_main <- function(args = commandArgs(trailingOnly = TRUE)) {
   fail <- function(status, ...) {
@@ -302,7 +321,7 @@ scan_main <- function(args = commandArgs(trailingOnly = TRUE)) {
   if (is.null(out) || !length(args)) return(fail(1L, usage))
   if (is.na(per) || per < 1L) return(fail(1L, "--per-feature must be at least 1"))
   # Before anything touches the path: a stale mount can hang dir.exists().
-  if (any(startsWith(args, "/Volumes/"))) {
+  if (any(startsWith(c(args, out), "/Volumes/"))) {
     return(fail(1L, "refusing a desktop mount: run this on the server"))
   }
   if (any(!dir.exists(args))) return(fail(1L, "a ROOT is not a directory"))
@@ -310,11 +329,13 @@ scan_main <- function(args = commandArgs(trailingOnly = TRUE)) {
   if (any(startsWith(roots, "/Volumes/"))) {
     return(fail(1L, "refusing a desktop mount: run this on the server"))
   }
-  dir.create(out, recursive = TRUE, showWarnings = FALSE, mode = "0700")
-  out <- normalizePath(out)
-  if (any(startsWith(paste0(out, "/"), paste0(roots, "/")))) {
+  # Decided before anything is created: refusing --out ROOT/new must not leave
+  # the new directory in the tree it was told to read only.
+  if (any(startsWith(paste0(.scan_resolve(out), "/"), paste0(roots, "/")))) {
     return(fail(1L, "--out must be outside the tree scanned"))
   }
+  dir.create(out, recursive = TRUE, showWarnings = FALSE, mode = "0700")
+  out <- normalizePath(out)
   Sys.chmod(out, "0700")
 
   files <- unlist(lapply(roots, list.files, pattern = "[.]sas$", recursive = TRUE,
@@ -325,7 +346,7 @@ scan_main <- function(args = commandArgs(trailingOnly = TRUE)) {
   }
   # Internals this scan reads. Without them every job would land in lexer_error,
   # which reads as a tree with no jobs.
-  needed <- c(".hzr_sas_normalise", ".hzr_sas_blocks")
+  needed <- c(".hzr_sas_normalise", ".hzr_sas_blocks", ".hzr_sas_strip_comments")
   have <- vapply(needed, exists, logical(1L),
                  envir = asNamespace("TemporalHazard"), inherits = FALSE)
   if (!all(have)) {
