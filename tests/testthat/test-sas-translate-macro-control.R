@@ -128,3 +128,42 @@ test_that("a PROC HAZPRED under an open-code %DO is recorded and warned", {
   expect_equal(nrow(macro_rows(job, "around PROC HAZARD")), 0L)
   expect_length(grep("^refusal", names(job$calls)), 1L)
 })
+
+test_that("compact macro branches are flagged: a name ends at `%` or `(`", {
+  # Each spelling is what SAS's tokenizer reads as the control keyword; each
+  # was silent while the check required a blank after it.
+  jobs <- list(
+    else_branch = paste("%IF &RUN = 1 %THEN %PUT OK; %ELSE", macro_live, sep = ""),
+    if_paren = paste0("%IF(&RUN=1)%THEN", macro_live),
+    do_while = c("%DO%WHILE(&I < 3);", macro_live, "%END;"),
+    then_do_while = c("%IF &RUN = 1 %THEN %DO%UNTIL(&I > 3);", macro_live, "%END;")
+  )
+  for (name in names(jobs)) {
+    job <- do.call(macro_job, as.list(jobs[[name]]))
+    expect_equal(nrow(macro_rows(job, "%IF around PROC HAZARD")), 1L, info = name)
+    expect_length(grep("^refusal", names(job$calls)), 1L)
+    expect_length(macro_fit_slots(job), 1L)
+  }
+})
+
+test_that("a closed compact %DO block does not flag what follows it", {
+  job <- macro_job("%DO%WHILE(&I < 3); %PUT X; %END;", macro_live)
+  expect_equal(nrow(macro_rows(job, "%IF")), 0L)
+  expect_false(any(grepl("^refusal", names(job$calls))))
+})
+
+test_that("a macro name that starts with a control keyword is not control", {
+  # The other side of the boundary: these are calls, and the %ENDIT must not
+  # close the open %DO.
+  for (call in c("%IFFY;", "%ELSEWHERE;", "%DOIT;")) {
+    job <- macro_job(call, macro_live)
+    expect_equal(nrow(macro_rows(job, "around PROC HAZARD")), 0L, info = call)
+  }
+  # In the statement that holds the fit, which is the one the check reads.
+  for (call in c("%IFFY(1)", "%ELSEWHERE(1)")) {
+    job <- macro_job(paste(call, macro_live))
+    expect_equal(nrow(macro_rows(job, "around PROC HAZARD")), 0L, info = call)
+  }
+  job <- macro_job("%DO;", "%ENDIT;", macro_live, "%END;")
+  expect_equal(nrow(macro_rows(job, "%IF around PROC HAZARD")), 1L)
+})

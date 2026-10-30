@@ -6,6 +6,7 @@
   `%MACRO` definition, or under an open-code `%IF` or `%DO`, was translated as
   if it ran once, though SAS runs it once per call, or only when the
   condition holds; it is still translated, now with an untranslated row and a
-  warning chunk above it. `%THEN%DO` written without a space is read as a
-  `%DO`, here and in the HAZPRED grid's dataset scan. Two jobs in the public
+  warning chunk above it. A compact spelling reads the same as a spaced one
+  (`%THEN%DO`, `%DO%WHILE(`, `%ELSE%HAZARD(`, `%IF(`), here and in the HAZPRED
+  grid's dataset scan. Two jobs in the public
   HAZARD corpus show the first two shapes.

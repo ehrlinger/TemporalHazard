@@ -2365,6 +2365,15 @@
   if (length(i)) defs$scope[[max(i)]] else 0L
 }
 
+#' Whether a statement opens a `%DO` block.
+#'
+#' SAS's macro tokenizer ends a name at any character a name cannot hold, so
+#' `%THEN%DO` and `%DO%WHILE(...)` open a block, and `%DOIT` is a macro call.
+#' @noRd
+.hzr_sas_opens_do <- function(t) {
+  grepl("(^|%THEN *|%ELSE *)%DO([^A-Z0-9_]|$)", t)
+}
+
 #' The macro control the statement holding offset `pos` runs under (#687).
 #'
 #' A step inside a `%MACRO` definition runs once per call of the macro, and
@@ -2384,11 +2393,11 @@
   for (j in seq_len(i - 1L)) {
     if (defs$scope[[j]] != 0L) next
     t <- st$text[[j]]
-    if (grepl("(^|%THEN *|%ELSE *)%DO( |$)", t)) depth <- depth + 1L
-    if (grepl("^%END( |$)", t)) depth <- max(0L, depth - 1L)
+    if (.hzr_sas_opens_do(t)) depth <- depth + 1L
+    if (grepl("^%END([^A-Z0-9_]|$)", t)) depth <- max(0L, depth - 1L)
   }
   # `%IF ... %THEN %HAZARD(...)` is one statement with no %DO.
-  if (depth > 0L || grepl("^%(IF|ELSE)( |$)", st$text[[i]])) return("%IF")
+  if (depth > 0L || grepl("^%(IF|ELSE)([^A-Z0-9_]|$)", st$text[[i]])) return("%IF")
   NULL
 }
 
@@ -2708,7 +2717,7 @@
         # Open-code macro control (SAS 9.4M5 and later). The steps inside
         # carry `cond`; the statement itself may run anything.
         if (scope_at(p) == 0L) {
-          if (grepl("(^|%THEN *|%ELSE *)%DO( |$)", t)) depth <- depth + 1L
+          if (.hzr_sas_opens_do(t)) depth <- depth + 1L
           if (identical(word, "END")) depth <- max(0L, depth - 1L)
         }
         flag(p, "call", t, "is a %IF/%DO macro control statement, which this translation does not evaluate")
