@@ -1248,13 +1248,12 @@
   }
   idx <- which(attr(mm, "assign")[pos] == term)
   if (length(idx) > 1L) {
-    stop(
+    .hzr_stop_multi_coef(
       "Variable ", sQuote(var), where,
       " expands to multiple coefficients (",
       paste(sQuote(cols[idx]), collapse = ", "),
       ").  Stepwise v1 supports main-effect terms only; ",
-      "rebuild your candidate as pre-expanded main effects and retry.",
-      call. = FALSE
+      "rebuild your candidate as pre-expanded main effects and retry."
     )
   }
   if (length(idx) == 0L) {
@@ -1288,13 +1287,12 @@
   added <- which(!new_cols %in% old_cols)
   where <- if (multiphase) paste0(" in phase ", sQuote(phase)) else ""
   if (length(added) > 1L) {
-    stop(
+    .hzr_stop_multi_coef(
       "Variable ", sQuote(var), where,
       " expands to multiple coefficients (",
       paste(sQuote(new_cols[added]), collapse = ", "),
       ").  Stepwise v1 supports main-effect terms only; ",
-      "rebuild your candidate as pre-expanded main effects and retry.",
-      call. = FALSE
+      "rebuild your candidate as pre-expanded main effects and retry."
     )
   }
   # A refit that added no column at all is said so first; the message below
