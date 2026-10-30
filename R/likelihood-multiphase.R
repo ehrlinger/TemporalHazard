@@ -1655,7 +1655,7 @@
 #' are held in doubles: every product stays below 2^53, so the arithmetic is
 #' exact.
 #'
-#' @param seed Single whole number, as `set.seed()` takes.
+#' @param seed Single whole number within integer range.
 #' @param n Number of deviates.
 #' @return Numeric vector of length `n`.
 #' @keywords internal
@@ -1697,7 +1697,8 @@
     y <- xor32(y, and32((y * 128) %% word, 2636928640))
     y <- xor32(y, and32((y * 32768) %% word, 4022730752))
     y <- xor32(y, y %/% 262144)
-    u[k] <- y * 2.3283064365386963e-10
+    # R's generator never returns 0: a zero word becomes half its smallest step.
+    u[k] <- if (y == 0) 1.1641532185403985e-10 else y * 2.3283064365386963e-10
   }
 
   big <- 134217728
@@ -2703,13 +2704,10 @@
   # synthetic two-phase fit in test-multiphase-reproducibility.R) before doing so.
   start_seed <- if (!is.null(control$start_seed)) control$start_seed else 3L
   control$start_seed <- NULL  # remove before passing to optim
-  # Validated against what set.seed() can actually take, and rejected rather
-  # than coerced.  Negative seeds are fine (set.seed(-1) is valid and
-  # deterministic), but a non-whole number is not: set.seed() truncates it, so
-  # 3.9 and 3 select the SAME ensemble, and a user sweeping 3.1/3.5/3.9 would
-  # believe they had tried three sets of starts having tried one.  Out of
-  # integer range, set.seed() fails with "supplied seed is not a valid integer"
-  # and never names the argument that caused it.
+  # Held to what set.seed() takes, and rejected rather than coerced.  Negative
+  # seeds are fine, but a non-whole number is not: truncating it would make 3.9
+  # and 3 select the SAME ensemble, and a user sweeping 3.1/3.5/3.9 would believe
+  # they had tried three sets of starts having tried one.
   if (length(start_seed) != 1L || !is.numeric(start_seed) ||
       !is.finite(start_seed) || start_seed != trunc(start_seed) ||
       abs(start_seed) > .Machine$integer.max) {

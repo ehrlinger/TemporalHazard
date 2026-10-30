@@ -7,7 +7,7 @@
 .hzr_mt_normal(seed, n)
 }
 \arguments{
-\item{seed}{Single whole number, as \code{set.seed()} takes.}
+\item{seed}{Single whole number within integer range.}
 
 \item{n}{Number of deviates.}
 }
