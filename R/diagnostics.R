@@ -2779,10 +2779,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # suppressWarnings() so the step-level warning cannot reach the user.
   n_nonmonotone_reps <- 0L
   # Completed replicates whose screen declined an entry it could not
-  # compare: a refit on other rows (#488) or one that ended below its base
-  # (#490, #538). hzr_stepwise() warns about each, but not from inside a
+  # compare: a refit on other rows (#488), one that ended below its base
+  # (#490, #538), or a candidate with NA on a resampled row, which has no
+  # score (#686). hzr_stepwise() warns about each, but not from inside a
   # replicate, and the candidate is pooled as not selected.
-  declined_codes <- c("rows_differ", "loglik_below_base")
+  declined_codes <- c("rows_differ", "loglik_below_base", "missing_values")
   n_declined_reps <- 0L
   declined_reasons <- stats::setNames(integer(0), character(0))
   # Replicates in which the score criterion declined a candidate it could not

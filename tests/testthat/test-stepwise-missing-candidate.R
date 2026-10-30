@@ -24,7 +24,7 @@ missing_candidate_run <- function(d) {
   warned <- character()
   res <- withCallingHandlers(
     hzr_stepwise(base, scope = ~ strong + noise, data = d,
-                 direction = "forward", slentry = 0.3),
+                 direction = "forward", slentry = 0.3, trace = FALSE),
     warning = function(w) {
       warned <<- c(warned, conditionMessage(w))
       invokeRestart("muffleWarning")
@@ -56,4 +56,31 @@ test_that("a candidate holding NA is declined as missing_values, and the run war
   hit <- grepl("missing value", out$warned, fixed = TRUE)
   expect_equal(sum(hit), 1L)
   expect_match(out$warned[hit], "without testing", fixed = TRUE)
+})
+
+test_that("hzr_bootstrap() counts replicates that declined a candidate holding NA", {
+  # Replicates run with their warnings muffled, so the stepwise warning above
+  # cannot reach the user from inside one; the candidate was pooled as not
+  # selected, and its frequency then tracked how often the NA rows were drawn.
+  # Thirty NA rows: a resample missing all of them is ~exp(-30), so every
+  # replicate declines `strong` and the count is exact.
+  d <- missing_candidate_data()
+  d$strong[1:30] <- NA
+  base <- hazard(survival::Surv(tt, ev) ~ 1, data = d, dist = "weibull",
+                 theta = c(mu = 0.2, nu = 1), fit = TRUE)
+  warned <- character()
+  boot <- withCallingHandlers(
+    hzr_bootstrap(base, n_boot = 2, seed = 1, scope = ~ strong + noise,
+                  direction = "forward", slentry = 0.3),
+    warning = function(w) {
+      warned <<- c(warned, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_equal(boot$n_success, 2L)
+  hit <- grepl("successful replicates completed after declining a candidate",
+               warned, fixed = TRUE)
+  expect_equal(sum(hit), 1L)
+  expect_match(warned[hit], "^2 of 2 successful replicates")
+  expect_match(warned[hit], "missing value", fixed = TRUE)
 })
