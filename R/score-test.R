@@ -1105,9 +1105,10 @@
   # the score can test; saying `non_numeric` described a column (#449).
   if (is.na(var)) return(na_result("not_single_column"))
   xcand <- .hzr_candidate_numeric(data[[var]])
-  if (is.null(xcand) || anyNA(xcand)) {
-    return(na_result("non_numeric"))
-  }
+  if (is.null(xcand)) return(na_result("non_numeric"))
+  # A numeric column with NA on a fitted row has no score. Reported as
+  # `non_numeric`, it was declined with no warning from a completed run (#686).
+  if (anyNA(xcand)) return(na_result("missing_values"))
   s <- stats::sd(xcand)
   if (!is.finite(s) || s == 0) {
     return(na_result("constant"))
@@ -1268,19 +1269,21 @@
 #
 # Still kept narrow. The reasons that describe the candidate's COLUMN, or a
 # design hazard() would refuse -- collinear, constant, non_numeric,
-# not_single_column, duplicate_column, not_expandable -- are NOT here: no
-# refit can make those candidates testable, and paying one per degenerate
-# candidate would give back the whole speed advantage the score criterion
-# exists for. no_information and nonfinite are not here either. They report
-# a gradient or information that could not be computed for the expanded
-# model, and whether a refit rescues them has not been measured (#577).
+# missing_values, not_single_column, duplicate_column, not_expandable -- are
+# NOT here: no refit can make those candidates testable, and paying one per
+# degenerate candidate would give back the whole speed advantage the score
+# criterion exists for. no_information and nonfinite are not here either. They
+# report a gradient or information that could not be computed for the
+# expanded model, and whether a refit rescues them has not been measured
+# (#577).
 #
 # The cost: nuisance_singular refits every candidate at its step that reaches
 # the nuisance check, which is what `criterion = "wald"` pays at every step.
 # .hzr_score_q() returns that reason BEFORE it expands the candidate, so at
 # such a step a collinear, duplicate_column or not_expandable candidate is
 # refitted too, and its refit fails or yields no variance; only constant,
-# non_numeric and not_single_column are screened out ahead of it.
+# non_numeric, missing_values and not_single_column are screened out ahead of
+# it.
 .hzr_score_fallback_reasons <- c("information_indefinite",
                                  "coefficient_diverging",
                                  "nuisance_singular",
@@ -1332,7 +1335,12 @@
     ),
     collinear = "the candidate was collinear with the current model",
     constant  = "the candidate column was constant",
-    non_numeric = "the candidate column was not numeric, or held NA",
+    non_numeric = "the candidate column was not numeric",
+    missing_values = paste(
+      "the candidate column holds a missing value on a row the model was",
+      "fitted on, so its score cannot be computed. Remove or impute those",
+      "rows and fit the base model on the same data"
+    ),
     not_single_column = paste(
       "the candidate is a term, such as an interaction, and not a single",
       "column of `data`, which is all the score criterion can test.",

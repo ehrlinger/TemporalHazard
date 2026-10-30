@@ -1286,6 +1286,16 @@ hzr_stepwise <- function(fit,
             .hzr_score_reason_text("duplicate_column"), ". See ",
             "`$criteria$uncomputable_reasons`.", call. = FALSE)
   }
+  # A candidate with NA was passed over untested, often in favour of a weaker
+  # one, and a completed run said nothing (#686).
+  n_missing <- sum(uncomputable_reasons[names(uncomputable_reasons) ==
+                                          "missing_values"])
+  if (!stopped_uncomputable && n_missing > 0L) {
+    warning("Stepwise selection declined ", n_missing, " candidate ",
+            "score(s) without testing them: ",
+            .hzr_score_reason_text("missing_values"), ". See ",
+            "`$criteria$uncomputable_reasons`.", call. = FALSE)
+  }
   # A refused AIC entry reads like a candidate that did not lower the AIC, and
   # it is not one: it was never compared (#488).
   n_rows_differ <- sum(uncomputable_reasons[names(uncomputable_reasons) ==
