@@ -27,3 +27,18 @@ arithmetic is exact.
 ## Value
 
 Numeric vector of length `n`.
+
+## Details
+
+The generator is that of Matsumoto and Nishimura (1998). The seeding and
+the inversion reproduce R's
+[`set.seed()`](https://rdrr.io/r/base/Random.html) and
+[`rnorm()`](https://rdrr.io/r/stats/Normal.html), and a test pins them
+against those functions.
+
+## References
+
+Matsumoto M, Nishimura T (1998). Mersenne Twister: a 623-dimensionally
+equidistributed uniform pseudo-random number generator. *ACM
+Transactions on Modeling and Computer Simulation*, 8(1), 3-30.
+[doi:10.1145/272991.272995](https://doi.org/10.1145/272991.272995)
