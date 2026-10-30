@@ -152,14 +152,15 @@ as.data.frame(x, ...)
 
   Character vector of variables that must remain in the model. Such
   variables are still scored and reported in the selection trace, but
-  are never dropped. Each name is looked up, not parsed, once, when the
-  screen starts: a name that is exactly a column of `data` is that
-  column, so the bare `"_X1"` pins the column `_X1` although
-  [`terms()`](https://rdrr.io/r/stats/terms.html) labels it `` `_X1` ``,
-  and `"TRUE"` pins a column named `TRUE`. The exception is a column no
-  model formula can hold, `"."` or `""`: it can never become a model
-  term, so it cannot be pinned, and naming it warns and lists it in
-  `unresolved`. Otherwise a name that is exactly a term label of the
+  are never dropped. A factor with several coefficients has no one
+  score, so its row reads `NA`. Each name is looked up, not parsed,
+  once, when the screen starts: a name that is exactly a column of
+  `data` is that column, so the bare `"_X1"` pins the column `_X1`
+  although [`terms()`](https://rdrr.io/r/stats/terms.html) labels it
+  `` `_X1` ``, and `"TRUE"` pins a column named `TRUE`. The exception is
+  a column no model formula can hold, `"."` or `""`: it can never become
+  a model term, so it cannot be pinned, and naming it warns and lists it
+  in `unresolved`. Otherwise a name that is exactly a term label of the
   model or `scope` is that term, so `` "`_X1`" `` and `"age:mal"` work
   too. Any other name, `"age "` with a trailing space when there is no
   such column, say, matches nothing and is ignored with a warning naming
@@ -190,7 +191,9 @@ as.data.frame(x, ...)
   argument (the response, `weights`, `time_windows`, `dist`, `theta`,
   `phases`, `fit` and so on) is set by the refit itself, from the base
   model and `data`, so that each candidate is compared with the model it
-  extends. The [`print()`](https://rdrr.io/r/base/print.html),
+  extends. The base fit's own `control` is not inherited: a candidate
+  refit uses the defaults unless `control` is given here. The
+  [`print()`](https://rdrr.io/r/base/print.html),
   [`summary()`](https://rdrr.io/r/base/summary.html) and
   [`as.data.frame()`](https://rdrr.io/r/base/as.data.frame.html) methods
   ignore `...`.

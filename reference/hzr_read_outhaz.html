@@ -94,8 +94,9 @@ holding the same data frame.</p></dd>
     <p>An <code>hzr_outhaz</code> object: a list with <code>estimates</code> (named numeric),
 <code>status</code> (named integer, 1 free / 0 fixed), <code>vcov</code> (matrix over free
 parameters, dimnames set) and <code>flags</code> (named numeric of model-structure
-flags). When no parameter is free, <code>vcov</code> is a 0x0 matrix rather than
-<code>NULL</code>, so check its dimensions rather than <code><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null()</a></code>.</p>
+flags). When no parameter is free, or the dataset was written with
+<code>NOCOV</code>, <code>vcov</code> is a 0x0 matrix rather than <code>NULL</code>, so check its dimensions
+rather than <code><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null()</a></code>.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>

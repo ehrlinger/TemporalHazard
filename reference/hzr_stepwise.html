@@ -219,7 +219,8 @@ remainder of the run, in the state it ends that iteration in.  Default
 <dt id="arg-force-in">force_in<a class="anchor" aria-label="anchor" href="#arg-force-in"></a></dt>
 <dd><p>Character vector of variables that must remain in
 the model.  Such variables are still scored and reported in the
-selection trace, but are never dropped.  Each name is looked up, not
+selection trace, but are never dropped.  A factor with several
+coefficients has no one score, so its row reads <code>NA</code>.  Each name is looked up, not
 parsed, once, when the screen starts: a name that is exactly a column
 of <code>data</code> is that column, so the bare <code>"_X1"</code> pins the column <code>_X1</code>
 although <code><a href="https://rdrr.io/r/stats/terms.html" class="external-link">terms()</a></code> labels it <code>`_X1`</code>, and <code>"TRUE"</code> pins a column
@@ -254,7 +255,8 @@ fit's are accepted. Any other name is an error: a misspelling such as
 other <code><a href="hazard.html">hazard()</a></code> argument (the response, <code>weights</code>, <code>time_windows</code>,
 <code>dist</code>, <code>theta</code>, <code>phases</code>, <code>fit</code> and so on) is set by the refit itself,
 from the base model and <code>data</code>, so that each candidate is compared with
-the model it extends.
+the model it extends. The base fit's own <code>control</code> is not inherited: a
+candidate refit uses the defaults unless <code>control</code> is given here.
 The <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code>, <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> and <code><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame()</a></code> methods ignore <code>...</code>.</p></dd>
 
 

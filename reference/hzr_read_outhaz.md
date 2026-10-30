@@ -25,9 +25,9 @@ hzr_read_outhaz(path)
 An `hzr_outhaz` object: a list with `estimates` (named numeric),
 `status` (named integer, 1 free / 0 fixed), `vcov` (matrix over free
 parameters, dimnames set) and `flags` (named numeric of model-structure
-flags). When no parameter is free, `vcov` is a 0x0 matrix rather than
-`NULL`, so check its dimensions rather than
-[`is.null()`](https://rdrr.io/r/base/NULL.html).
+flags). When no parameter is free, or the dataset was written with
+`NOCOV`, `vcov` is a 0x0 matrix rather than `NULL`, so check its
+dimensions rather than [`is.null()`](https://rdrr.io/r/base/NULL.html).
 
 ## Details
 
