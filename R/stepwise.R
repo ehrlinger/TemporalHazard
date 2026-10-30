@@ -94,7 +94,8 @@
 #' }
 #'
 #' @param fit A fitted `hazard` object built via the
-#'   `formula = Surv(...) ~ predictors, data = df` interface.
+#'   `formula = Surv(...) ~ predictors, data = df` interface, or a multiphase
+#'   fit from either interface.
 #' @param scope Candidate set.  `NULL` (default) uses every data-frame
 #'   column not already in the model for every phase.  A candidate enters
 #'   as the column it names, whatever its name: a column literally named
@@ -169,8 +170,9 @@
 #'   Default `0.30` matches SAS `SLENTRY`.
 #' @param slstay Retention p-value threshold for the score / Wald criteria.
 #'   Default `0.20` matches SAS `SLSTAY`.
-#' @param max_steps Hard cap on total accepted actions.  Emits a
-#'   `warning()` if hit.  Default `50`.
+#' @param max_steps Hard cap on the rows of `$steps`: accepted actions and the
+#'   `"frozen"` rows `max_move` writes.  Emits a `warning()` if hit.  Default
+#'   `50`.
 #' @param max_move Per-variable oscillation cap.  When a variable has
 #'   entered + exited more than `max_move` times it is frozen for the
 #'   remainder of the run, in the state it ends that iteration in.  Default
@@ -397,8 +399,7 @@
 #'                theta = c(mu = 0.01, nu = 0.5, 0))
 #' \donttest{
 #' sw <- hzr_stepwise(base, scope = ~ age + mal,
-#'                    data = avc, direction = "forward",
-#'                    control = list(n_starts = 1))
+#'                    data = avc, direction = "forward")
 #' print(sw)
 #' }
 #'
@@ -1524,8 +1525,7 @@ as.data.frame.hzr_stepwise <- function(x, ...) {
 #'                theta = c(mu = 0.01, nu = 0.5, 0))
 #' \donttest{
 #' sw <- hzr_stepwise(base, scope = ~ age + mal,
-#'                    data = avc, direction = "forward",
-#'                    control = list(n_starts = 1))
+#'                    data = avc, direction = "forward")
 #' cat(stepwise_trace(sw), sep = "\n")
 #' }
 #' @export
