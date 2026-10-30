@@ -672,7 +672,7 @@ test_that("Gradient is near zero at converged fit", {
   # failure -- and the skip_if() reported every one of those as a green skip.
   # Pinning start_seed made it deterministic and the underlying error is fixed,
   # so assert convergence: a regression must fail here, not vanish.  (At the
-  # earlier default seed 3 this particular call did not fail; the one-in-four
+  # pinned default seed 3 this particular call did not fail; the one-in-four
   # figure is the rate across a seed sweep, which
   # test-multiphase-reproducibility.R asserts directly.)
   fit <- suppressWarnings(hazard(time = time, status = status,
