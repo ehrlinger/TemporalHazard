@@ -1655,9 +1655,10 @@
 #' are held in doubles: every product stays below 2^53, so the arithmetic is
 #' exact.
 #'
-#' The generator is that of Matsumoto and Nishimura (1998).  The seeding and the
-#' inversion reproduce R's `set.seed()` and `rnorm()`, and a test pins them
-#' against those functions.
+#' The generator is that of Matsumoto and Nishimura (1998).  The seeding, the
+#' zero-word substitution and the inversion are derived from R's own
+#' `src/main/RNG.c` and `snorm.c`, and a test pins them against `set.seed()` and
+#' `rnorm()`.  See `inst/COPYRIGHTS`.
 #'
 #' @references Matsumoto M, Nishimura T (1998). Mersenne Twister: a
 #'   623-dimensionally equidistributed uniform pseudo-random number generator.
@@ -1669,6 +1670,12 @@
 #' @return Numeric vector of length `n`.
 #' @keywords internal
 .hzr_mt_normal <- function(seed, n) {
+  # Derived from R's src/main/RNG.c and snorm.c:
+  #   Copyright (C) 1997--2026  The R Core Team
+  #   Copyright (C) 1995, 1996  Robert Gentleman and Ross Ihaka
+  # whose Mersenne Twister part is:
+  #   Copyright (C) 1997, 1999 Makoto Matsumoto and Takuji Nishimura.
+  # GPL (>= 2), as is this package.  See inst/COPYRIGHTS.
   word <- 2^32
   half <- 2^16
   xor32 <- function(a, b) {
