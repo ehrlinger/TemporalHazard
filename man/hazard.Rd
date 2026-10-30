@@ -258,7 +258,8 @@ standard error exceeds 10 log units, and with \code{weights = NA});
 \code{NULL} when the fit was examined and is well identified; and
 \code{NA} when the check could not run because no usable Hessian was
 available, which includes an unfitted object, an install without
-the suggested \pkg{numDeriv}, and an ill-conditioned fit in which an
+the suggested \pkg{numDeriv}, a Hessian that is not positive-definite
+(unless a ridge was found, which is reported), and an ill-conditioned fit in which an
 estimated parameter has no finite variance and no ridge was found among
 the others, since that parameter was not examined. Test with \code{is.list(fit$fit$weak)},
 not \code{!is.null()}: the \code{NA} case has not been examined and

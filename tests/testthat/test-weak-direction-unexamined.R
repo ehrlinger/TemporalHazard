@@ -139,3 +139,49 @@ test_that("a fit whose covariance mostly failed says it was not examined (#570)"
   expect_no_match(out, "weakly identified", fixed = TRUE)
   expect_match(out, "fewer than two", fixed = TRUE)
 })
+
+test_that("a saddle is not reported as well identified (#688)", {
+  set.seed(5)
+  n <- 150
+  t <- stats::rexp(n, 0.3) + 0.01
+  s <- stats::rbinom(n, 1, 0.7)
+  go <- function() {
+    suppressWarnings(hazard(time = t, status = s, dist = "weibull",
+                            theta = c(mu = 0.3, nu = 1), fit = TRUE))
+  }
+  expect_null(go()$fit$weak) # the control: the same fit at a maximum
+
+  real <- .hzr_safe_solve
+  local_mocked_bindings(.hzr_safe_solve = function(H, ...) {
+    out <- real(H, ...)
+    out$pd <- FALSE
+    out
+  })
+  fit <- go()
+  expect_false(fit$fit$pd)
+  expect_gt(fit$fit$rcond, .hzr_rcond_tol) # the gate alone would say "looked"
+  expect_identical(fit$fit$weak, NA)
+  expect_identical(fit$degraded_causes[["weak_direction_check"]],
+                   "Hessian not positive-definite at the optimum")
+})
+
+test_that("a ridge found on a Hessian that is not positive-definite stands (#688)", {
+  real <- .hzr_safe_solve
+  ridge <- list(parameters = c("mu", "nu"))
+  local_mocked_bindings(
+    .hzr_safe_solve = function(H, ...) {
+      out <- real(H, ...)
+      out$pd <- FALSE
+      out
+    },
+    .hzr_weak_direction_impl = function(...) list(weak = ridge, reason = NA_character_),
+    .hzr_weak_direction_message = function(weak) "ridge found"
+  )
+  set.seed(5)
+  t <- stats::rexp(150, 0.3) + 0.01
+  s <- stats::rbinom(150, 1, 0.7)
+  fit <- suppressWarnings(hazard(time = t, status = s, dist = "weibull",
+                                 theta = c(mu = 0.3, nu = 1), fit = TRUE))
+  expect_false(fit$fit$pd)
+  expect_identical(fit$fit$weak, ridge)
+})
