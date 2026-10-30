@@ -2365,6 +2365,33 @@
   if (length(i)) defs$scope[[max(i)]] else 0L
 }
 
+#' The macro control the statement holding offset `pos` runs under (#687).
+#'
+#' A step inside a `%MACRO` definition runs once per call of the macro, and
+#' one under an open-code `%IF` or `%DO` only when its condition holds, or
+#' once per iteration. Neither runs once where the text stands, which is how
+#' the translation reads it.
+#' @return `"%MACRO"`, `"%IF"`, or `NULL` when the statement runs once in
+#'   open code.
+#' @noRd
+.hzr_sas_macro_control_at <- function(st, defs, pos) {
+  i <- which(st$start <= pos)
+  if (!length(i)) return(NULL)
+  i <- max(i)
+  if (defs$scope[[i]] != 0L) return("%MACRO")
+  # Open-code %DO depth, counted as the dataset scan counts it.
+  depth <- 0L
+  for (j in seq_len(i - 1L)) {
+    if (defs$scope[[j]] != 0L) next
+    t <- st$text[[j]]
+    if (grepl("(^|%THEN +|%ELSE +)%DO( |$)", t)) depth <- depth + 1L
+    if (grepl("^%END( |$)", t)) depth <- max(0L, depth - 1L)
+  }
+  # `%IF ... %THEN %HAZARD(...)` is one statement with no %DO.
+  if (depth > 0L || grepl("^%(IF|ELSE)( |$)", st$text[[i]])) return("%IF")
+  NULL
+}
+
 #' The grid allow-list: what a job may hold before a PROC HAZPRED whose grid
 #' is translated.
 #'
