@@ -4,7 +4,7 @@
 # suite: 2688 tests run, 15800 expectations, 12 tests skipped
 "area","feature","status","files","tests_run","expectations","skipped","reference","default_start","notes"
 "Model","Exponential distribution","tested",4,32,67,0,"2 of 2 ran (oracle)","none",""
-"Model","Weibull distribution","tested",9,68,303,1,"1 of 1 ran (oracle)","none","The C-binary file tests the binary interface (command, input and output parsing), not estimates."
+"Model","Weibull distribution","tested",9,68,303,1,"none cited","none","The C-binary file tests the binary interface (command, input and output parsing), not estimates."
 "Model","Log-normal distribution","tested",4,35,77,0,"2 of 2 ran (oracle)","none",""
 "Model","Log-logistic distribution","tested",4,36,77,0,"2 of 2 ran (oracle)","none",""
 "Model","Multiphase likelihood and optimizer","tested",15,148,775,1,"8 of 9 ran (C binary, SAS)","none","No criterion yet separates a genuine multiphase optimum from a stuck fit (#589)."
