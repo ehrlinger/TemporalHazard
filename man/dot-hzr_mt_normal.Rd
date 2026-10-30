@@ -22,4 +22,15 @@ would change which optimum existing multiphase fits reach.  The 32-bit words
 are held in doubles: every product stays below 2^53, so the arithmetic is
 exact.
 }
+\details{
+The generator is that of Matsumoto and Nishimura (1998).  The seeding and the
+inversion reproduce R's \code{set.seed()} and \code{rnorm()}, and a test pins them
+against those functions.
+}
+\references{
+Matsumoto M, Nishimura T (1998). Mersenne Twister: a
+623-dimensionally equidistributed uniform pseudo-random number generator.
+\emph{ACM Transactions on Modeling and Computer Simulation}, 8(1), 3-30.
+\doi{10.1145/272991.272995}
+}
 \keyword{internal}
