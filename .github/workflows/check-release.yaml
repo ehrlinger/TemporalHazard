@@ -64,15 +64,23 @@ jobs:
           http-user-agent: ${{ matrix.config.http-user-agent }}
           use-public-rspm: true
 
-      - uses: r-lib/actions/setup-tinytex@v2
-
-      # TinyTeX's minimal scheme lacks the Courier metrics (pcrr8t) that the
+      # TinyTeX-1, the default bundle, lacks the Courier metrics (pcrr8t) that the
       # R-devel manual needs; without them the PDF manual fails to build on
       # ubuntu devel (run 36194130301). makeindex is missing too: with Courier
       # in place the indexed build still failed with "No file Rd2.ind" (run
-      # 36198449094). Install both explicitly.
-      - name: Install LaTeX packages the manual needs
-        run: tlmgr install courier makeindex
+      # 36198449094). The TinyTeX bundle carries both, so no leg needs tlmgr,
+      # whose install broke on "tlmgr itself needs to be updated" (run
+      # 40693033459).
+      - uses: r-lib/actions/setup-tinytex@v2
+        env:
+          TINYTEX_INSTALLER: TinyTeX
+
+      # A missing file would otherwise surface only as a manual failure much later.
+      - name: Check the LaTeX files the manual needs
+        shell: pwsh
+        run: |
+          if (-not (kpsewhich pcrr8t.tfm)) { throw "Courier metrics (pcrr8t.tfm) not found" }
+          if (-not (Get-Command makeindex -ErrorAction SilentlyContinue)) { throw "makeindex not found" }
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
