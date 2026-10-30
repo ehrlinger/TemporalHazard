@@ -34,7 +34,8 @@ hzr_stepwise(
 }
 \arguments{
 \item{fit}{A fitted \code{hazard} object built via the
-\verb{formula = Surv(...) ~ predictors, data = df} interface.}
+\verb{formula = Surv(...) ~ predictors, data = df} interface, or a multiphase
+fit from either interface.}
 
 \item{scope}{Candidate set.  \code{NULL} (default) uses every data-frame
 column not already in the model for every phase.  A candidate enters
@@ -116,8 +117,10 @@ Default \code{0.30} matches SAS \code{SLENTRY}.}
 \item{slstay}{Retention p-value threshold for the score / Wald criteria.
 Default \code{0.20} matches SAS \code{SLSTAY}.}
 
-\item{max_steps}{Hard cap on total accepted actions.  Emits a
-\code{warning()} if hit.  Default \code{50}.}
+\item{max_steps}{Limit on the rows of \verb{$steps}: accepted actions and the
+\code{"frozen"} rows \code{max_move} writes.  It is checked before each iteration,
+so the iteration that reaches it can write several rows and pass it.
+Emits a \code{warning()} if hit.  Default \code{50}.}
 
 \item{max_move}{Per-variable oscillation cap.  When a variable has
 entered + exited more than \code{max_move} times it is frozen for the
@@ -126,7 +129,8 @@ remainder of the run, in the state it ends that iteration in.  Default
 
 \item{force_in}{Character vector of variables that must remain in
 the model.  Such variables are still scored and reported in the
-selection trace, but are never dropped.  Each name is looked up, not
+selection trace, but are never dropped.  A factor with several
+coefficients has no one score, so its row reads \code{NA}.  Each name is looked up, not
 parsed, once, when the screen starts: a name that is exactly a column
 of \code{data} is that column, so the bare \code{"_X1"} pins the column \verb{_X1}
 although \code{terms()} labels it \code{`_X1`}, and \code{"TRUE"} pins a column
@@ -155,7 +159,8 @@ fit's are accepted. Any other name is an error: a misspelling such as
 other \code{hazard()} argument (the response, \code{weights}, \code{time_windows},
 \code{dist}, \code{theta}, \code{phases}, \code{fit} and so on) is set by the refit itself,
 from the base model and \code{data}, so that each candidate is compared with
-the model it extends.
+the model it extends. The base fit's own \code{control} is not inherited: a
+candidate refit uses the defaults unless \code{control} is given here.
 The \code{print()}, \code{summary()} and \code{as.data.frame()} methods ignore \code{...}.}
 
 \item{x}{An \code{hzr_stepwise} object.}
@@ -445,8 +450,7 @@ base <- hazard(survival::Surv(int_dead, dead) ~ age,
                theta = c(mu = 0.01, nu = 0.5, 0))
 \donttest{
 sw <- hzr_stepwise(base, scope = ~ age + mal,
-                   data = avc, direction = "forward",
-                   control = list(n_starts = 1))
+                   data = avc, direction = "forward")
 print(sw)
 }
 

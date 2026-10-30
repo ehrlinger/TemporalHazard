@@ -94,7 +94,8 @@
 #' }
 #'
 #' @param fit A fitted `hazard` object built via the
-#'   `formula = Surv(...) ~ predictors, data = df` interface.
+#'   `formula = Surv(...) ~ predictors, data = df` interface, or a multiphase
+#'   fit from either interface.
 #' @param scope Candidate set.  `NULL` (default) uses every data-frame
 #'   column not already in the model for every phase.  A candidate enters
 #'   as the column it names, whatever its name: a column literally named
@@ -169,15 +170,18 @@
 #'   Default `0.30` matches SAS `SLENTRY`.
 #' @param slstay Retention p-value threshold for the score / Wald criteria.
 #'   Default `0.20` matches SAS `SLSTAY`.
-#' @param max_steps Hard cap on total accepted actions.  Emits a
-#'   `warning()` if hit.  Default `50`.
+#' @param max_steps Limit on the rows of `$steps`: accepted actions and the
+#'   `"frozen"` rows `max_move` writes.  It is checked before each iteration,
+#'   so the iteration that reaches it can write several rows and pass it.
+#'   Emits a `warning()` if hit.  Default `50`.
 #' @param max_move Per-variable oscillation cap.  When a variable has
 #'   entered + exited more than `max_move` times it is frozen for the
 #'   remainder of the run, in the state it ends that iteration in.  Default
 #'   `4`.  See the **The frozen set** section.
 #' @param force_in Character vector of variables that must remain in
 #'   the model.  Such variables are still scored and reported in the
-#'   selection trace, but are never dropped.  Each name is looked up, not
+#'   selection trace, but are never dropped.  A factor with several
+#'   coefficients has no one score, so its row reads `NA`.  Each name is looked up, not
 #'   parsed, once, when the screen starts: a name that is exactly a column
 #'   of `data` is that column, so the bare `"_X1"` pins the column `_X1`
 #'   although `terms()` labels it `` `_X1` ``, and `"TRUE"` pins a column
@@ -203,7 +207,8 @@
 #'   other `hazard()` argument (the response, `weights`, `time_windows`,
 #'   `dist`, `theta`, `phases`, `fit` and so on) is set by the refit itself,
 #'   from the base model and `data`, so that each candidate is compared with
-#'   the model it extends.
+#'   the model it extends. The base fit's own `control` is not inherited: a
+#'   candidate refit uses the defaults unless `control` is given here.
 #'   The `print()`, `summary()` and `as.data.frame()` methods ignore `...`.
 #'
 #' @return An object of class `c("hzr_stepwise", "hazard")`, the
@@ -397,8 +402,7 @@
 #'                theta = c(mu = 0.01, nu = 0.5, 0))
 #' \donttest{
 #' sw <- hzr_stepwise(base, scope = ~ age + mal,
-#'                    data = avc, direction = "forward",
-#'                    control = list(n_starts = 1))
+#'                    data = avc, direction = "forward")
 #' print(sw)
 #' }
 #'
@@ -1524,8 +1528,7 @@ as.data.frame.hzr_stepwise <- function(x, ...) {
 #'                theta = c(mu = 0.01, nu = 0.5, 0))
 #' \donttest{
 #' sw <- hzr_stepwise(base, scope = ~ age + mal,
-#'                    data = avc, direction = "forward",
-#'                    control = list(n_starts = 1))
+#'                    data = avc, direction = "forward")
 #' cat(stepwise_trace(sw), sep = "\n")
 #' }
 #' @export

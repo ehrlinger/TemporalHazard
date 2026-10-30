@@ -13,8 +13,9 @@
 #' @return An `hzr_outhaz` object: a list with `estimates` (named numeric),
 #'   `status` (named integer, 1 free / 0 fixed), `vcov` (matrix over free
 #'   parameters, dimnames set) and `flags` (named numeric of model-structure
-#'   flags). When no parameter is free, `vcov` is a 0x0 matrix rather than
-#'   `NULL`, so check its dimensions rather than `is.null()`.
+#'   flags). When no parameter is free, or the dataset was written with
+#'   `NOCOV`, `vcov` is a 0x0 matrix rather than `NULL`, so check its dimensions
+#'   rather than `is.null()`.
 #'
 #' @section Experimental:
 #' This function is experimental and its return shape is expected to change.
@@ -55,7 +56,18 @@ hzr_read_outhaz <- function(path) {
   status <- stats::setNames(st_raw[is_param], nm[is_param])
   flags <- est[!is_param]
 
+  # NOCOV writes the three columns alone (writeOutputDatafile.c:77-103). Such a
+  # dataset still holds the estimates, so it reads, and se.fit = TRUE refuses
+  # later. Any other column beside a missing free one is a damaged block, even
+  # when every free column is the one missing, so it is refused here.
   free <- names(status)[status == 1L]
+  absent <- setdiff(free, names(d))
+  if (length(absent) && length(setdiff(names(d), c("_NAME_", "_EST_", "_STATUS_")))) {
+    stop("hzr_read_outhaz(): '", path, "' has a covariance block with no column ",
+         "for free parameter(s) ", paste(absent, collapse = ", "), ".",
+         call. = FALSE)
+  }
+  if (length(absent)) free <- character()
   vcov <- as.matrix(d[match(free, nm), free, drop = FALSE])
   dimnames(vcov) <- list(free, free)
   storage.mode(vcov) <- "double"
