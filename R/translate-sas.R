@@ -243,6 +243,35 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
   # Whether each block runs once where it stands (#687).
   macro_st <- .hzr_sas_statements(txt)
   macro_defs <- .hzr_sas_macro_defs(macro_st$text)
+  # Under macro control SAS may run a block never, once, or many times. The
+  # usual case is a macro called once, so the block is still translated, with
+  # a row here and the returned warning text for a chunk above it. NULL when
+  # the block runs once in open code.
+  macro_flag <- function(b, what, runs) {
+    ctl <- .hzr_sas_macro_control_at(macro_st, macro_defs, b$start)
+    if (is.null(ctl)) return(NULL)
+    why <- if (identical(ctl, "%MACRO")) {
+      paste("stands inside a %MACRO definition, so SAS runs it once for",
+            "each call of the macro, and not at all if it is never called")
+    } else {
+      paste("stands under an open-code %IF or %DO, so SAS runs it only",
+            "when the condition holds, or once per iteration")
+    }
+    untr <<- rbind(untr, .hzr_untranslated_frame(
+      NA_integer_, paste(ctl, "around", what),
+      paste0("this ", what, " ", why, "; this translation does not ",
+             "evaluate macro control flow and ", runs, " once")
+    ))
+    paste0("This ", what, " ", why, ". The translation ", runs, " once, as ",
+           "the job text shows it: check how many times, and on what data, ",
+           "SAS runs it.")
+  }
+  macro_warning <- function(msg) {
+    if (!is.null(msg)) {
+      calls[[.hzr_next_call_name(calls, "refusal")]] <<- as.call(
+        list(quote(warning), msg, call. = FALSE))
+    }
+  }
   # Callouts attached to a named chunk, rendered immediately ABOVE it.
   notes <- list()
   seen <- 0L
@@ -259,6 +288,7 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
   for (b in blocks) {
     if (identical(b$proc, "REPEAT")) {
       r <- .hzr_parse_repeat(b)
+      macro_warning(macro_flag(b, "%REPEAT call", "builds its dataset"))
       # A %repeat whose IN= is an earlier %repeat's OUT= reads that dataset as
       # the job left it, so a step between the two that changes it is the same
       # untranslated rewrite a fit would read; stop on it here, ahead of the
@@ -295,28 +325,9 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
              conditionMessage(e), call. = FALSE)
       })
 
-      # Under macro control SAS may run this fit never, once, or many times.
-      # The usual case is a macro called once, so the fit is still emitted,
-      # with the row and a warning above it (#687).
-      ctl <- .hzr_sas_macro_control_at(macro_st, macro_defs, b$start)
-      if (!is.null(ctl)) {
-        why <- if (identical(ctl, "%MACRO")) {
-          paste("stands inside a %MACRO definition, so SAS runs it once for",
-                "each call of the macro, and not at all if it is never called")
-        } else {
-          paste("stands under an open-code %IF or %DO, so SAS runs it only",
-                "when the condition holds, or once per iteration")
-        }
-        untr <- rbind(untr, .hzr_untranslated_frame(
-          NA_integer_, paste(ctl, "around PROC HAZARD"),
-          paste0("this PROC HAZARD ", why, "; this translation does not ",
-                 "evaluate macro control flow and fits it once")
-        ))
-        r$refusal_warnings <- c(r$refusal_warnings, paste0(
-          "This PROC HAZARD ", why, ". The translation fits it once, as the ",
-          "job text shows it: check how many times, and on what data, SAS ",
-          "runs it."))
-      }
+      # The fit's own refusal chunk carries the macro-control warning (#687).
+      r$refusal_warnings <- c(r$refusal_warnings,
+                              macro_flag(b, "PROC HAZARD", "fits it"))
 
       # A step between %repeat and this fit that may change the macro's
       # OUT= is job code this translator does not fold in. Fitting without it
@@ -415,6 +426,7 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
         stop("failed to parse PROC HAZPRED block in ", basename(path), ": ",
              conditionMessage(e), call. = FALSE)
       })
+      macro_warning(macro_flag(b, "PROC HAZPRED", "predicts from it"))
 
       # --- which fit does this predict() belong to? --------------------
       # 1. this job's own OUTHAZ, most-recently-written match wins (mirrors

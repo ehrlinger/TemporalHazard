@@ -2384,7 +2384,7 @@
   for (j in seq_len(i - 1L)) {
     if (defs$scope[[j]] != 0L) next
     t <- st$text[[j]]
-    if (grepl("(^|%THEN +|%ELSE +)%DO( |$)", t)) depth <- depth + 1L
+    if (grepl("(^|%THEN *|%ELSE *)%DO( |$)", t)) depth <- depth + 1L
     if (grepl("^%END( |$)", t)) depth <- max(0L, depth - 1L)
   }
   # `%IF ... %THEN %HAZARD(...)` is one statement with no %DO.
@@ -2708,7 +2708,7 @@
         # Open-code macro control (SAS 9.4M5 and later). The steps inside
         # carry `cond`; the statement itself may run anything.
         if (scope_at(p) == 0L) {
-          if (grepl("(^|%THEN +|%ELSE +)%DO( |$)", t)) depth <- depth + 1L
+          if (grepl("(^|%THEN *|%ELSE *)%DO( |$)", t)) depth <- depth + 1L
           if (identical(word, "END")) depth <- max(0L, depth - 1L)
         }
         flag(p, "call", t, "is a %IF/%DO macro control statement, which this translation does not evaluate")

@@ -89,3 +89,42 @@ test_that("a %HAZARD after a %MACRO definition ends is not flagged", {
   expect_equal(nrow(macro_rows(job, "%IF")), 0L)
   expect_false(any(grepl("^refusal", names(job$calls))))
 })
+
+test_that("%THEN%DO with no space opens a block too", {
+  # SAS's macro tokenizer needs no blank before a `%`.
+  job <- macro_job("%IF &RUN = 1 %THEN%DO;", macro_live, "%END;")
+  expect_equal(nrow(macro_rows(job, "%IF around PROC HAZARD")), 1L)
+})
+
+macro_repeat <- paste0("%repeat(in=bd_card, out=events, id=ccfid, eventype=ce_card, ",
+                       "iv_end=iv_end, rcensor=cn_card, event=ev_card);")
+macro_repeat_fit <- c("%hazard( proc hazard data=events condition=14;",
+                      "lcensor iv_start; event ce_card; time iv_event; parms muc=0.5; );")
+
+test_that("a %REPEAT call inside a %MACRO definition is recorded and warned", {
+  # If the macro is never called, SAS fits EVENTS as built elsewhere, while
+  # the document builds it with %repeat: different data under the same fit.
+  open_code <- macro_job(macro_repeat, macro_repeat_fit)
+  expect_equal(nrow(macro_rows(open_code, "around %REPEAT")), 0L)
+
+  job <- macro_job("%MACRO R;", macro_repeat, "%MEND R;", macro_repeat_fit)
+  expect_equal(nrow(macro_rows(job, "%MACRO around %REPEAT call")), 1L)
+  expect_equal(nrow(macro_rows(job, "around PROC HAZARD")), 0L)
+  warn <- job$calls[grep("^refusal", names(job$calls))]
+  expect_length(warn, 1L)
+  expect_match(deparse1(warn[[1L]]), "%REPEAT call", fixed = TRUE)
+  # The warning chunk comes before the chunk that builds the dataset.
+  expect_lt(match(names(warn), names(job$calls)),
+            grep("^repeated", names(job$calls))[[1L]])
+})
+
+test_that("a PROC HAZPRED under an open-code %DO is recorded and warned", {
+  pred <- "%HAZPRED( PROC HAZPRED DATA=P INHAZ=EX.HZD OUT=P; TIME MONTHS; );"
+  open_code <- macro_job(macro_live, pred)
+  expect_equal(nrow(macro_rows(open_code, "around PROC HAZPRED")), 0L)
+
+  job <- macro_job(macro_live, "%DO I = 1 %TO 3;", pred, "%END;")
+  expect_equal(nrow(macro_rows(job, "%IF around PROC HAZPRED")), 1L)
+  expect_equal(nrow(macro_rows(job, "around PROC HAZARD")), 0L)
+  expect_length(grep("^refusal", names(job$calls)), 1L)
+})
