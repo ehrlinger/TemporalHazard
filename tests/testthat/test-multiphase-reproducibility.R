@@ -124,7 +124,7 @@ test_that("a negative start_seed is accepted and reproducible", {
 })
 
 # ---------------------------------------------------------------------------
-# .hzr_start_perturbations(): the one place the fitting path touches the RNG
+# .hzr_start_perturbations(): its own generator, not R's stream
 # ---------------------------------------------------------------------------
 
 test_that(".hzr_start_perturbations is deterministic and correctly shaped", {
@@ -139,12 +139,49 @@ test_that(".hzr_start_perturbations is deterministic and correctly shaped", {
   expect_false(identical(p1[[1L]], p1[[2L]]))
 })
 
+test_that(".hzr_start_perturbations does not use R's random number stream", {
+  # Saving and restoring .Random.seed around rnorm() passes the two tests below
+  # and writes to the global environment twice. What separates it from a
+  # generator of its own is that rnorm() follows RNGkind().
+  withr::local_preserve_seed()
+  old_kind <- RNGkind()
+  on.exit(RNGkind(old_kind[1L], old_kind[2L], old_kind[3L]), add = TRUE)
+
+  RNGkind("Mersenne-Twister", "Inversion")
+  a <- .hzr_start_perturbations(5L, 3L, seed = 1L)
+  RNGkind("L'Ecuyer-CMRG", "Box-Muller")
+  expect_identical(.hzr_start_perturbations(5L, 3L, seed = 1L), a)
+})
+
+test_that(".hzr_start_perturbations draws offsets of the stated size", {
+  z <- unlist(.hzr_start_perturbations(2001L, 5L, seed = 3L))
+
+  expect_length(z, 10000L)
+  expect_equal(length(unique(z)), 10000L) # no short cycle
+  expect_lt(abs(mean(z)), 0.02)
+  expect_lt(abs(stats::sd(z) - 0.5), 0.02)
+  # Normal tails, as rnorm() gave: about 95% within two standard deviations.
+  expect_lt(abs(mean(abs(z) < 1) - stats::pnorm(2) + stats::pnorm(-2)), 0.01)
+})
+
+test_that("nearby start_seeds select unrelated ensembles", {
+  # Seed 2s of a bare Lehmer generator is seed s doubled modulo m, which
+  # correlates the two ensembles at about 0.5.
+  seeds <- c(1:12, -1L, -2L)
+  z <- vapply(seeds, function(s) {
+    unlist(.hzr_start_perturbations(401L, 5L, seed = s))
+  }, numeric(2000L))
+  r <- stats::cor(z)
+
+  expect_lt(max(abs(r[upper.tri(r)])), 0.1)
+})
+
 test_that(".hzr_start_perturbations returns nothing for a single start", {
   expect_identical(.hzr_start_perturbations(1L, 3L, seed = 1L), list())
   expect_identical(.hzr_start_perturbations(0L, 3L, seed = 1L), list())
 })
 
-test_that(".hzr_start_perturbations restores an existing .Random.seed", {
+test_that(".hzr_start_perturbations leaves an existing .Random.seed alone", {
   set.seed(4321)
   before <- .Random.seed
 
@@ -154,8 +191,7 @@ test_that(".hzr_start_perturbations restores an existing .Random.seed", {
 })
 
 test_that(".hzr_start_perturbations leaves no .Random.seed where there was none", {
-  # A fresh session has no .Random.seed; the helper must not create one, or the
-  # first post-fit draw in that session would follow from our seed, not R's.
+  # A fresh session has no .Random.seed; the helper must not create one.
   if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
     saved <- get(".Random.seed", envir = globalenv(), inherits = FALSE)
     on.exit(assign(".Random.seed", saved, envir = globalenv()), add = TRUE)
@@ -170,6 +206,19 @@ test_that(".hzr_start_perturbations leaves no .Random.seed where there was none"
 # ---------------------------------------------------------------------------
 # The default start_seed is a behavioral choice, not an arbitrary constant
 # ---------------------------------------------------------------------------
+
+test_that("the default start_seed reaches the better avc optimum", {
+  skip_on_cran()
+
+  # Three seeds in 30 stop at -210.78 here, and 3, the earlier default, is one.
+  fit <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = avc, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 0.2, nu = 1, m = 1),
+                  const = hzr_phase("constant")),
+    fit = TRUE
+  ))
+  expect_equal(fit$fit$objective, -210.4734, tolerance = 1e-5)
+})
 
 test_that("the default start_seed converges on the reference fixture", {
   skip_on_cran()
@@ -438,7 +487,9 @@ test_that("an infeasible start is not reported as a converged fit", {
   status <- sample(0:1, n, replace = TRUE, prob = c(0.3, 0.7))
   phases <- list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
                  const = hzr_phase("constant"))
-  theta  <- c(log(0.5), log(2), -0.5, -0.5, log(0.3))   # nu < 0 and m < 0
+  # nu < 0 and m < 0, far enough that no offset of a start reaches a feasible
+  # shape; from -0.5 one can, and that start is then a fit.
+  theta  <- c(log(0.5), log(2), -5, -5, log(0.3))
 
   expect_error(
     suppressWarnings(hazard(

@@ -652,8 +652,8 @@ Three `control` arguments address most remaining convergence problems:
 **`n_starts`** (default 5 for multiphase; single-distribution models run
 one optimizer call and ignore this parameter) runs the optimizer from the
 initial `theta` and from `n_starts - 1` perturbed copies of it, then keeps
-the best solution. The perturbations come from a fixed internal seed
-(`control$start_seed`), so the same call returns the same fit whatever
+the best solution. The perturbations come from the package's own generator,
+seeded by `control$start_seed`, so the same call returns the same fit whatever
 `set.seed()` you used, and your session's random-number stream is left
 untouched. The default of 5 is sufficient for two-phase models; increase
 to 8–10 for three or more phases where the likelihood surface has more local

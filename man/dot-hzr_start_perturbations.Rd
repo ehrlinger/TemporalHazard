@@ -21,11 +21,9 @@ empty for a single start, which is never perturbed.
 }
 \description{
 Draws the offsets that shift the starting values for every multiphase start
-after the first.  The draw is taken from an internally seeded stream and the
-ambient \code{.Random.seed} is restored on exit, so a fit is reproducible without
-\code{set.seed()} and never advances the caller's stream.  Both halves matter:
-seeding alone would still let an intervening draw change the fit, and
-restoring alone would leave the fit dependent on whatever the stream
-happened to hold when it was called.
+after the first.  They come from a small generator of its own, not from R's
+random number stream, so a fit is reproducible without \code{set.seed()}, gives
+the same fit under any \code{RNGkind()}, and neither reads nor writes
+\code{.Random.seed}.
 }
 \keyword{internal}
