@@ -1657,7 +1657,7 @@
 #'
 #' The generator is that of Matsumoto and Nishimura (1998).  The seeding, the
 #' zero-word substitution and the inversion are derived from R's own
-#' `src/main/RNG.c` and `snorm.c`, and a test pins them against `set.seed()` and
+#' `src/main/RNG.c` and `src/nmath/snorm.c`, and a test pins them against `set.seed()` and
 #' `rnorm()`.  See `inst/COPYRIGHTS`.
 #'
 #' @references Matsumoto M, Nishimura T (1998). Mersenne Twister: a
@@ -1670,10 +1670,13 @@
 #' @return Numeric vector of length `n`.
 #' @keywords internal
 .hzr_mt_normal <- function(seed, n) {
-  # Derived from R's src/main/RNG.c and snorm.c:
+  # Derived from R's src/main/RNG.c:
   #   Copyright (C) 1997--2026  The R Core Team
   #   Copyright (C) 1995, 1996  Robert Gentleman and Ross Ihaka
-  # whose Mersenne Twister part is:
+  # and src/nmath/snorm.c:
+  #   Copyright (C) 2000-2025 The R Core Team
+  #   Copyright (C) 1998   Ross Ihaka
+  # The Mersenne Twister part of RNG.c is:
   #   Copyright (C) 1997, 1999 Makoto Matsumoto and Takuji Nishimura.
   # GPL (>= 2), as is this package.  See inst/COPYRIGHTS.
   word <- 2^32

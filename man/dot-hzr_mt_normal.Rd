@@ -25,7 +25,7 @@ exact.
 \details{
 The generator is that of Matsumoto and Nishimura (1998).  The seeding, the
 zero-word substitution and the inversion are derived from R's own
-\code{src/main/RNG.c} and \code{snorm.c}, and a test pins them against \code{set.seed()} and
+\code{src/main/RNG.c} and \code{src/nmath/snorm.c}, and a test pins them against \code{set.seed()} and
 \code{rnorm()}.  See \code{inst/COPYRIGHTS}.
 }
 \references{

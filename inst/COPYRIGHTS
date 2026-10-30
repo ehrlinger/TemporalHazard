@@ -5,11 +5,15 @@ R/likelihood-multiphase.R, the function .hzr_mt_normal()
 
   This function reproduces, in R, the numbers that set.seed() and rnorm() give
   under R's default generators. Its seeding, zero-word substitution and normal
-  inversion are derived from R's src/main/RNG.c and src/nmath/snorm.c, which are
-  GPL (>= 2):
+  inversion are derived from R's source, which is GPL (>= 2):
 
+    src/main/RNG.c
     Copyright (C) 1997--2026  The R Core Team
     Copyright (C) 1995, 1996  Robert Gentleman and Ross Ihaka
+
+    src/nmath/snorm.c
+    Copyright (C) 2000-2025 The R Core Team
+    Copyright (C) 1998   Ross Ihaka
 
   Its generator is the Mersenne Twister, which R's doc/COPYRIGHTS records as:
 
