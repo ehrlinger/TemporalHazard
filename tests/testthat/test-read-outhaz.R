@@ -67,4 +67,7 @@ test_that("a NOCOV dataset reads, and se.fit is what refuses (#688)", {
   expect_identical(nrow(got$vcov), 0L)
   expect_error(.hzr_outhaz_to_spec(got, need_vcov = TRUE), "NOCOV")
   expect_s3_class(.hzr_outhaz_to_spec(got, need_vcov = FALSE), "hazard")
+  # One free parameter's column gone is damage, not NOCOV.
+  saveRDS(d[setdiff(names(d), colnames(full$vcov)[1L])], f)
+  expect_error(hzr_read_outhaz(f), "but not for", fixed = TRUE)
 })

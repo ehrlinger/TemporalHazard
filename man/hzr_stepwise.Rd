@@ -126,7 +126,8 @@ remainder of the run, in the state it ends that iteration in.  Default
 
 \item{force_in}{Character vector of variables that must remain in
 the model.  Such variables are still scored and reported in the
-selection trace, but are never dropped.  Each name is looked up, not
+selection trace, but are never dropped.  A factor with several
+coefficients has no one score, so its row reads \code{NA}.  Each name is looked up, not
 parsed, once, when the screen starts: a name that is exactly a column
 of \code{data} is that column, so the bare \code{"_X1"} pins the column \verb{_X1}
 although \code{terms()} labels it \code{`_X1`}, and \code{"TRUE"} pins a column

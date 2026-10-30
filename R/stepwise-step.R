@@ -783,7 +783,8 @@
 #' for a drop test.
 #'
 #' Force-in variables are *included* in the returned list so their
-#' scores appear in the trace (sec.2 Q4 of STEPWISE-DESIGN.md); the
+#' scores appear in the trace (sec.2 Q4 of STEPWISE-DESIGN.md), NA for a term
+#' with several coefficients, which has no one score; the
 #' forward/backward driver filters them out of the argmax pool via the
 #' `force_in` flag on each row.
 #'
@@ -923,7 +924,7 @@
       # A forced-in factor owns several coefficients and has no one score.
       # It is never a removal candidate, so its row reads NA and the screen
       # goes on; for any other candidate this is the refusal it reads as.
-      error = function(e) if (forced) NULL else stop(e)
+      hzr_multi_coef = function(e) if (forced) NULL else stop(e)
     )
 
     s <- if (is.null(coef_name)) {
@@ -1092,6 +1093,14 @@
 }
 
 
+# Classed, so a forced-in factor's screen can tell this refusal from any other.
+.hzr_stop_multi_coef <- function(...) {
+  stop(structure(
+    class = c("hzr_multi_coef", "error", "condition"),
+    list(message = paste0(...), call = NULL)
+  ))
+}
+
 #' Name under which a newly-entered variable appears in coef(fit)
 #'
 #' Canonical naming differs between fit kinds:
@@ -1137,13 +1146,12 @@
         coef_names, value = TRUE
       )
       if (length(expanded) > 1L) {
-        stop(
+        .hzr_stop_multi_coef(
           "Variable ", sQuote(var), " in phase ", sQuote(phase),
           " expands to multiple coefficients (",
           paste(sQuote(expanded), collapse = ", "),
           ").  Stepwise v1 supports main-effect terms only; ",
-          "rebuild your candidate as pre-expanded main effects and retry.",
-          call. = FALSE
+          "rebuild your candidate as pre-expanded main effects and retry."
         )
       }
       # A single expansion is the term under another name -- a logical becomes
@@ -1162,14 +1170,13 @@
     # Check for a multi-column expansion masquerading as one variable.
     prefix_hits <- grep(paste0("^", .hzr_regex_escape(var)), xcols)
     if (length(prefix_hits) > 1L) {
-      stop(
+      .hzr_stop_multi_coef(
         "Variable ", sQuote(var),
         " expands to multiple coefficients (",
         paste(sQuote(xcols[prefix_hits]), collapse = ", "),
         ").  Stepwise v1 supports main-effect terms only; ",
         "rebuild your candidate as an already-expanded set of ",
-        "main effects (e.g. a numeric contrast matrix) and retry.",
-        call. = FALSE
+        "main effects (e.g. a numeric contrast matrix) and retry."
       )
     }
     stop("Variable ", sQuote(var),
