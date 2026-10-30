@@ -23,9 +23,10 @@ are held in doubles: every product stays below 2^53, so the arithmetic is
 exact.
 }
 \details{
-The generator is that of Matsumoto and Nishimura (1998).  The seeding and the
-inversion reproduce R's \code{set.seed()} and \code{rnorm()}, and a test pins them
-against those functions.
+The generator is that of Matsumoto and Nishimura (1998).  The seeding, the
+zero-word substitution and the inversion are derived from R's own
+\code{src/main/RNG.c} and \code{src/nmath/snorm.c}, and a test pins them against \code{set.seed()} and
+\code{rnorm()}.  See \code{system.file("COPYRIGHTS", package = "TemporalHazard")}.
 }
 \references{
 Matsumoto M, Nishimura T (1998). Mersenne Twister: a

@@ -1,7 +1,11 @@
 Package: TemporalHazard
 Title: Temporal Parametric Hazard Modeling
 Version: 1.2.17
-Authors@R: person("John", "Ehrlinger", email = "john.ehrlinger@gmail.com", role = c("aut", "cre", "cph"))
+Authors@R: c(
+    person("John", "Ehrlinger", email = "john.ehrlinger@gmail.com", role = c("aut", "cre", "cph")),
+    person("R Core Team", role = "cph", comment = "seeding and inversion in .hzr_mt_normal()"),
+    person("Makoto", "Matsumoto", role = "cph", comment = "Mersenne Twister in .hzr_mt_normal()"),
+    person("Takuji", "Nishimura", role = "cph", comment = "Mersenne Twister in .hzr_mt_normal()"))
 URL: https://ehrlinger.github.io/TemporalHazard/, https://github.com/ehrlinger/TemporalHazard
 BugReports: https://github.com/ehrlinger/TemporalHazard/issues
 Description: Provides native R implementations of the multiphase parametric
@@ -17,7 +21,9 @@ Description: Provides native R implementations of the multiphase parametric
     (Rajeswaran et al. 2018 <doi:10.1177/0962280215623583>). The package is
     intentionally implemented in pure R first; performance-critical paths may
     later be accelerated with 'Rcpp' without changing the public interface.
-License: MIT + file LICENSE
+License: GPL (>= 2)
+Copyright: See the file COPYRIGHTS in the installed package (inst/COPYRIGHTS in
+    the source) for .hzr_mt_normal().
 Encoding: UTF-8
 Language: en-US
 Roxygen: list(markdown = TRUE)
