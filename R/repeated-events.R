@@ -347,9 +347,14 @@
   data$event_no <- event_no
 
   # SAS numeric missing is an ordered value that compares equal to itself, so
-  # `. = 9` is false in SAS, so a missing &iv_event is not at end of follow-up.
-  # &iv_end cannot be missing here: .hzr_re_validate() refuses that.
-  at_end <- !is.na(event_time) & event_time == data[[followup]]
+  # `if . = . then` is TRUE: a row with both &iv_event and &iv_end missing is
+  # at end of follow-up. Only the one-side-missing case is false (`. = 9` is
+  # false), so that case, and only that case, is excluded below. Kept to mirror
+  # the macro; through hzr_repeated_events() .hzr_re_validate() refuses a
+  # missing &iv_end first, so only a direct call to this stage reaches it.
+  both_missing <- is.na(event_time) & is.na(data[[followup]])
+  at_end <- both_missing |
+    (!is.na(event_time) & !is.na(data[[followup]]) & event_time == data[[followup]])
   data$rcensor[at_end] <- 1
 
   data$iv_seg <- event_time - iv_start
