@@ -43,14 +43,59 @@ suite_dependencies <- function() {
   c(R = paste(R.version$major, R.version$minor, sep = "."), vers)
 }
 
-suite_provenance <- function(started) {
+# What a run depends on: the commit, uncommitted changes, the version and the
+# installed dependencies.
+suite_identity <- function() {
   list(
     commit = suite_git("rev-parse", "HEAD"),
     dirty = suite_dirty(),
     version = read.dcf("DESCRIPTION", "Version")[1, 1],
-    started = started,
-    finished = Sys.time(),
-    not_cran = Sys.getenv("NOT_CRAN"),
     dependencies = suite_dependencies()
   )
+}
+
+suite_provenance <- function(started, identity = suite_identity()) {
+  c(identity, list(started = started, finished = Sys.time(),
+                   not_cran = Sys.getenv("NOT_CRAN")))
+}
+
+suite_refuse <- function(...) {
+  stop(structure(
+    class = c("suite_refused", "error", "condition"),
+    list(message = paste0(...), call = NULL)
+  ))
+}
+
+# Runs `run()` in a private export of HEAD and attaches its provenance. A
+# comparison of the tree before and after a run cannot see an edit undone
+# between the two, so the run does not read the tree at all (#689): nothing
+# done to it while the suite runs, a commit included, can reach the results.
+# The export holds only what is committed, so uncommitted changes are refused
+# rather than left silently untested. Installed packages cannot be exported,
+# so they are compared, and a change between the two reads is the limit of it.
+suite_record <- function(run) {
+  before <- suite_identity()
+  if (length(before$dirty)) {
+    suite_refuse("the tree has uncommitted changes a test reads (",
+                 before$dirty[1L], "). The suite runs on an export of the ",
+                 "commit and would not see them. Commit them and run again.")
+  }
+  export <- tempfile("suite-export-")
+  on.exit(unlink(export, recursive = TRUE), add = TRUE)
+  dir.create(export)
+  archive <- paste0(export, ".tar")
+  on.exit(unlink(archive), add = TRUE)
+  suite_git("archive", "--format=tar", "-o", shQuote(archive), before$commit)
+  utils::untar(archive, exdir = export)
+
+  started <- Sys.time()
+  home <- setwd(export)
+  res <- tryCatch(run(), finally = setwd(home))
+  deps <- suite_dependencies()
+  if (!identical(deps, before$dependencies)) {
+    suite_refuse("the installed packages changed while the suite ran, so no ",
+                 "single set of them produced these results. Run again.")
+  }
+  attr(res, "provenance") <- suite_provenance(started, before)
+  res
 }

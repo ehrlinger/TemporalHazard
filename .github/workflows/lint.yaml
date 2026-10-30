@@ -63,6 +63,25 @@ jobs:
         env:
           LINTR_ERROR_ON_LINT: true
 
+  # tools/feature-matrix.R is not package code, so neither R CMD check nor
+  # devtools::test() runs its tests (#689). The self-test plants each refusal
+  # in a scratch clone and commits there, so it needs the history (a full
+  # clone) and git, but no package beyond base R: it builds a synthetic run
+  # rather than running the suite.
+  feature-matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Test the feature matrix generator
+        run: Rscript tools/test-feature-matrix.R
+
   docs-current:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

@@ -32,14 +32,17 @@ code it describes is still possible: regenerate it at each release.
   named in the notes. *Shipped* is reserved for a feature handed to
   biostatistics for critique.
 - **Tests run** and **expectations** count what ran in that run, across the
-  feature's test files. A skipped test is not counted as run. A test file can
-  count towards more than one feature.
+  feature's test files and the tests cited for it from other files. A skipped
+  test is not counted as run. A test file can count towards more than one
+  feature.
 - **Skipped** counts tests that did not run there, usually because a reference
   file, the C binary or the study data was not available.
 - **Reference** counts the tests that compare the feature with something
   outside the package: SAS listings, the C `hazard` binary, or an independent
   oracle. Each is cited by name in `tools/feature-matrix-references.csv`.
-  "*n* of *m* ran" means *n* of those *m* comparisons ran in this run. Tests
+  "*n* of *m* ran" means *n* of those *m* comparisons ran in this run. The
+  list is selected, not exhaustive: "none cited" means no comparison has been
+  cited for that feature, not that none exists. Tests
   that only check a reference file is well formed, or that exercise the C
   binary's interface, are not counted.
 - **Default start** says whether a test shows a fit started from the
@@ -77,7 +80,15 @@ provenance: the commit, the installed dependency versions and the time.
 The second command refuses a run made on an uncommitted tree, a run of a
 commit whose tests, code or data differ from the current one, a run under
 other dependency versions, a run with a failure, and a run whose test names
-differ from those on disk. It also refuses a test file that belongs to no
-feature, a pattern in the map that matches no file, and a cited test that is
-not in the run. `Rscript tools/test-feature-matrix.R` plants each of those
-faults and checks the refusal.
+differ from those on disk. It also refuses a test that no feature counts, a
+pattern in the map that matches no file, and a cited test that is not in the
+run. Each saving script
+runs the suite on a private export of the commit, so nothing done to the
+working tree during the run can reach it, and refuses to start with uncommitted
+changes under the paths a test reads. It also refuses a run during which the
+installed package versions changed. Files outside the repository, such as the
+SAS fixtures and the study data, are not part of the record.
+
+`Rscript tools/test-feature-matrix.R` plants each of those
+faults and checks the refusal, and the `lint` workflow runs it on every pull
+request.
