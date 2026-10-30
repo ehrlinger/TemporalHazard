@@ -180,6 +180,21 @@
   # silently -- the appended censored row lands before the event it should
   # follow, and segments stop tiling [0, followup].
   is_event <- !is.na(indicator_col) & indicator_col == 1
+  # Both are intervals from time zero, and the macro leaves that to the calling
+  # program, so a negative one on a retained row builds a frame with no warning
+  # anywhere. A non-event row's `time` is not one of them: stage 3 overwrites
+  # or deletes it, so a negative value there never reaches the output.
+  negative <- c(
+    time = any(!.hzr_re_nonevent(indicator_col) & data[[time]] < 0, na.rm = TRUE),
+    followup = any(data[[followup]] < 0)
+  )
+  for (arg in names(negative)[negative]) {
+    stop(
+      sprintf("Column \"%s\" (argument `%s`) has negative values; it must be an interval from time zero.",
+              cols[[arg]], arg),
+      call. = FALSE
+    )
+  }
   too_late <- is_event & !is.na(data[[time]]) & data[[time]] > data[[followup]]
   if (any(too_late)) {
     warning(

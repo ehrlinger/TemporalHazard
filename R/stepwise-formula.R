@@ -255,7 +255,7 @@
   rhs <- if (length(new_terms) == 0L) "1" else paste(new_terms, collapse = " + ")
 
   is_two_sided <- length(formula) == 3L
-  lhs <- if (is_two_sided) deparse(formula[[2L]]) else NULL
+  lhs <- if (is_two_sided) deparse1(formula[[2L]]) else NULL
   env <- environment(formula)
 
   new_text <- if (is_two_sided) {

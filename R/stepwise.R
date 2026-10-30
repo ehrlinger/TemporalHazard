@@ -177,7 +177,8 @@
 #'   `4`.  See the **The frozen set** section.
 #' @param force_in Character vector of variables that must remain in
 #'   the model.  Such variables are still scored and reported in the
-#'   selection trace, but are never dropped.  Each name is looked up, not
+#'   selection trace, but are never dropped.  A factor with several
+#'   coefficients has no one score, so its row reads `NA`.  Each name is looked up, not
 #'   parsed, once, when the screen starts: a name that is exactly a column
 #'   of `data` is that column, so the bare `"_X1"` pins the column `_X1`
 #'   although `terms()` labels it `` `_X1` ``, and `"TRUE"` pins a column
@@ -203,7 +204,8 @@
 #'   other `hazard()` argument (the response, `weights`, `time_windows`,
 #'   `dist`, `theta`, `phases`, `fit` and so on) is set by the refit itself,
 #'   from the base model and `data`, so that each candidate is compared with
-#'   the model it extends.
+#'   the model it extends. The base fit's own `control` is not inherited: a
+#'   candidate refit uses the defaults unless `control` is given here.
 #'   The `print()`, `summary()` and `as.data.frame()` methods ignore `...`.
 #'
 #' @return An object of class `c("hzr_stepwise", "hazard")`, the

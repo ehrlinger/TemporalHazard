@@ -3430,3 +3430,22 @@ test_that("a macro does not exempt an empty phase item (#479)", {
   expect_match(.u1_msg(job_for("EARLY , &X; LATE LOG();")),
                "clears its syntax-error flag", fixed = TRUE)
 })
+
+test_that("INHAZ= finds an OUTHAZ= spelled with WORK., either way (#688)", {
+  resolved <- function(outhaz, inhaz) {
+    f <- tempfile(fileext = ".sas")
+    on.exit(unlink(f))
+    writeLines(c(
+      sprintf(paste("%%HAZARD(PROC HAZARD DATA=AVCS OUTHAZ=%s; TIME INT_DEAD;",
+                    "EVENT DEAD; PARMS MUE=0.3 THALF=0.2 NU=1 M=1 FIXTHALF FIXNU FIXM;);"),
+              outhaz),
+      sprintf("%%HAZPRED(PROC HAZPRED DATA=P INHAZ=%s OUT=P; TIME MONTHS; );", inhaz)
+    ), f)
+    suppressWarnings(hzr_translate_sas(f))$inhaz_resolved
+  }
+  expect_true(resolved("OA", "OA"))
+  expect_true(resolved("WORK.OA", "OA"))
+  expect_true(resolved("OA", "WORK.OA"))
+  # Another libref names another dataset.
+  expect_false(resolved("EX.OA", "OA"))
+})

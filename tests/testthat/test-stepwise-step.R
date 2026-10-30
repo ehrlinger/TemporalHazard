@@ -185,3 +185,28 @@ test_that("forward step reports no candidates when scope is empty", {
   expect_false(step$accepted)
   expect_identical(nrow(step$all_scores), 0L)
 })
+
+test_that("a forced-in factor does not abort a both-direction screen (#688)", {
+  set.seed(1)
+  n <- 200
+  d <- data.frame(time = stats::rexp(n), dead = stats::rbinom(n, 1, 0.7),
+                  f = factor(sample(c("a", "b", "c"), n, TRUE)),
+                  z = stats::rnorm(n))
+  base <- hazard(survival::Surv(time, dead) ~ f, data = d, dist = "weibull",
+                 theta = c(mu = 0.5, nu = 1, 0, 0), fit = TRUE)
+  sw <- suppressMessages(hzr_stepwise(base, scope = ~ z, data = d,
+                                      direction = "both", force_in = "f",
+                                      slentry = 0.99, slstay = 0.995))
+  # The screen ran on: z was tested and entered, f stayed in.
+  expect_identical(sw$steps$variable[sw$steps$action == "enter"], "z")
+  expect_length(stats::coef(sw), 5L) # mu, nu, the factor's two, and z
+  expect_true("z" %in% names(stats::coef(sw)))
+  expect_false("f" %in% sw$steps$variable[sw$steps$action == "drop"])
+  # Without force_in the same base is still refused: one score cannot stand
+  # for two coefficients.
+  expect_error(
+    hzr_stepwise(base, scope = ~ z, data = d, direction = "both",
+                 slentry = 0.99, slstay = 0.01),
+    "expands to multiple coefficients"
+  )
+})

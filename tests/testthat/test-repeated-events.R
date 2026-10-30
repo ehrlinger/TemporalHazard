@@ -443,3 +443,23 @@ test_that(".hzr_re_validate rejects a non-character argument instead of silently
   d <- data.frame(id = 1, t = 1, fu = 1, ev = 1)
   expect_error(.hzr_re_validate(d, 5, "t", "fu", "ev"), "single column name")
 })
+
+test_that("a negative time or followup is refused (#688)", {
+  ok <- data.frame(id = c(1, 1), t = c(1, 2), fu = 5, ev = 1)
+  expect_silent(hzr_repeated_events(ok, "id", "t", "fu", "ev"))
+  bad <- ok
+  bad$t[1L] <- -1
+  expect_error(hzr_repeated_events(bad, "id", "t", "fu", "ev"),
+               "\"t\" (argument `time`) has negative", fixed = TRUE)
+  # A non-event row's time never reaches the output, so it is not refused.
+  got <- hzr_repeated_events(
+    data.frame(id = c(1, 2, 2), t = c(-9, 2, -3), fu = c(5, 6, 6), ev = c(0, 1, 0)),
+    "id", "t", "fu", "ev"
+  )
+  expect_true(all(got$t >= 0))
+  expect_equal(got$iv_seg, c(5, 2, 4))
+  bad <- ok
+  bad$fu <- -5
+  expect_error(hzr_repeated_events(bad, "id", "t", "fu", "ev"),
+               "\"fu\" (argument `followup`) has negative", fixed = TRUE)
+})

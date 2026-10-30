@@ -25,8 +25,9 @@
 # factor or a spline that expands to several coefficients would break
 # the one-zero-per-add / one-index-per-drop theta layout. The upstream
 # guard in .hzr_candidate_coef_name() errors on such terms before the
-# refit fires, so callers via hzr_stepwise() never reach this function
-# with an expanding term. Anyone calling .hzr_refit_with_scope()
+# refit fires, so callers via hzr_stepwise() reach this function with
+# an expanding term only as one already in the base model and forced in,
+# which the refit carries unchanged. Anyone calling .hzr_refit_with_scope()
 # directly should pre-expand factors and splines into explicit main
 # effects.
 
