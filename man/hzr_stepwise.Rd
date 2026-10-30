@@ -34,7 +34,8 @@ hzr_stepwise(
 }
 \arguments{
 \item{fit}{A fitted \code{hazard} object built via the
-\verb{formula = Surv(...) ~ predictors, data = df} interface.}
+\verb{formula = Surv(...) ~ predictors, data = df} interface, or a multiphase
+fit from either interface.}
 
 \item{scope}{Candidate set.  \code{NULL} (default) uses every data-frame
 column not already in the model for every phase.  A candidate enters
@@ -116,8 +117,10 @@ Default \code{0.30} matches SAS \code{SLENTRY}.}
 \item{slstay}{Retention p-value threshold for the score / Wald criteria.
 Default \code{0.20} matches SAS \code{SLSTAY}.}
 
-\item{max_steps}{Hard cap on total accepted actions.  Emits a
-\code{warning()} if hit.  Default \code{50}.}
+\item{max_steps}{Limit on the rows of \verb{$steps}: accepted actions and the
+\code{"frozen"} rows \code{max_move} writes.  It is checked before each iteration,
+so the iteration that reaches it can write several rows and pass it.
+Emits a \code{warning()} if hit.  Default \code{50}.}
 
 \item{max_move}{Per-variable oscillation cap.  When a variable has
 entered + exited more than \code{max_move} times it is frozen for the
@@ -447,8 +450,7 @@ base <- hazard(survival::Surv(int_dead, dead) ~ age,
                theta = c(mu = 0.01, nu = 0.5, 0))
 \donttest{
 sw <- hzr_stepwise(base, scope = ~ age + mal,
-                   data = avc, direction = "forward",
-                   control = list(n_starts = 1))
+                   data = avc, direction = "forward")
 print(sw)
 }
 

@@ -236,9 +236,8 @@ utils::globalVariables("cabgkul")
 #' }
 #'
 #' @source National Center for Health Statistics, United States Life Tables,
-#'   2023. Derived from `/studies/general/uslife/table2023` via
-#'   `data-raw/make_data.R`; `inst/extdata/uslife2023.csv` is the durable
-#'   source, reproducible without a SAS license.
+#'   2023. Built by `data-raw/make_data.R` from
+#'   `inst/extdata/uslife2023.csv`, which needs no SAS license to reproduce.
 #'
 #' @references
 #' The SAS reference fit is `distributions/hz.icall.lst` in that study, whose

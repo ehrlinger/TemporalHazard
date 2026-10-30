@@ -6185,7 +6185,7 @@ selects.
 * Numerically stable helper primitives (`hzr_log1pexp`, `hzr_log1mexp`,
   `hzr_clamp_prob`).
 
-# TemporalHazard 0.0.0.9000
+# TemporalHazard 0.0.0
 
 * Initial package scaffold.
 * Added numerically stable helper primitives.
