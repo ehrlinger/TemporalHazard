@@ -281,6 +281,15 @@ check("a dirty tree cleaned while the suite runs is refused",
         base
       }), "the tree changed while the suite ran (dirty")
 
+unlink(file.path("R", "zzz-dirty.R"))
+cat("# dirty\n", file = file.path("R", "zzz-dirty.R"))
+check("an already dirty file edited while the suite runs is refused",
+      recorded_outcome(function() {
+        cat("# more\n", file = file.path("R", "zzz-dirty.R"), append = TRUE)
+        base
+      }), "the tree changed while the suite ran (dirty_content")
+unlink(file.path("R", "zzz-dirty.R"))
+
 setwd(root)
 unlink(scratch, recursive = TRUE)
 if (failures) {

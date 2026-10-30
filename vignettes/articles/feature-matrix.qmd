@@ -82,8 +82,9 @@ commit whose tests, code or data differ from the current one, a run under
 other dependency versions, a run with a failure, and a run whose test names
 differ from those on disk. It also refuses a test that no feature counts, a
 pattern in the map that matches no file, and a cited test that is not in the
-run. Each saving script reads the commit, uncommitted changes and installed
-dependencies before the run and again after it, and saves nothing if they
-moved. `Rscript tools/test-feature-matrix.R` plants each of those
+run. Each saving script reads the commit, the uncommitted changes (their content,
+not only their paths) and the installed dependency versions before the run and
+again after it, and saves nothing if any moved. Files outside the repository,
+such as the SAS fixtures and the study data, are not part of that record. `Rscript tools/test-feature-matrix.R` plants each of those
 faults and checks the refusal, and the `lint` workflow runs it on every pull
 request.

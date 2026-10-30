@@ -27,6 +27,21 @@ suite_dirty <- function() {
             suite_paths)
 }
 
+# A hash of what the uncommitted changes say, not only which paths they touch:
+# an already dirty file edited again keeps the same status line (#689).
+suite_dirty_content <- function(dirty = suite_dirty()) {
+  if (!length(dirty)) return("")
+  f <- tempfile()
+  on.exit(unlink(f))
+  untracked <- suite_git("ls-files", "--others", "--exclude-standard", "--",
+                         suite_paths)
+  writeLines(c(suite_git("diff", "HEAD", "--binary", "--", suite_paths),
+               if (length(untracked)) {
+                 paste(untracked, suite_git("hash-object", "--", untracked))
+               }), f)
+  unname(tools::md5sum(f))
+}
+
 # Installed versions of R and of every package DESCRIPTION names.
 suite_dependencies <- function() {
   d <- read.dcf("DESCRIPTION")
@@ -46,9 +61,11 @@ suite_dependencies <- function() {
 # What a run depends on: the commit, uncommitted changes, the version and the
 # installed dependencies.
 suite_identity <- function() {
+  dirty <- suite_dirty()
   list(
     commit = suite_git("rev-parse", "HEAD"),
-    dirty = suite_dirty(),
+    dirty = dirty,
+    dirty_content = suite_dirty_content(dirty),
     version = read.dcf("DESCRIPTION", "Version")[1, 1],
     dependencies = suite_dependencies()
   )
