@@ -10,7 +10,8 @@
 # WHAT IT READS AND WRITES
 #   Reads *.sas, the job's .lst and .log, and the existence of its datasets. It
 #   opens no dataset. It writes only under --out, which must be outside the tree
-#   scanned.
+#   scanned. It follows no symbolic link below a ROOT, so a job reached only
+#   through one is not scanned; the summary counts the links passed over.
 #
 #   --out/jobs.tsv and --out/selected.tsv hold paths and stay on the server.
 #   --out/summary.txt and standard output hold counts and feature names only.
@@ -38,10 +39,18 @@
 # HAZARD blocks. `matrix` names the row of tools/feature-matrix-map.csv.
 .scan_rules <- function() {
   r <- .scan_rule
+  # A phase is active when its MU is written and positive, the rule the
+  # translator follows (R/sas-parse-parms.R, mu_active). A statement only names
+  # covariates: an intercept-only phase has none, and MUE=0 with EARLY X; has no
+  # phase. A macro value (&M) cannot be read, so it counts as written.
+  mu <- function(name) paste0("\\b", name, " *= *[+]?([0-9.]*[1-9]|&)")
   rbind(
-    r("phase_early", "Multiphase likelihood and optimizer", "; *EARLY[ ;]"),
-    r("phase_constant", "Multiphase likelihood and optimizer", "; *CONSTANT[ ;]"),
-    r("phase_late", "Multiphase likelihood and optimizer", "; *LATE[ ;]"),
+    r("phase_early", "Multiphase likelihood and optimizer", mu("MUE")),
+    r("phase_constant", "Multiphase likelihood and optimizer", mu("MUC")),
+    r("phase_late", "Multiphase likelihood and optimizer", mu("MUL")),
+    r("covar_early", "Multiphase likelihood and optimizer", "; *EARLY[ ;]"),
+    r("covar_constant", "Multiphase likelihood and optimizer", "; *CONSTANT[ ;]"),
+    r("covar_late", "Multiphase likelihood and optimizer", "; *LATE[ ;]"),
     r("shape_late_tau", "Phase specification and shapes (hzr_phase)", "\\bTAU *="),
     r("shape_late_gamma", "Phase specification and shapes (hzr_phase)", "\\bGAMMA *="),
     r("shape_fixed", "Phase specification and shapes (hzr_phase)",
@@ -101,15 +110,28 @@
                        character(1L)))
 }
 
-# TRUE when the job's first dataset exists, FALSE when its library resolves and
-# the dataset is not there, NA when this scan cannot tell. NA is not a pass:
-# only the job's author knows what !MACRO or a %LET path means.
+# Whether the data of every HAZARD block in the job can be found. FALSE when any
+# block's dataset is known to be gone, because the job's features are credited
+# together and that block cannot be re-run. Otherwise NA when this scan cannot
+# tell for any block, and TRUE only when all were found. A job with no HAZARD
+# block has told this scan nothing, so it is NA.
 .scan_data_found <- function(hazard, lines, job) {
-  d <- regmatches(hazard, regexpr("\\bDATA *= *[A-Z0-9_]+[.][A-Z0-9_]+", hazard))
-  if (!length(d)) return(NA)
-  d <- strsplit(sub("^DATA *= *", "", d[[1L]]), ".", fixed = TRUE)[[1L]]
+  if (!length(hazard)) return(NA)
   # Comments off but case kept: the normalised text is upper case, a Unix path not.
   src <- paste(TemporalHazard:::.hzr_sas_strip_comments(lines), collapse = " ")
+  found <- vapply(hazard, .scan_block_data, logical(1L), src, job,
+                  USE.NAMES = FALSE)
+  if (any(!found, na.rm = TRUE)) return(FALSE)
+  if (anyNA(found)) NA else TRUE
+}
+
+# One block: TRUE when its dataset exists, FALSE when its library resolves and
+# the dataset is not there, NA when this scan cannot tell. NA is not a pass: only
+# the job's author knows what !MACRO or a %LET path means.
+.scan_block_data <- function(block, src, job) {
+  d <- regmatches(block, regexpr("\\bDATA *= *[A-Z0-9_]+[.][A-Z0-9_]+", block))
+  if (!length(d)) return(NA)
+  d <- strsplit(sub("^DATA *= *", "", d[[1L]]), ".", fixed = TRUE)[[1L]]
   m <- regmatches(src, gregexec(
     paste0("(?i)libname +", d[1L], "( +[a-z0-9]+)? *['\"]([^'\"]+)['\"]"),
     src, perl = TRUE
@@ -201,7 +223,7 @@
       has_log = !is.na(log),
       log_errors = if (is.null(log_lines)) NA_integer_
                    else sum(grepl("^ERROR", log_lines)),
-      data_found = .scan_data_found(blocks, lines, path),
+      data_found = .scan_data_found(s$hazard, lines, path),
       translate = tr$status, n_untranslated = tr$n_untranslated
     ),
     as.data.frame(flag(.scan_rules(), blocks)),
@@ -243,7 +265,7 @@
   picked
 }
 
-.scan_write_summary <- function(jobs, n_jobs, rows, selected, path) {
+.scan_write_summary <- function(jobs, n_jobs, rows, selected, path, walk) {
   features <- .scan_features()
   rule_rows <- rbind(.scan_rules(), .scan_job_rules())
   feat <- data.frame(
@@ -261,6 +283,8 @@
   w <- function(...) writeLines(paste0(...), con)
   w("TemporalHazard ", as.character(utils::packageVersion("TemporalHazard")),
     "; scanned ", as.character(Sys.Date()))
+  w("symbolic links not followed: ", walk$links)
+  w("directories that could not be read: ", walk$unreadable)
   w("files: ", nrow(rows))
   for (k in names(kinds)) w("  ", k, ": ", kinds[[k]])
   w("jobs: ", n_jobs, " (", nrow(jobs), " after removing identical copies)")
@@ -296,6 +320,36 @@
     path <- dirname(path)
   }
   do.call(file.path, as.list(c(normalizePath(path), rest)))
+}
+
+# The *.sas files under the roots. list.files(recursive = TRUE) follows a link to
+# a directory, which leaves the tree asked for and can hang on a stale mount, so
+# this walks one directory at a time and reads a link without touching its
+# target. It also says what it could not read, which list.files() reports as an
+# empty directory.
+.scan_walk <- function(roots) {
+  files <- list()
+  links <- 0L
+  unreadable <- 0L
+  todo <- roots
+  while (length(todo)) {
+    d <- todo[length(todo)]
+    todo <- todo[-length(todo)]
+    if (file.access(d, 5L) != 0L) {
+      unreadable <- unreadable + 1L
+      next
+    }
+    entries <- list.files(d, full.names = TRUE)
+    # NA is a platform with no links, which has nothing to follow either.
+    is_link <- !Sys.readlink(entries) %in% c("", NA_character_)
+    links <- links + sum(is_link)
+    entries <- entries[!is_link]
+    is_dir <- dir.exists(entries)
+    todo <- c(todo, entries[is_dir])
+    files[[length(files) + 1L]] <-
+      grep("[.]sas$", entries[!is_dir], ignore.case = TRUE, value = TRUE)
+  }
+  list(files = sort(unlist(files)), links = links, unreadable = unreadable)
 }
 
 # Returns the exit status, so a test can run it without quitting.
@@ -338,10 +392,12 @@ scan_main <- function(args = commandArgs(trailingOnly = TRUE)) {
   out <- normalizePath(out)
   Sys.chmod(out, "0700")
 
-  files <- unlist(lapply(roots, list.files, pattern = "[.]sas$", recursive = TRUE,
-                         full.names = TRUE, ignore.case = TRUE))
+  walk <- .scan_walk(roots)
+  files <- walk$files
   if (!length(files)) {
-    return(fail(2L, "FAIL LOUD: no *.sas files under the ROOT given. ",
+    return(fail(2L, "FAIL LOUD: no *.sas files under the ROOT given (",
+                walk$links, " symbolic links not followed, ", walk$unreadable,
+                " directories unreadable). ",
                 "This is a failed scan, not an empty result."))
   }
   # Internals this scan reads. Without them every job would land in lexer_error,
@@ -376,7 +432,7 @@ scan_main <- function(args = commandArgs(trailingOnly = TRUE)) {
                      file.path(out, "selected.tsv"), sep = "\t",
                      row.names = FALSE, quote = FALSE)
   .scan_write_summary(jobs, nrow(all), brief, selected,
-                      file.path(out, "summary.txt"))
+                      file.path(out, "summary.txt"), walk)
   writeLines(readLines(file.path(out, "summary.txt")))
   0L
 }

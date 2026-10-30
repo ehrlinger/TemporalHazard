@@ -28,7 +28,8 @@ job <- function(body = "", opts = "", stmts = "") {
     "%HAZARD(",
     paste("PROC HAZARD DATA=WORK.PLANTED", opts, ";"),
     "TIME T; EVENT E;",
-    "PARMS MUE=0.1 THALF=1 NU=1 M=1 MUC=0.1;",
+    # No MU here: a phase rule's negative needs a job that has no phase.
+    "PARMS THALF=1 NU=1 M=1;",
     stmts,
     ");",
     body)
@@ -47,9 +48,12 @@ plant <- function(dir, name, lines, lst = TRUE, log = "NOTE: done") {
 # Each rule: what a job writes to show the feature, and whether it is an option
 # on the PROC, a statement in the block, or text in the job.
 uses <- list(
-  phase_early = list(stmts = "EARLY X;"),
-  phase_constant = list(stmts = "CONSTANT X;"),
-  phase_late = list(stmts = "LATE X;"),
+  phase_early = list(stmts = "PARMS MUE=0.1;"),
+  phase_constant = list(stmts = "PARMS MUC=0.1;"),
+  phase_late = list(stmts = "PARMS MUL=0.1;"),
+  covar_early = list(stmts = "EARLY X;"),
+  covar_constant = list(stmts = "CONSTANT X;"),
+  covar_late = list(stmts = "LATE X;"),
   shape_late_tau = list(stmts = "PARMS TAU=1;"),
   shape_late_gamma = list(stmts = "PARMS GAMMA=1;"),
   shape_fixed = list(stmts = "PARMS FIXM;"),
@@ -88,6 +92,28 @@ for (f in names(uses)) {
   ok(paste("comment does not fire:", f), identical(r$kind, "job") && isFALSE(r[[f]]))
 }
 
+# A phase is its positive MU, whatever statements the job has.
+phases <- function(parms, stmts = "") {
+  lines <- c("%HAZARD(PROC HAZARD DATA=WORK.A; TIME T; EVENT E;",
+             paste0("PARMS ", parms, ";"), stmts, ");")
+  r <- .scan_job(plant(tree(), "p", lines))
+  unlist(r[c("phase_early", "phase_constant", "phase_late")], use.names = FALSE)
+}
+ok("intercept-only early and constant phases",
+   identical(phases("MUE=0.2 THALF=0.15 NU=1 MUC=0.0005"), c(TRUE, TRUE, FALSE)))
+ok("MUE=0 is no phase", identical(phases("MUE=0 MUC=1"), c(FALSE, TRUE, FALSE)))
+ok("MUE=0.0E5 is no phase", identical(phases("MUE=0.0E5 MUC=1"), c(FALSE, TRUE, FALSE)))
+ok("a negative MU is no phase", identical(phases("MUL=-1 MUC=1"), c(FALSE, TRUE, FALSE)))
+ok("an unfilled MUE=? is no phase", identical(phases("MUE=? MUC=1"), c(FALSE, TRUE, FALSE)))
+ok("FIXMUE names no phase", identical(phases("FIXMUE MUC=1"), c(FALSE, TRUE, FALSE)))
+ok("a statement on an inactive phase is no phase",
+   identical(phases("MUE=0 MUC=1", "EARLY X;"), c(FALSE, TRUE, FALSE)))
+ok("spaced, exponent, leading-zero and plus MU",
+   identical(phases("MUE = 0.2", ""), c(TRUE, FALSE, FALSE)) &&
+     identical(phases("MUC=.2E-1"), c(FALSE, TRUE, FALSE)) &&
+     identical(phases("MUL=+10"), c(FALSE, FALSE, TRUE)))
+ok("a macro MU counts as written", identical(phases("MUE=&START"), c(TRUE, FALSE, FALSE)))
+
 # Spaces around `=` are valid SAS, and the normaliser keeps them.
 d <- tree()
 r <- .scan_job(plant(d, "spaced", job(
@@ -120,6 +146,28 @@ ok("two declarations of one library are unknown",
    is.na(.scan_data_found("PROC HAZARD DATA=STUDY.X;",
                           c("libname study '/a';", "libname study '/b';"),
                           file.path(d, "j.sas"))))
+
+# Every block's dataset, not the first one's.
+twolib <- tree()
+invisible(file.create(file.path(twolib, "a.sas7bdat")))
+two <- function(second) {
+  c(paste0("libname s '", twolib, "';"),
+    "%HAZARD(PROC HAZARD DATA=S.A; TIME T; EVENT E; PARMS MUE=1;);",
+    paste0("%HAZARD(PROC HAZARD DATA=", second, "; TIME T; EVENT E; PARMS MUL=1;);"))
+}
+r <- .scan_job(plant(tree(), "two", two("S.B")))
+ok("a later block's dataset is gone",
+   r$n_hazard == 2L && isFALSE(r$data_found) && isFALSE(.scan_eligible(r)))
+ok("an earlier block's dataset is gone",
+   isFALSE(.scan_job(plant(tree(), "two", rev(two("S.B"))[c(2, 1, 3)]))$data_found))
+ok("both blocks' datasets exist", isTRUE(.scan_job(plant(tree(), "two", two("S.A")))$data_found))
+ok("a known and an unknown block are unknown",
+   is.na(.scan_job(plant(tree(), "two", two("OTHER.X")))$data_found))
+ok("gone beats unknown",
+   isFALSE(.scan_data_found(c("DATA=OTHER.X", "DATA=S.B"),
+                            paste0("libname s '", twolib, "';"), "j.sas")))
+ok("no HAZARD block is unknown, not found",
+   is.na(.scan_data_found(character(), "", "j.sas")))
 
 # Kinds a job can fail into.
 d <- tree()
@@ -202,6 +250,42 @@ ok("summary reports the job", grepl("jobs: 2 (1 after", summ, fixed = TRUE))
 ok("summary has no path, job or variable name", !grepl("SECRET|secret|/", gsub("Stepwise|hzr_[a-z_]+", "", summ)))
 ok("output directory is private", identical(format(file.mode(out)), "700"))
 
+# Links: the walk stays in the tree and says what it passed over.
+walked <- tree()
+outside <- tree()
+plant(walked, "inside", job())
+plant(outside, "outside", job())
+dir.create(file.path(walked, "real"))
+plant(file.path(walked, "real"), "deep", job(stmts = "WEIGHT W;"))
+invisible(file.symlink(
+  c(outside, file.path(outside, "outside.sas"), walked, "/Volumes/not-a-real-mount/tree"),
+  # The last dangles, which is what a stale mount looks like from a link.
+  file.path(walked, c("to_dir", "to_file.sas", "real/loop", "to_mount"))
+))
+w <- .scan_walk(walked)
+ok("the walk finds the jobs in the tree, at any depth",
+   setequal(basename(w$files), c("inside.sas", "deep.sas")))
+ok("the walk counts every link it did not follow", identical(w$links, 4L))
+ok("a link does not reach the walk's output", !any(grepl("outside|to_|loop", w$files)))
+o <- tree()
+sink(tempfile())
+status <- scan_main(c("--out", o, walked))
+sink()
+ok("the run keeps out of the linked tree",
+   identical(status, 0L) &&
+     !any(grepl("outside", readLines(file.path(o, "jobs.tsv")))))
+ok("the summary reports the links",
+   any(readLines(file.path(o, "summary.txt")) == "symbolic links not followed: 4"))
+locked <- tree()
+plant(locked, "open", job())
+dir.create(file.path(locked, "shut"))
+plant(file.path(locked, "shut"), "hidden", job())
+Sys.chmod(file.path(locked, "shut"), "000")
+w <- .scan_walk(locked)
+Sys.chmod(file.path(locked, "shut"), "700")
+ok("a directory it cannot read is counted, not empty",
+   identical(w$unreadable, 1L) && identical(basename(w$files), "open.sas"))
+
 # Refusals.
 q <- function(...) {
   con <- file(tempfile(), "w")
@@ -223,6 +307,9 @@ ok("a tree with no .sas is a failed scan", identical(q("--out", tree(), tree()),
 blocks <- tree()
 plant(blocks, "x", "data x; run;")
 ok("a tree with no job is a failed scan", identical(q("--out", tree(), blocks), 2L))
+nothing <- tree()
+invisible(file.symlink(tree(), file.path(nothing, "only_link")))
+ok("a tree that is only a link is a failed scan", identical(q("--out", tree(), nothing), 2L))
 # A path that need not exist: the refusal must come before the path is touched.
 ok("a desktop mount", identical(q("--out", tree(), "/Volumes/not-a-real-mount"), 1L))
 
