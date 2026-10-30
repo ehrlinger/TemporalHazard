@@ -127,6 +127,24 @@ jobs:
           vb <- read.dcf("DESCRIPTION", fields = "VignetteBuilder")[1, 1]
           vb <- if (is.na(vb)) character() else trimws(strsplit(vb, ",")[[1]])
           install.packages(c("urlchecker", vb))
-          res <- urlchecker::url_check()
+          # fail = FALSE, or url_check() aborts before a retry can run.
+          for (attempt in 1:3) {
+            res <- urlchecker::url_check(fail = FALSE)
+            if (NROW(res) == 0L) break
+            if (attempt < 3L) Sys.sleep(120)
+          }
           print(res)
-          if (NROW(res) > 0) stop(NROW(res), " URL problem(s); see above.")
+          # CRAN's host times out from the runners while answering elsewhere
+          # (run 41080514783, twice in 90 minutes), and CRAN's incoming check
+          # tests those URLs itself. That one case is reported as unchecked, in
+          # a warning that names them. Any other problem, including a timeout
+          # from any other host, fails the job.
+          unchecked <- grepl("Timeout was reached [CRAN.R-project.org]",
+                             res$Message, fixed = TRUE)
+          if (any(unchecked)) {
+            cat(sprintf("::warning::NOT CHECKED, CRAN timed out: %s\n",
+                        paste(unique(res$URL[unchecked]), collapse = ", ")))
+          }
+          if (any(!unchecked)) {
+            stop(sum(!unchecked), " URL problem(s); see above.", call. = FALSE)
+          }
