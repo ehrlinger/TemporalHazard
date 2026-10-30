@@ -30,11 +30,12 @@ Numeric vector of length `n`.
 
 ## Details
 
-The generator is that of Matsumoto and Nishimura (1998). The seeding and
-the inversion reproduce R's
+The generator is that of Matsumoto and Nishimura (1998). The seeding,
+the zero-word substitution and the inversion are derived from R's own
+`src/main/RNG.c` and `src/nmath/snorm.c`, and a test pins them against
 [`set.seed()`](https://rdrr.io/r/base/Random.html) and
-[`rnorm()`](https://rdrr.io/r/stats/Normal.html), and a test pins them
-against those functions.
+[`rnorm()`](https://rdrr.io/r/stats/Normal.html). See
+`system.file("COPYRIGHTS", package = "TemporalHazard")`.
 
 ## References
 

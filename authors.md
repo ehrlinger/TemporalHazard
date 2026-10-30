@@ -4,6 +4,15 @@
 
 - **John Ehrlinger**. Author, maintainer, copyright holder.
 
+- **R Core Team**. Copyright holder.  
+  seeding and inversion in .hzr_mt_normal()
+
+- **Makoto Matsumoto**. Copyright holder.  
+  Mersenne Twister in .hzr_mt_normal()
+
+- **Takuji Nishimura**. Copyright holder.  
+  Mersenne Twister in .hzr_mt_normal()
+
 ## Citation
 
 Source:

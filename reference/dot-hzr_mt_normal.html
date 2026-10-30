@@ -101,9 +101,10 @@ exact.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>The generator is that of Matsumoto and Nishimura (1998).  The seeding and the
-inversion reproduce R's <code><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed()</a></code> and <code><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm()</a></code>, and a test pins them
-against those functions.</p>
+    <p>The generator is that of Matsumoto and Nishimura (1998).  The seeding, the
+zero-word substitution and the inversion are derived from R's own
+<code>src/main/RNG.c</code> and <code>src/nmath/snorm.c</code>, and a test pins them against <code><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed()</a></code> and
+<code><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm()</a></code>.  See <code>system.file("COPYRIGHTS", package = "TemporalHazard")</code>.</p>
     </div>
     <div class="section level2">
     <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a></h2>

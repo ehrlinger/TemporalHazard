@@ -168,3 +168,14 @@ holder\]
 Authors:
 
 - John Ehrlinger <john.ehrlinger@gmail.com> \[copyright holder\]
+
+Other contributors:
+
+- R Core Team (seeding and inversion in .hzr_mt_normal()) \[copyright
+  holder\]
+
+- Makoto Matsumoto (Mersenne Twister in .hzr_mt_normal()) \[copyright
+  holder\]
+
+- Takuji Nishimura (Mersenne Twister in .hzr_mt_normal()) \[copyright
+  holder\]
