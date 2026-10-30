@@ -60,9 +60,13 @@ if (anyNA(dirs)) {
 }
 message("study data: ", paste(names(dirs), dirs, sep = " = ", collapse = "; "))
 
+# What produced the run travels with it, for tools/feature-matrix.R (#682).
+source(file.path("tools", "suite-provenance.R"))
+started <- Sys.time()
 Sys.setenv(NOT_CRAN = "true")
 res <- as.data.frame(devtools::test(reporter = "summary",
                                     stop_on_failure = FALSE))
+attr(res, "provenance") <- suite_provenance(started)
 saveRDS(res, out)
 
 problems <- character()
