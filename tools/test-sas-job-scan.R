@@ -103,7 +103,7 @@ ok("spaced DATA= is read",
 
 # Which library a job means.
 lib <- tree()
-file.create(file.path(lib, "x.sas7bdat"))
+invisible(file.create(file.path(lib, "x.sas7bdat")))
 ok("a commented libname is not the job's",
    isTRUE(.scan_data_found("PROC HAZARD DATA=STUDY.X;",
                            c("/* libname study '/old/missing'; */",
@@ -128,6 +128,9 @@ ok("own wrapper is macro_only",
    identical(.scan_job(plant(d, "b", "%MYHAZARD(DATA=A);"))$kind, "macro_only"))
 ok("a macro library file is not a job",
    identical(.scan_job(plant(d, "c", c("%macro hazboot(data=);", "%mend;")))$kind,
+             "macro_definition"))
+ok("a block inside a macro definition is the library, not a job",
+   identical(.scan_job(plant(d, "h", c("%macro hazboot(data=);", job(), "%mend;")))$kind,
              "macro_definition"))
 ok("a file defining a macro and running a job is a job",
    identical(.scan_job(plant(d, "f", c("%macro hazboot(data=);", "%mend;", job())))$kind,
