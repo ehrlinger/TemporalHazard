@@ -847,8 +847,8 @@ NULL
 #'   \code{NULL} when the fit was examined and is well identified; and
 #'   \code{NA} when the check could not run because no usable Hessian was
 #'   available, which includes an unfitted object, an install without
-#'   the suggested \pkg{numDeriv}, a Hessian that is not positive-definite,
-#'   and an ill-conditioned fit in which an
+#'   the suggested \pkg{numDeriv}, a Hessian that is not positive-definite
+#'   (unless a ridge was found, which is reported), and an ill-conditioned fit in which an
 #'   estimated parameter has no finite variance and no ridge was found among
 #'   the others, since that parameter was not examined. Test with \code{is.list(fit$fit$weak)},
 #'   not \code{!is.null()}: the \code{NA} case has not been examined and
@@ -1948,8 +1948,8 @@ hazard <- function(formula = NULL,
                                          shape_names = weak_shapes,
                                          fixed_mask = masked,
                                          log_names = weak_logs)
-  # A well-conditioned Hessian that is not positive-definite is a saddle, not
-  # a maximum, so "nothing near-flat" says nothing about identification.
+  # A Hessian that is not positive-definite is not at a maximum, so "nothing
+  # near-flat" says nothing about identification. A ridge it did find stands.
   if (is.null(weak_check$weak) && isFALSE(fit_state$pd)) {
     weak_check <- list(weak = NA,
                        reason = "Hessian not positive-definite at the optimum")
