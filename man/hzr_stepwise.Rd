@@ -117,9 +117,10 @@ Default \code{0.30} matches SAS \code{SLENTRY}.}
 \item{slstay}{Retention p-value threshold for the score / Wald criteria.
 Default \code{0.20} matches SAS \code{SLSTAY}.}
 
-\item{max_steps}{Hard cap on the rows of \verb{$steps}: accepted actions and the
-\code{"frozen"} rows \code{max_move} writes.  Emits a \code{warning()} if hit.  Default
-\code{50}.}
+\item{max_steps}{Limit on the rows of \verb{$steps}: accepted actions and the
+\code{"frozen"} rows \code{max_move} writes.  It is checked before each iteration,
+so the iteration that reaches it can write several rows and pass it.
+Emits a \code{warning()} if hit.  Default \code{50}.}
 
 \item{max_move}{Per-variable oscillation cap.  When a variable has
 entered + exited more than \code{max_move} times it is frozen for the

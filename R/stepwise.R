@@ -170,9 +170,10 @@
 #'   Default `0.30` matches SAS `SLENTRY`.
 #' @param slstay Retention p-value threshold for the score / Wald criteria.
 #'   Default `0.20` matches SAS `SLSTAY`.
-#' @param max_steps Hard cap on the rows of `$steps`: accepted actions and the
-#'   `"frozen"` rows `max_move` writes.  Emits a `warning()` if hit.  Default
-#'   `50`.
+#' @param max_steps Limit on the rows of `$steps`: accepted actions and the
+#'   `"frozen"` rows `max_move` writes.  It is checked before each iteration,
+#'   so the iteration that reaches it can write several rows and pass it.
+#'   Emits a `warning()` if hit.  Default `50`.
 #' @param max_move Per-variable oscillation cap.  When a variable has
 #'   entered + exited more than `max_move` times it is frozen for the
 #'   remainder of the run, in the state it ends that iteration in.  Default

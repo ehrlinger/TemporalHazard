@@ -3,5 +3,5 @@
   no standard error; all three have had one since #652. `hzr_stepwise()` and
   `stepwise_trace()` examples no longer pass a `control` that warns it is
   ignored, `@param fit` says which fits are accepted, and `max_steps` says it
-  counts `"frozen"` rows too. The `uslife2023` source no longer names an
+  counts `"frozen"` rows too and is checked between iterations. The `uslife2023` source no longer names an
   internal path.
