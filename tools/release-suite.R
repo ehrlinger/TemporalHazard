@@ -67,7 +67,7 @@ res <- tryCatch(
   suite_record(function() {
     as.data.frame(devtools::test(reporter = "summary", stop_on_failure = FALSE))
   }),
-  suite_changed = function(e) refuse(conditionMessage(e))
+  suite_refused = function(e) refuse(conditionMessage(e))
 )
 saveRDS(res, out)
 

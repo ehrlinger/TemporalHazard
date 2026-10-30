@@ -27,21 +27,6 @@ suite_dirty <- function() {
             suite_paths)
 }
 
-# A hash of what the uncommitted changes say, not only which paths they touch:
-# an already dirty file edited again keeps the same status line (#689).
-suite_dirty_content <- function(dirty = suite_dirty()) {
-  if (!length(dirty)) return("")
-  f <- tempfile()
-  on.exit(unlink(f))
-  untracked <- suite_git("ls-files", "--others", "--exclude-standard", "--",
-                         suite_paths)
-  writeLines(c(suite_git("diff", "HEAD", "--binary", "--", suite_paths),
-               if (length(untracked)) {
-                 paste(untracked, suite_git("hash-object", "--", untracked))
-               }), f)
-  unname(tools::md5sum(f))
-}
-
 # Installed versions of R and of every package DESCRIPTION names.
 suite_dependencies <- function() {
   d <- read.dcf("DESCRIPTION")
@@ -61,11 +46,9 @@ suite_dependencies <- function() {
 # What a run depends on: the commit, uncommitted changes, the version and the
 # installed dependencies.
 suite_identity <- function() {
-  dirty <- suite_dirty()
   list(
     commit = suite_git("rev-parse", "HEAD"),
-    dirty = dirty,
-    dirty_content = suite_dirty_content(dirty),
+    dirty = suite_dirty(),
     version = read.dcf("DESCRIPTION", "Version")[1, 1],
     dependencies = suite_dependencies()
   )
@@ -76,25 +59,42 @@ suite_provenance <- function(started, identity = suite_identity()) {
                    not_cran = Sys.getenv("NOT_CRAN")))
 }
 
-# Runs `run()` and attaches its provenance. The identity is read before the
-# run and again after it: read only after, a run that started on an older or
-# dirty tree, committed or cleaned while it ran, would carry the later clean
-# commit (#689). A run whose identity moved is refused, not saved.
+suite_refuse <- function(...) {
+  stop(structure(
+    class = c("suite_refused", "error", "condition"),
+    list(message = paste0(...), call = NULL)
+  ))
+}
+
+# Runs `run()` in a private export of HEAD and attaches its provenance. A
+# comparison of the tree before and after a run cannot see an edit undone
+# between the two, so the run does not read the tree at all (#689): nothing
+# done to it while the suite runs, a commit included, can reach the results.
+# The export holds only what is committed, so uncommitted changes are refused
+# rather than left silently untested. Installed packages cannot be exported,
+# so they are compared, and a change between the two reads is the limit of it.
 suite_record <- function(run) {
   before <- suite_identity()
+  if (length(before$dirty)) {
+    suite_refuse("the tree has uncommitted changes a test reads (",
+                 before$dirty[1L], "). The suite runs on an export of the ",
+                 "commit and would not see them. Commit them and run again.")
+  }
+  export <- tempfile("suite-export-")
+  on.exit(unlink(export, recursive = TRUE), add = TRUE)
+  dir.create(export)
+  archive <- paste0(export, ".tar")
+  on.exit(unlink(archive), add = TRUE)
+  suite_git("archive", "--format=tar", "-o", shQuote(archive), before$commit)
+  utils::untar(archive, exdir = export)
+
   started <- Sys.time()
-  res <- run()
-  after <- suite_identity()
-  moved <- names(before)[!mapply(identical, before, after[names(before)])]
-  if (length(moved)) {
-    stop(structure(
-      class = c("suite_changed", "error", "condition"),
-      list(message = paste0(
-        "the tree changed while the suite ran (", paste(moved, collapse = ", "),
-        "), so no single state of it produced these results. Leave the tree ",
-        "alone and run again."
-      ), call = NULL)
-    ))
+  home <- setwd(export)
+  res <- tryCatch(run(), finally = setwd(home))
+  deps <- suite_dependencies()
+  if (!identical(deps, before$dependencies)) {
+    suite_refuse("the installed packages changed while the suite ran, so no ",
+                 "single set of them produced these results. Run again.")
   }
   attr(res, "provenance") <- suite_provenance(started, before)
   res

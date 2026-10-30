@@ -247,48 +247,76 @@ check("a cited default-start test not in the run is refused",
       outcome(feature_matrix(base)), "cited default-start test not in the run")
 writeLines(map_text, map_path)
 
-# #689 finding 1: identity is read before the run and again after it, so a
-# tree that moves while the suite runs is refused rather than stamped with
-# the later state. The run here is a function standing in for the suite.
+# #689 finding 1: the run reads a private export of HEAD, so nothing done to
+# the tree while it runs can reach it. The run here is a function standing in
+# for the suite.
 recorded <- function(run) {
-  tryCatch(suite_record(run), suite_changed = function(e) conditionMessage(e))
+  tryCatch(suite_record(run), suite_refused = function(e) conditionMessage(e))
 }
 recorded_outcome <- function(run) {
   got <- recorded(run)
   if (is.character(got)) got else "accepted"
 }
-rec <- recorded(function() base)
-n_cases <- n_cases + 1L
-if (is.data.frame(rec) &&
-      identical(attr(rec, "provenance")$commit, suite_git("rev-parse", "HEAD"))) {
-  cat("ok    a run on an unchanging tree is recorded at HEAD\n")
-} else {
-  failures <- failures + 1L
-  cat("FAIL  a run on an unchanging tree is recorded at HEAD\n")
+flag_case <- function(name, ok) {
+  n_cases <<- n_cases + 1L
+  if (!ok) failures <<- failures + 1L
+  cat(if (ok) "ok   " else "FAIL ", name, "\n")
 }
-check("a commit made while the suite runs is refused",
-      recorded_outcome(function() {
-        cat("# mid-run\n", file = file.path("R", "zzz-mid-run.R"))
-        commit_all("mid-run commit")
-        base
-      }), "the tree changed while the suite ran (commit")
+live <- getwd()
+start <- suite_git("rev-parse", "HEAD")
+rec <- recorded(function() {
+  data.frame(here = normalizePath(getwd()),
+             has_description = file.exists("DESCRIPTION"))
+})
+flag_case("a run reads an export of HEAD, not the tree, and is recorded at HEAD",
+          is.data.frame(rec) && !identical(rec$here, normalizePath(live)) &&
+            rec$has_description &&
+            identical(attr(rec, "provenance")$commit, start))
+
+temp_file <- file.path(live, "R", "zzz-temporary.R")
+rec <- recorded(function() {
+  writeLines("changed", temp_file)
+  seen <- file.exists(file.path("R", "zzz-temporary.R"))
+  unlink(temp_file)
+  data.frame(seen = seen)
+})
+flag_case("a temporary change undone during the run does not reach the run",
+          is.data.frame(rec) && !rec$seen)
+
+rec <- recorded(function() {
+  cat("# mid-run\n", file = file.path(live, "R", "zzz-mid-run.R"))
+  old <- setwd(live)
+  on.exit(setwd(old))
+  commit_all("mid-run commit")
+  data.frame(seen = file.exists(file.path(old, "R", "zzz-mid-run.R")))
+})
+flag_case("a commit made during the run leaves the run at the commit it started on",
+          is.data.frame(rec) && !rec$seen &&
+            identical(attr(rec, "provenance")$commit, start))
 unlink(file.path("R", "zzz-mid-run.R"))
 commit_all("drop mid-run commit")
-cat("# dirty\n", file = file.path("R", "zzz-dirty.R"))
-check("a dirty tree cleaned while the suite runs is refused",
-      recorded_outcome(function() {
-        unlink(file.path("R", "zzz-dirty.R"))
-        base
-      }), "the tree changed while the suite ran (dirty")
 
-unlink(file.path("R", "zzz-dirty.R"))
 cat("# dirty\n", file = file.path("R", "zzz-dirty.R"))
-check("an already dirty file edited while the suite runs is refused",
-      recorded_outcome(function() {
-        cat("# more\n", file = file.path("R", "zzz-dirty.R"), append = TRUE)
-        base
-      }), "the tree changed while the suite ran (dirty_content")
+check("an untracked file under a tested path is refused",
+      recorded_outcome(function() base), "uncommitted changes a test reads")
 unlink(file.path("R", "zzz-dirty.R"))
+spaced <- file.path("tests", "testthat", "test scratch.R")
+cat("# dirty\n", file = spaced)
+check("an untracked name holding a space is refused, by name",
+      recorded_outcome(function() base), "test scratch.R")
+unlink(spaced)
+
+real_deps <- suite_dependencies
+check("a package changed during the run is refused",
+      recorded_outcome(function() {
+        suite_dependencies <<- function() {
+          d <- real_deps()
+          d[["survival"]] <- "0.0.1"
+          d
+        }
+        base
+      }), "installed packages changed")
+suite_dependencies <- real_deps
 
 setwd(root)
 unlink(scratch, recursive = TRUE)
