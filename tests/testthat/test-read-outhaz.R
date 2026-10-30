@@ -69,5 +69,10 @@ test_that("a NOCOV dataset reads, and se.fit is what refuses (#688)", {
   expect_s3_class(.hzr_outhaz_to_spec(got, need_vcov = FALSE), "hazard")
   # One free parameter's column gone is damage, not NOCOV.
   saveRDS(d[setdiff(names(d), colnames(full$vcov)[1L])], f)
-  expect_error(hzr_read_outhaz(f), "but not for", fixed = TRUE)
+  expect_error(hzr_read_outhaz(f), "no column", fixed = TRUE)
+  # Every free column gone beside the rest of the block is damage too, though
+  # no free column remains to show it.
+  saveRDS(d[setdiff(names(d), colnames(full$vcov))], f)
+  expect_gt(ncol(readRDS(f)), 3L) # the premise: other block columns remain
+  expect_error(hzr_read_outhaz(f), "no column", fixed = TRUE)
 })
