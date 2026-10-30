@@ -2732,6 +2732,7 @@
     n_starts, length(theta_start_optim), seed = start_seed
   )
 
+  warned_no_numderiv <- FALSE
   for (start_i in seq_len(n_starts)) {
     if (start_i == 1L) {
       theta_try <- theta_start_optim
@@ -2768,24 +2769,31 @@
     }
 
     result <- tryCatch(
-      .hzr_optim_generic(
-        logl_fn     = logl_fn,
-        gradient_fn = gradient_fn,
-        time        = time, status = status,
-        time_lower  = time_lower, time_upper = time_upper,
-        x           = x,
-        theta_start = theta_try,
-        weights     = weights,
-        control     = control,
-        use_bounds  = FALSE,
-        hessian_fn  = hessian_fn_mp,
-        # Under CoE too: gradient_fn carries the conserved log_mu's
-        # chain-rule term, so it is the gradient of the objective (#565).
-        gradient_exact = TRUE,
-        sign_bounded = m_free_idx,
-        # Each start is scored against the likelihood below and an
-        # infeasible one recorded in `starts` (#486).
-        mark_infeasible = FALSE
+      withCallingHandlers(
+        .hzr_optim_generic(
+          logl_fn     = logl_fn,
+          gradient_fn = gradient_fn,
+          time        = time, status = status,
+          time_lower  = time_lower, time_upper = time_upper,
+          x           = x,
+          theta_start = theta_try,
+          weights     = weights,
+          control     = control,
+          use_bounds  = FALSE,
+          hessian_fn  = hessian_fn_mp,
+          # Under CoE too: gradient_fn carries the conserved log_mu's
+          # chain-rule term, so it is the gradient of the objective (#565).
+          gradient_exact = TRUE,
+          sign_bounded = m_free_idx,
+          # Each start is scored against the likelihood below and an
+          # infeasible one recorded in `starts` (#486).
+          mark_infeasible = FALSE
+        ),
+        # The same missing package, once per fit rather than once per start.
+        hzr_no_numderiv = function(w) {
+          if (warned_no_numderiv) invokeRestart("muffleWarning")
+          warned_no_numderiv <<- TRUE
+        }
       ),
       error = function(e) e
     )

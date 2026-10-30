@@ -203,7 +203,8 @@
 #'   other `hazard()` argument (the response, `weights`, `time_windows`,
 #'   `dist`, `theta`, `phases`, `fit` and so on) is set by the refit itself,
 #'   from the base model and `data`, so that each candidate is compared with
-#'   the model it extends.
+#'   the model it extends. The base fit's own `control` is not inherited: a
+#'   candidate refit uses the defaults unless `control` is given here.
 #'   The `print()`, `summary()` and `as.data.frame()` methods ignore `...`.
 #'
 #' @return An object of class `c("hzr_stepwise", "hazard")`, the

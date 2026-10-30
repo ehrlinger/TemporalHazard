@@ -55,7 +55,9 @@ hzr_read_outhaz <- function(path) {
   status <- stats::setNames(st_raw[is_param], nm[is_param])
   flags <- est[!is_param]
 
-  free <- names(status)[status == 1L]
+  # A dataset written with NOCOV has no covariance columns. It still holds the
+  # estimates, so it reads; se.fit = TRUE is what refuses, naming the cause.
+  free <- intersect(names(status)[status == 1L], names(d))
   vcov <- as.matrix(d[match(free, nm), free, drop = FALSE])
   dimnames(vcov) <- list(free, free)
   storage.mode(vcov) <- "double"

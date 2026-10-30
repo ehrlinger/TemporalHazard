@@ -917,17 +917,29 @@
     # factor `fla` with level `g` owns a column named `flag`, while a logical
     # `flag` owns `flagTRUE` (#315).  The design is rebuilt from the data the
     # fit was built on, so a `data` whose column types differ cannot skew it.
-    coef_name <- .hzr_candidate_coef_name(current, cand$var, cand$phase)
-
-    s <- .hzr_candidate_score(
-      criterion = criterion, mode = "drop",
-      current = current, names = coef_name
+    forced <- cand$var %in% force_in
+    coef_name <- tryCatch(
+      .hzr_candidate_coef_name(current, cand$var, cand$phase),
+      # A forced-in factor owns several coefficients and has no one score.
+      # It is never a removal candidate, so its row reads NA and the screen
+      # goes on; for any other candidate this is the refusal it reads as.
+      error = function(e) if (forced) NULL else stop(e)
     )
+
+    s <- if (is.null(coef_name)) {
+      list(score = NA_real_, p_value = NA_real_, delta_aic = NA_real_,
+           stat = NA_real_, stat_type = NA_character_, df = NA_integer_)
+    } else {
+      .hzr_candidate_score(
+        criterion = criterion, mode = "drop",
+        current = current, names = coef_name
+      )
+    }
 
     rows[[i]] <- data.frame(
       variable  = cand$var,
       phase     = cand$phase %||% NA_character_,
-      force_in  = cand$var %in% force_in, # both are term labels
+      force_in  = forced, # both are term labels
       score     = s$score,
       p_value   = s$p_value,
       delta_aic = s$delta_aic,

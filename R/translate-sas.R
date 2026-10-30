@@ -391,7 +391,9 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
         match_slot <- NULL
         if (length(fits)) {
           for (fi in rev(seq_along(fits))) {
-            if (identical(fits[[fi]]$outhaz, this_inhaz)) {
+            if (!is.null(fits[[fi]]$outhaz) &&
+                  identical(.hzr_sas_ds(fits[[fi]]$outhaz),
+                            .hzr_sas_ds(this_inhaz))) {
               match_slot <- fits[[fi]]$slot
               break
             }

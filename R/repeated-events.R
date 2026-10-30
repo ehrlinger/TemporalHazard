@@ -118,6 +118,15 @@
         call. = FALSE
       )
     }
+    # Both are intervals from time zero. The macro leaves this to the calling
+    # program, and a negative one builds a frame with no warning anywhere.
+    if (any(col < 0, na.rm = TRUE)) {
+      stop(
+        sprintf("Column \"%s\" (argument `%s`) has negative values; it must be an interval from time zero.",
+                col_name, arg),
+        call. = FALSE
+      )
+    }
   }
   clash <- intersect(names(data), .hzr_re_output_cols)
   if (length(clash) > 0L) {

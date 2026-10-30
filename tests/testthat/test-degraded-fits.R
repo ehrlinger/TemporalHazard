@@ -232,3 +232,25 @@ test_that("a recompute Hessian that will not invert names why", {
                    "Hessian has non-finite entries")
   expect_false("cause not recorded" %in% fit$degraded_causes)
 })
+
+test_that("a missing numDeriv warns once per fit, not once per start (#688)", {
+  skip_on_cran()
+  local_mocked_bindings(
+    .hzr_hessian_multiphase = function(...) NULL,
+    .hzr_numderiv_available = function() FALSE
+  )
+  dat <- weib_data()
+  msgs <- character()
+  fit <- withCallingHandlers(
+    hazard(time = dat$t, status = dat$d, dist = "multiphase",
+           phases = list(hzr_phase("cdf", t_half = 1, nu = 1, m = 1, fixed = "shapes"),
+                         hzr_phase("constant")),
+           fit = TRUE, control = list(n_starts = 3, conserve = FALSE)),
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_identical(nrow(fit$fit$starts), 3L) # the premise: three starts ran
+  expect_identical(sum(grepl("fallback is not installed", msgs, fixed = TRUE)), 1L)
+})

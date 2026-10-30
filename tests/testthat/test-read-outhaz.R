@@ -52,3 +52,19 @@ test_that("a file that is not an outhaz dataset errors, naming the columns", {
   saveRDS(data.frame(a = 1), tmp)
   expect_error(hzr_read_outhaz(tmp), "_NAME_")
 })
+
+test_that("a NOCOV dataset reads, and se.fit is what refuses (#688)", {
+  d <- readRDS(system.file("extdata", "outhaz-fixture.rds",
+                           package = "TemporalHazard"))
+  full <- hzr_read_outhaz(system.file("extdata", "outhaz-fixture.rds",
+                                      package = "TemporalHazard"))
+  expect_gt(nrow(full$vcov), 0L) # the premise: the fixture has a covariance
+  f <- tempfile(fileext = ".rds")
+  on.exit(unlink(f))
+  saveRDS(d[c("_NAME_", "_EST_", "_STATUS_")], f)
+  got <- hzr_read_outhaz(f)
+  expect_identical(got$estimates, full$estimates)
+  expect_identical(nrow(got$vcov), 0L)
+  expect_error(.hzr_outhaz_to_spec(got, need_vcov = TRUE), "NOCOV")
+  expect_s3_class(.hzr_outhaz_to_spec(got, need_vcov = FALSE), "hazard")
+})
