@@ -116,6 +116,7 @@ merge until they pass. The rest run and report but do not block.
 |----|----|----|----|
 | `lint.yaml` → `lint` | PR, push | **yes** | [`lintr::lint_package()`](https://lintr.r-lib.org/reference/lint.html), `LINTR_ERROR_ON_LINT=true` |
 | `lint.yaml` → `house-style` | PR, push | **yes** | fails when `.claude/house-style.md` has drifted from its vault sources |
+| `lint.yaml` → `feature-matrix` | PR, push | no | `tools/test-feature-matrix.R`, the generator’s planted-fault self-test |
 | `lint.yaml` → `docs-current` | PR, push | no | `git diff --exit-code man/ NAMESPACE DESCRIPTION` after `document()` |
 | `spelling.yaml` | PR, push | **yes** | `spelling::spell_check_package(use_wordlist = TRUE)` |
 | `R-CMD-check.yaml`, Linux | PR, push, manual | **yes** | ubuntu devel/release/oldrel-1; also ubuntu R 4.1, the declared floor, which reports but is not required |
