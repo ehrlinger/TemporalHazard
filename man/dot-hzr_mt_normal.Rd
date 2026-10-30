@@ -24,8 +24,8 @@ exact.
 }
 \details{
 The generator is that of Matsumoto and Nishimura (1998).  The seeding and the
-inversion follow what R does, as observed from \code{set.seed()} and \code{rnorm()}, and
-are pinned against them by test.
+inversion reproduce R's \code{set.seed()} and \code{rnorm()}, and a test pins them
+against those functions.
 }
 \references{
 Matsumoto M, Nishimura T (1998). Mersenne Twister: a
