@@ -16,6 +16,7 @@ Commissurotomy
 DSL
 Decile
 EL
+equidistributed
 GOF
 Gompertz
 HAZARD's
@@ -32,6 +33,7 @@ Kalbfleisch
 Kaplan
 LOESS
 Leuven
+Matsumoto
 Mersenne
 MSURVIV
 Machler
@@ -40,6 +42,7 @@ Multiphase
 Multivariable
 Mächler
 NCHS
+Nishimura
 NYHA
 Naftel
 Nelder
@@ -47,6 +50,7 @@ OMC
 PARMS
 PEXPECT
 PROC
+pseudo
 PVE
 Parides
 Pre
