@@ -861,7 +861,9 @@ test_that("a macro body's PROC DATASETS that replaces the grid refuses it (T3)",
 test_that("a grid built inside an open-code %IF or %DO is refused (T6)", {
   # %IF 0 never runs, so SAS predicts at AGE = 50; main applied the step
   # unconditionally and emitted AGE = 60.
-  for (cond in c("%IF 0 %THEN %DO;", "%DO I = 1 %TO 0;")) {
+  # The compact spellings open the same block (#691 review).
+  for (cond in c("%IF 0 %THEN %DO;", "%DO I = 1 %TO 0;", "%IF 0 %THEN%DO;",
+                 "%DO%WHILE(0);")) {
     job <- translate_494(c(
       fit_macro_grid,
       cond,
