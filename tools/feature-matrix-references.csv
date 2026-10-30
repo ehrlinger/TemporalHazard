@@ -27,3 +27,16 @@ Repeated events,test-repeated-events-parity.R,hz.ce_cardioversion_repeated.ehb: 
 Repeated events,test-repeated-events-parity.R,hz.ce_cardioversion_repeated.ehb: the first model reproduces the listing,SAS
 Repeated events,test-repeated-events-parity.R,hz.ce_cardioversion_repeated.ehb: the stratified model reproduces the listing,SAS
 Repeated events,test-repeated-events-renewal-parity.R,"ac.reintervention: %repeat reproduces the SAS log, the .lst and library.bdrein",SAS
+Exponential distribution,test-entry-time-exponential.R,exponential logl honours time_lower as entry time (hand oracle),oracle
+Exponential distribution,test-entry-time-exponential.R,hazard(dist = 'exponential') fit recovers the truncated MLE,oracle
+Weibull distribution,test-weibull-unrepresentable-scale.R,"a fit whose mu overflows warns, and its readers use log(mu) (#566)",oracle
+Log-normal distribution,test-entry-time-lognormal.R,(a) lognormal logl includes the entry term and matches the oracle,oracle
+Log-normal distribution,test-entry-time-lognormal.R,(d) hazard(dist = 'lognormal') fits the truncated likelihood,oracle
+Log-logistic distribution,test-entry-time-loglogistic.R,(a) loglogistic logl subtracts H(entry) on status 0/1 rows,oracle
+Log-logistic distribution,test-entry-time-loglogistic.R,(d) hazard() loglogistic fit recovers the truncated-likelihood MLE,oracle
+Entry times (left truncation),test-entry-time-exponential.R,exponential logl honours time_lower as entry time (hand oracle),oracle
+Entry times (left truncation),test-entry-time-exponential.R,hazard(dist = 'exponential') fit recovers the truncated MLE,oracle
+Entry times (left truncation),test-entry-time-lognormal.R,(a) lognormal logl includes the entry term and matches the oracle,oracle
+Entry times (left truncation),test-entry-time-lognormal.R,(d) hazard(dist = 'lognormal') fits the truncated likelihood,oracle
+Entry times (left truncation),test-entry-time-loglogistic.R,(a) loglogistic logl subtracts H(entry) on status 0/1 rows,oracle
+Entry times (left truncation),test-entry-time-loglogistic.R,(d) hazard() loglogistic fit recovers the truncated-likelihood MLE,oracle

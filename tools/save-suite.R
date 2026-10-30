@@ -17,11 +17,10 @@ if (is.na(out)) stop("give the .rds to write as the first argument.",
                      call. = FALSE)
 source(file.path("tools", "suite-provenance.R"))
 
-started <- Sys.time()
 Sys.setenv(NOT_CRAN = "true")
-res <- as.data.frame(devtools::test(reporter = "summary",
-                                    stop_on_failure = FALSE))
-attr(res, "provenance") <- suite_provenance(started)
+res <- suite_record(function() {
+  as.data.frame(devtools::test(reporter = "summary", stop_on_failure = FALSE))
+})
 saveRDS(res, out)
 message(sprintf("%d tests, %d passed, %d failed, %d errored, %d skipped; ",
                 nrow(res), sum(res$passed), sum(res$failed), sum(res$error),

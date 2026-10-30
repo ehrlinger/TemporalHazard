@@ -14,6 +14,8 @@
 #                                  external reference, cited by file and name
 #   feature-matrix-computed.csv    the names of tests whose names are built
 #                                  at run time, which no parser can read
+#   feature-matrix-assigned.csv    tests that count towards one feature from a
+#                                  file no feature's pattern claims, by name
 #
 # WHAT IT REFUSES
 #   - a run without provenance (tools/save-suite.R or tools/release-suite.R
@@ -23,8 +25,8 @@
 #     other installed dependency versions;
 #   - a run with any failure or error;
 #   - a run whose tests differ from the tests on disk, computed names included;
-#   - a test file that no feature claims, and a pattern that matches nothing;
-#   - a cited test, reference or default-start, that is not in the run.
+#   - a test that no feature counts, and a pattern that matches nothing;
+#   - a cited or assigned test, or a default-start test, not in the run.
 #
 # USAGE (from the package root)
 #   Rscript tools/save-suite.R results.rds      # or tools/release-suite.R
@@ -139,14 +141,15 @@ feature_matrix <- function(res, root = ".") {
   map <- read("feature-matrix-map.csv")
   refs <- read("feature-matrix-references.csv")
   computed <- read("feature-matrix-computed.csv")
+  assigned <- read("feature-matrix-assigned.csv")
 
   test_dir <- file.path(root, "tests", "testthat")
   files <- list.files(test_dir, pattern = "^test-.*\\.R$")
   matrix_check_tree(res, files, test_dir, computed)
 
-  unknown <- setdiff(refs$feature, map$feature)
-  if (length(unknown)) matrix_refuse("references name an unknown feature: ",
-                                     unknown[1L])
+  unknown <- setdiff(c(refs$feature, assigned$feature), map$feature)
+  if (length(unknown)) matrix_refuse("references or assignments name an ",
+                                     "unknown feature: ", unknown[1L])
   cited <- function(file, test, what) {
     hit <- res[res$file == file & res$test == test, ]
     if (nrow(hit) != 1L) matrix_refuse(what, " not in the run: ", file, "::",
@@ -155,24 +158,31 @@ feature_matrix <- function(res, root = ".") {
   }
 
   stem <- sub("\\.R$", "", sub("^test-", "", files))
-  claimed <- logical(length(files))
+  key <- function(d) paste(d$file, d$test, sep = "::")
+  counted <- logical(nrow(res))
   rows <- lapply(seq_len(nrow(map)), function(i) {
     m <- map[i, ]
     hit <- grepl(m$files, stem, perl = TRUE)
     if (!any(hit)) matrix_refuse(m$feature, " pattern '", m$files,
                                  "' matches no test file.")
     fr <- refs[refs$feature == m$feature, ]
+    fa <- assigned[assigned$feature == m$feature, ]
     ref_rows <- do.call(rbind, c(
       list(res[0L, ]),
       Map(cited, fr$file, fr$test, "cited reference test")
     ))
-    # A feature's reference comparisons are tests of it too.
-    own <- union(files[hit], fr$file)
-    claimed[files %in% own] <<- TRUE
-    r <- res[res$file %in% own, ]
+    Map(cited, fa$file, fa$test, "assigned test")
+    # A feature's reference comparisons are tests of it too, but only the
+    # cited ones: the rest of a cited file tests other features (#689).
+    mine <- res$file %in% files[hit] | key(res) %in% c(key(fr), key(fa))
+    counted[mine] <<- TRUE
+    r <- res[mine, ]
+    own <- unique(r$file)
     kinds <- paste(sort(unique(fr$reference)), collapse = ", ")
+    # The references file is a selection, so an empty one is "none cited",
+    # not a finding that no comparison exists (#689).
     reference <- if (!nrow(fr)) {
-      "none"
+      "none cited"
     } else {
       paste0(sum(!ref_rows$skipped), " of ", nrow(ref_rows), " ran (", kinds,
              ")")
@@ -191,11 +201,13 @@ feature_matrix <- function(res, root = ".") {
       stringsAsFactors = FALSE
     )
   })
-  if (!all(claimed)) {
-    matrix_refuse("no feature claims ",
-                  paste(files[!claimed], collapse = ", "),
-                  ". Add it to a feature's pattern in ",
-                  "tools/feature-matrix-map.csv.")
+  if (!all(counted)) {
+    lost <- res[!counted, ]
+    matrix_refuse("no feature claims ", nrow(lost), " test(s) in ",
+                  paste(unique(lost$file), collapse = ", "), " (first: ",
+                  lost$test[1L], "). Add the file to a feature's pattern in ",
+                  "tools/feature-matrix-map.csv, or the test to ",
+                  "tools/feature-matrix-assigned.csv.")
   }
   do.call(rbind, rows)
 }

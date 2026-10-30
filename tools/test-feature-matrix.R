@@ -108,6 +108,46 @@ if (any(helpers) && startsWith(row$reference, paste0("0 of ", nrow(w)))) {
       row$reference, "\n")
 }
 
+# #689 finding 2: a cited file counts only its cited rows. Skipping every row
+# of test-sas-parity.R that Observation weights does not cite must leave its
+# counts as they were; counting the whole file, they moved.
+w_keys <- paste(w$file, w$test, sep = "::")
+mixed <- base
+other <- mixed$file == "test-sas-parity.R" &
+  !paste(mixed$file, mixed$test, sep = "::") %in% w_keys
+mixed$skipped[other] <- TRUE
+row <- feature_matrix(mixed)
+row <- row[row$feature == "Observation weights", ]
+was <- out[out$feature == "Observation weights", ]
+n_cases <- n_cases + 1L
+if (sum(other) > 0L && identical(row$tests_run, was$tests_run) &&
+      identical(row$skipped, was$skipped)) {
+  cat("ok    a cited file's other tests do not count towards the feature\n")
+} else {
+  failures <- failures + 1L
+  cat("FAIL  a cited file's other tests do not count towards the feature:",
+      was$tests_run, "->", row$tests_run, "run,", was$skipped, "->",
+      row$skipped, "skipped\n")
+}
+
+# The assigned tests count towards their feature, and only theirs.
+assigned <- utils::read.csv(file.path("tools", "feature-matrix-assigned.csv"),
+                            stringsAsFactors = FALSE)
+b <- assigned[assigned$feature == "Bootstrap (hzr_bootstrap)", ]
+ab <- base
+ab$skipped[paste(ab$file, ab$test, sep = "::") %in%
+             paste(b$file, b$test, sep = "::")] <- TRUE
+row <- feature_matrix(ab)
+row <- row[row$feature == "Bootstrap (hzr_bootstrap)", ]
+was <- out[out$feature == "Bootstrap (hzr_bootstrap)", ]
+n_cases <- n_cases + 1L
+if (nrow(b) > 0L && identical(row$skipped, was$skipped + nrow(b))) {
+  cat("ok    an assigned test counts towards its feature\n")
+} else {
+  failures <- failures + 1L
+  cat("FAIL  an assigned test counts towards its feature\n")
+}
+
 red <- base
 red$failed[1L] <- 1L
 check("a run with a failure is refused", outcome(feature_matrix(red)),
@@ -169,7 +209,8 @@ writeLines('test_that("x", expect_true(TRUE))',
 commit_all("new test file")
 fresh <- synthetic_run()
 check("a test file no feature claims is refused",
-      outcome(feature_matrix(fresh)), "no feature claims test-zzz-unclaimed.R")
+      outcome(feature_matrix(fresh)),
+      "no feature claims 1 test(s) in test-zzz-unclaimed.R")
 unlink(file.path("tests", "testthat", "test-zzz-unclaimed.R"))
 commit_all("drop test file")
 base <- synthetic_run()
@@ -190,11 +231,55 @@ check("a cited reference test not in the run is refused",
       outcome(feature_matrix(base)), "cited reference test not in the run")
 writeLines(ref_text, ref_path)
 
+asg_path <- file.path("tools", "feature-matrix-assigned.csv")
+asg_text <- readLines(asg_path)
+writeLines(asg_text[-2L], asg_path)
+check("a test in a shared file that no feature counts is refused",
+      outcome(feature_matrix(base)), "no feature claims 1 test(s) in test-sas-parity.R")
+writeLines(sub("cohort$", "cohortx", asg_text), asg_path)
+check("an assigned test not in the run is refused",
+      outcome(feature_matrix(base)), "assigned test not in the run")
+writeLines(asg_text, asg_path)
+
 writeLines(sub("avc model (#565)", "avc model (#999)", map_text, fixed = TRUE),
            map_path)
 check("a cited default-start test not in the run is refused",
       outcome(feature_matrix(base)), "cited default-start test not in the run")
 writeLines(map_text, map_path)
+
+# #689 finding 1: identity is read before the run and again after it, so a
+# tree that moves while the suite runs is refused rather than stamped with
+# the later state. The run here is a function standing in for the suite.
+recorded <- function(run) {
+  tryCatch(suite_record(run), suite_changed = function(e) conditionMessage(e))
+}
+recorded_outcome <- function(run) {
+  got <- recorded(run)
+  if (is.character(got)) got else "accepted"
+}
+rec <- recorded(function() base)
+n_cases <- n_cases + 1L
+if (is.data.frame(rec) &&
+      identical(attr(rec, "provenance")$commit, suite_git("rev-parse", "HEAD"))) {
+  cat("ok    a run on an unchanging tree is recorded at HEAD\n")
+} else {
+  failures <- failures + 1L
+  cat("FAIL  a run on an unchanging tree is recorded at HEAD\n")
+}
+check("a commit made while the suite runs is refused",
+      recorded_outcome(function() {
+        cat("# mid-run\n", file = file.path("R", "zzz-mid-run.R"))
+        commit_all("mid-run commit")
+        base
+      }), "the tree changed while the suite ran (commit")
+unlink(file.path("R", "zzz-mid-run.R"))
+commit_all("drop mid-run commit")
+cat("# dirty\n", file = file.path("R", "zzz-dirty.R"))
+check("a dirty tree cleaned while the suite runs is refused",
+      recorded_outcome(function() {
+        unlink(file.path("R", "zzz-dirty.R"))
+        base
+      }), "the tree changed while the suite ran (dirty")
 
 setwd(root)
 unlink(scratch, recursive = TRUE)

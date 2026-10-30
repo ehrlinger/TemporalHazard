@@ -43,14 +43,42 @@ suite_dependencies <- function() {
   c(R = paste(R.version$major, R.version$minor, sep = "."), vers)
 }
 
-suite_provenance <- function(started) {
+# What a run depends on: the commit, uncommitted changes, the version and the
+# installed dependencies.
+suite_identity <- function() {
   list(
     commit = suite_git("rev-parse", "HEAD"),
     dirty = suite_dirty(),
     version = read.dcf("DESCRIPTION", "Version")[1, 1],
-    started = started,
-    finished = Sys.time(),
-    not_cran = Sys.getenv("NOT_CRAN"),
     dependencies = suite_dependencies()
   )
+}
+
+suite_provenance <- function(started, identity = suite_identity()) {
+  c(identity, list(started = started, finished = Sys.time(),
+                   not_cran = Sys.getenv("NOT_CRAN")))
+}
+
+# Runs `run()` and attaches its provenance. The identity is read before the
+# run and again after it: read only after, a run that started on an older or
+# dirty tree, committed or cleaned while it ran, would carry the later clean
+# commit (#689). A run whose identity moved is refused, not saved.
+suite_record <- function(run) {
+  before <- suite_identity()
+  started <- Sys.time()
+  res <- run()
+  after <- suite_identity()
+  moved <- names(before)[!mapply(identical, before, after[names(before)])]
+  if (length(moved)) {
+    stop(structure(
+      class = c("suite_changed", "error", "condition"),
+      list(message = paste0(
+        "the tree changed while the suite ran (", paste(moved, collapse = ", "),
+        "), so no single state of it produced these results. Leave the tree ",
+        "alone and run again."
+      ), call = NULL)
+    ))
+  }
+  attr(res, "provenance") <- suite_provenance(started, before)
+  res
 }

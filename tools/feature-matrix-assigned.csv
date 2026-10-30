@@ -1,0 +1,5 @@
+feature,file,test
+Stepwise selection (hzr_stepwise),test-sas-parity.R,hm.death.AVC stepwise: multiphase selection runs (SAS path is a documented gap)
+Bootstrap (hzr_bootstrap),test-sas-parity.R,bs.death.AVC: SAS bootstrap selection frequencies parse (parity is a documented gap)
+Bootstrap (hzr_bootstrap),test-sas-parity.R,bs.death.AVC: R fixed-model bootstrap runs on the AVC cohort
+Bootstrap (hzr_bootstrap),test-sas-parity.R,bs.death.AVC: R scope= embedded stepwise selection runs on the AVC cohort
