@@ -6,18 +6,14 @@
     }
   };
 </script><script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet"><script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet"><link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet"><script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet"><meta property="og:title" content="Deterministic multi-start perturbations — .hzr_start_perturbations"><meta name="description" content="Draws the offsets that shift the starting values for every multiphase start
-after the first.  The draw is taken from an internally seeded stream and the
-ambient .Random.seed is restored on exit, so a fit is reproducible without
-set.seed() and never advances the caller's stream.  Both halves matter:
-seeding alone would still let an intervening draw change the fit, and
-restoring alone would leave the fit dependent on whatever the stream
-happened to hold when it was called."><meta property="og:description" content="Draws the offsets that shift the starting values for every multiphase start
-after the first.  The draw is taken from an internally seeded stream and the
-ambient .Random.seed is restored on exit, so a fit is reproducible without
-set.seed() and never advances the caller's stream.  Both halves matter:
-seeding alone would still let an intervening draw change the fit, and
-restoring alone would leave the fit dependent on whatever the stream
-happened to hold when it was called."></head><body>
+after the first.  They are the numbers set.seed(seed); rnorm() gives under
+R's default generators, computed by .hzr_mt_normal() without R's stream, so
+a fit is reproducible without set.seed(), does not depend on RNGkind(),
+and neither reads nor writes .Random.seed."><meta property="og:description" content="Draws the offsets that shift the starting values for every multiphase start
+after the first.  They are the numbers set.seed(seed); rnorm() gives under
+R's default generators, computed by .hzr_mt_normal() without R's stream, so
+a fit is reproducible without set.seed(), does not depend on RNGkind(),
+and neither reads nor writes .Random.seed."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -73,12 +69,10 @@ happened to hold when it was called."></head><body>
 
     <div class="ref-description section level2">
     <p>Draws the offsets that shift the starting values for every multiphase start
-after the first.  The draw is taken from an internally seeded stream and the
-ambient <code>.Random.seed</code> is restored on exit, so a fit is reproducible without
-<code><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed()</a></code> and never advances the caller's stream.  Both halves matter:
-seeding alone would still let an intervening draw change the fit, and
-restoring alone would leave the fit dependent on whatever the stream
-happened to hold when it was called.</p>
+after the first.  They are the numbers <code>set.seed(seed); rnorm()</code> gives under
+R's default generators, computed by <code><a href="dot-hzr_mt_normal.html">.hzr_mt_normal()</a></code> without R's stream, so
+a fit is reproducible without <code><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed()</a></code>, does not depend on <code><a href="https://rdrr.io/r/base/Random.html" class="external-link">RNGkind()</a></code>,
+and neither reads nor writes <code>.Random.seed</code>.</p>
     </div>
 
     <div class="section level2">

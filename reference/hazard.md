@@ -385,10 +385,10 @@ Control parameters:
 
 - `n_starts`: Number of optimization starts for multiphase fits (default
   5). Each start after the first offsets the initial values. The offsets
-  are drawn from an internally seeded stream, so a multiphase fit is
-  reproducible without
-  [`set.seed()`](https://rdrr.io/r/base/Random.html) and does not
-  advance the caller's RNG stream.
+  are computed by the package without using R's random number stream, so
+  a multiphase fit is reproducible without
+  [`set.seed()`](https://rdrr.io/r/base/Random.html) and neither reads
+  nor changes that stream.
 
 - `start_seed`: Seed selecting the ensemble of multi-start offsets
   (default 3). Any whole number within integer range, negative included.
@@ -784,10 +784,10 @@ summary(fit2)
 #> Coefficients:
 #>          estimate   std_error     z_stat      p_value
 #> mu    0.121938323 0.062299561  1.9572902 5.031335e-02
-#> nu    1.143693955 0.084297244 13.5673944 6.250475e-42
+#> nu    1.143693956 0.084297244 13.5673944 6.250475e-42
 #> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01
 #> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02
-#> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01
+#> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01
 
 # \donttest{
 # -- Parametric survival with Kaplan-Meier overlay -----------------

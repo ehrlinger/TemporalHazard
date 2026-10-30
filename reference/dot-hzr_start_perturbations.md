@@ -1,13 +1,13 @@
 # Deterministic multi-start perturbations
 
 Draws the offsets that shift the starting values for every multiphase
-start after the first. The draw is taken from an internally seeded
-stream and the ambient `.Random.seed` is restored on exit, so a fit is
-reproducible without [`set.seed()`](https://rdrr.io/r/base/Random.html)
-and never advances the caller's stream. Both halves matter: seeding
-alone would still let an intervening draw change the fit, and restoring
-alone would leave the fit dependent on whatever the stream happened to
-hold when it was called.
+start after the first. They are the numbers `set.seed(seed); rnorm()`
+gives under R's default generators, computed by
+[`.hzr_mt_normal()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_mt_normal.md)
+without R's stream, so a fit is reproducible without
+[`set.seed()`](https://rdrr.io/r/base/Random.html), does not depend on
+[`RNGkind()`](https://rdrr.io/r/base/Random.html), and neither reads nor
+writes `.Random.seed`.
 
 ## Usage
 
