@@ -90,19 +90,19 @@
 
 
 
-    <p>This page lists each TemporalHazard feature, the tests that cover it, and whether it is compared with an external reference. It is generated from one saved run of the full test suite by <code>tools/feature-matrix.R</code>, which refuses to write it unless the run is of the current tree and has no failure.</p>
-<p><strong>Measured at 016d83c4 on 2026-10-29, version 1.2.17.</strong> That run: 2700 tests, 15800 expectations, 12 skipped. A page older than the code it describes is still possible: regenerate it at each release.</p>
+    <p>This page lists each TemporalHazard feature, the tests that cover it, and whether it is compared with an external reference. It is generated from one saved run of the full test suite by <code>tools/feature-matrix.R</code>, which refuses to write it unless the run has no failure and its recorded commit, installed dependencies and test names all match the tree.</p>
+<p><strong>Measured at 13a4d354 on 2026-10-29, version 1.2.17.</strong> That run: 2688 tests run, 15800 expectations, 12 tests skipped. A page older than the code it describes is still possible: regenerate it at each release.</p>
 <section class="level2"><h2 id="how-to-read-it">How to read it<a class="anchor" aria-label="anchor" href="#how-to-read-it"></a>
 </h2>
 <ul>
 <li>
 <strong>Status</strong> is a judgment, set by hand in <code>tools/feature-matrix-map.csv</code>. <em>Tested</em>: covered by the package’s own tests. <em>In progress</em>: a known gap, named in the notes. <em>Shipped</em> is reserved for a feature handed to biostatistics for critique.</li>
 <li>
-<strong>Tests</strong> and <strong>expectations</strong> count what ran in that run, across the feature’s test files. A test file can count towards more than one feature.</li>
+<strong>Tests run</strong> and <strong>expectations</strong> count what ran in that run, across the feature’s test files. A skipped test is not counted as run. A test file can count towards more than one feature.</li>
 <li>
 <strong>Skipped</strong> counts tests that did not run there, usually because a reference file, the C binary or the study data was not available.</li>
 <li>
-<strong>Reference</strong> says whether the feature is compared with something outside the package: SAS listings, the C <code>hazard</code> binary, or an independent oracle. “<em>n</em> of <em>m</em> tests ran” is how many of those comparisons actually ran in this run, not how many exist.</li>
+<strong>Reference</strong> counts the tests that compare the feature with something outside the package: SAS listings, the C <code>hazard</code> binary, or an independent oracle. Each is cited by name in <code>tools/feature-matrix-references.csv</code>. “<em>n</em> of <em>m</em> ran” means <em>n</em> of those <em>m</em> comparisons ran in this run. Tests that only check a reference file is well formed, or that exercise the C binary’s interface, are not counted.</li>
 <li>
 <strong>Default start</strong> says whether a test shows a fit started from the package’s defaults reaching the reference estimates. A reference test that starts from the estimates SAS reported shows that the likelihood agrees at that point, not that <code><a href="../reference/hazard.html">hazard()</a></code> finds it on its own.</li>
 </ul></section><section class="level2"><h2 id="model">Model<a class="anchor" aria-label="anchor" href="#model"></a>
@@ -111,17 +111,17 @@
 <colgroup>
 <col style="width: 18%">
 <col style="width: 3%">
-<col style="width: 2%">
+<col style="width: 4%">
 <col style="width: 5%">
 <col style="width: 3%">
-<col style="width: 13%">
+<col style="width: 11%">
 <col style="width: 7%">
-<col style="width: 45%">
+<col style="width: 44%">
 </colgroup>
 <thead><tr class="header">
 <th style="text-align: left;">Feature</th>
 <th style="text-align: left;">Status</th>
-<th style="text-align: right;">Tests</th>
+<th style="text-align: right;">Tests run</th>
 <th style="text-align: right;">Expectations</th>
 <th style="text-align: right;">Skipped</th>
 <th style="text-align: left;">Reference</th>
@@ -142,12 +142,12 @@
 <tr class="even">
 <td style="text-align: left;">Weibull distribution</td>
 <td style="text-align: left;">tested</td>
-<td style="text-align: right;">69</td>
+<td style="text-align: right;">68</td>
 <td style="text-align: right;">303</td>
 <td style="text-align: right;">1</td>
-<td style="text-align: left;">1 file(s); 6 of 7 tests ran</td>
 <td style="text-align: left;">none</td>
-<td style="text-align: left;">The C-binary comparison skips where the binary is not built.</td>
+<td style="text-align: left;">none</td>
+<td style="text-align: left;">The C-binary file tests the binary interface (command, input and output parsing), not estimates.</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Log-normal distribution</td>
@@ -172,10 +172,10 @@
 <tr class="odd">
 <td style="text-align: left;">Multiphase likelihood and optimizer</td>
 <td style="text-align: left;">tested</td>
-<td style="text-align: right;">163</td>
+<td style="text-align: right;">160</td>
 <td style="text-align: right;">880</td>
 <td style="text-align: right;">3</td>
-<td style="text-align: left;">3 file(s); 28 of 31 tests ran</td>
+<td style="text-align: left;">8 of 9 ran (C binary, SAS)</td>
 <td style="text-align: left;">none</td>
 <td style="text-align: left;">No criterion yet separates a genuine multiphase optimum from a stuck fit (#589).</td>
 </tr>
@@ -185,7 +185,7 @@
 <td style="text-align: right;">125</td>
 <td style="text-align: right;">862</td>
 <td style="text-align: right;">0</td>
-<td style="text-align: left;">1 file(s); 2 of 2 tests ran</td>
+<td style="text-align: left;">2 of 2 ran (oracle)</td>
 <td style="text-align: left;">none</td>
 <td style="text-align: left;"></td>
 </tr>
@@ -216,17 +216,17 @@
 <colgroup>
 <col style="width: 11%">
 <col style="width: 3%">
-<col style="width: 1%">
+<col style="width: 2%">
 <col style="width: 3%">
 <col style="width: 2%">
-<col style="width: 7%">
+<col style="width: 4%">
 <col style="width: 3%">
-<col style="width: 67%">
+<col style="width: 69%">
 </colgroup>
 <thead><tr class="header">
 <th style="text-align: left;">Feature</th>
 <th style="text-align: left;">Status</th>
-<th style="text-align: right;">Tests</th>
+<th style="text-align: right;">Tests run</th>
 <th style="text-align: right;">Expectations</th>
 <th style="text-align: right;">Skipped</th>
 <th style="text-align: left;">Reference</th>
@@ -257,30 +257,30 @@
 <tr class="odd">
 <td style="text-align: left;">Entry times (left truncation)</td>
 <td style="text-align: left;">tested</td>
-<td style="text-align: right;">42</td>
-<td style="text-align: right;">290</td>
+<td style="text-align: right;">60</td>
+<td style="text-align: right;">484</td>
 <td style="text-align: right;">0</td>
-<td style="text-align: left;">none</td>
+<td style="text-align: left;">1 of 1 ran (SAS)</td>
 <td style="text-align: left;">none</td>
 <td style="text-align: left;"></td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Observation weights</td>
 <td style="text-align: left;">in progress</td>
-<td style="text-align: right;">57</td>
-<td style="text-align: right;">173</td>
+<td style="text-align: right;">73</td>
+<td style="text-align: right;">367</td>
 <td style="text-align: right;">2</td>
-<td style="text-align: left;">1 file(s); 2 of 4 tests ran</td>
+<td style="text-align: left;">1 of 3 ran (SAS)</td>
 <td style="text-align: left;">none</td>
 <td style="text-align: left;">SAS parity covers fractional weights; weights beside repeated events are untested (#681).</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Repeated events</td>
 <td style="text-align: left;">in progress</td>
-<td style="text-align: right;">80</td>
+<td style="text-align: right;">74</td>
 <td style="text-align: right;">228</td>
 <td style="text-align: right;">6</td>
-<td style="text-align: left;">2 file(s); 0 of 6 tests ran</td>
+<td style="text-align: left;">0 of 4 ran (SAS)</td>
 <td style="text-align: left;">none</td>
 <td style="text-align: left;">Parity runs only with the study volume; the SAS targets are not yet set (#681).</td>
 </tr>
@@ -307,11 +307,11 @@
 </tbody>
 </table></section><section class="level2"><h2 id="covariates">Covariates<a class="anchor" aria-label="anchor" href="#covariates"></a>
 </h2>
-<table class="table caption-top">
+<table class="table caption-top" style="width:100%;">
 <colgroup>
-<col style="width: 31%">
+<col style="width: 30%">
 <col style="width: 7%">
-<col style="width: 6%">
+<col style="width: 10%">
 <col style="width: 13%">
 <col style="width: 8%">
 <col style="width: 10%">
@@ -321,7 +321,7 @@
 <thead><tr class="header">
 <th style="text-align: left;">Feature</th>
 <th style="text-align: left;">Status</th>
-<th style="text-align: right;">Tests</th>
+<th style="text-align: right;">Tests run</th>
 <th style="text-align: right;">Expectations</th>
 <th style="text-align: right;">Skipped</th>
 <th style="text-align: left;">Reference</th>
@@ -354,19 +354,19 @@
 </h2>
 <table class="table caption-top">
 <colgroup>
-<col style="width: 20%">
+<col style="width: 19%">
+<col style="width: 5%">
+<col style="width: 4%">
 <col style="width: 6%">
 <col style="width: 3%">
+<col style="width: 10%">
 <col style="width: 6%">
-<col style="width: 4%">
-<col style="width: 5%">
-<col style="width: 7%">
-<col style="width: 46%">
+<col style="width: 42%">
 </colgroup>
 <thead><tr class="header">
 <th style="text-align: left;">Feature</th>
 <th style="text-align: left;">Status</th>
-<th style="text-align: right;">Tests</th>
+<th style="text-align: right;">Tests run</th>
 <th style="text-align: right;">Expectations</th>
 <th style="text-align: right;">Skipped</th>
 <th style="text-align: left;">Reference</th>
@@ -377,10 +377,10 @@
 <tr class="odd">
 <td style="text-align: left;">Standard errors and the Hessian</td>
 <td style="text-align: left;">tested</td>
-<td style="text-align: right;">91</td>
-<td style="text-align: right;">267</td>
+<td style="text-align: right;">101</td>
+<td style="text-align: right;">315</td>
 <td style="text-align: right;">0</td>
-<td style="text-align: left;">none</td>
+<td style="text-align: left;">1 of 1 ran (C binary)</td>
 <td style="text-align: left;">none</td>
 <td style="text-align: left;"></td>
 </tr>
@@ -397,10 +397,10 @@
 <tr class="odd">
 <td style="text-align: left;">Prediction (predict.hazard)</td>
 <td style="text-align: left;">tested</td>
-<td style="text-align: right;">253</td>
-<td style="text-align: right;">1789</td>
+<td style="text-align: right;">271</td>
+<td style="text-align: right;">1983</td>
 <td style="text-align: right;">0</td>
-<td style="text-align: left;">none</td>
+<td style="text-align: left;">3 of 3 ran (SAS)</td>
 <td style="text-align: left;">none</td>
 <td style="text-align: left;"></td>
 </tr>
@@ -417,10 +417,10 @@
 <tr class="odd">
 <td style="text-align: left;">Goodness of fit and deciles</td>
 <td style="text-align: left;">tested</td>
-<td style="text-align: right;">132</td>
-<td style="text-align: right;">498</td>
+<td style="text-align: right;">150</td>
+<td style="text-align: right;">692</td>
 <td style="text-align: right;">0</td>
-<td style="text-align: left;">none</td>
+<td style="text-align: left;">3 of 3 ran (SAS)</td>
 <td style="text-align: left;">none</td>
 <td style="text-align: left;"></td>
 </tr>
@@ -429,19 +429,19 @@
 </h2>
 <table class="table caption-top">
 <colgroup>
-<col style="width: 29%">
+<col style="width: 31%">
 <col style="width: 6%">
-<col style="width: 5%">
+<col style="width: 9%">
 <col style="width: 11%">
-<col style="width: 6%">
-<col style="width: 24%">
+<col style="width: 7%">
+<col style="width: 15%">
 <col style="width: 12%">
 <col style="width: 5%">
 </colgroup>
 <thead><tr class="header">
 <th style="text-align: left;">Feature</th>
 <th style="text-align: left;">Status</th>
-<th style="text-align: right;">Tests</th>
+<th style="text-align: right;">Tests run</th>
 <th style="text-align: right;">Expectations</th>
 <th style="text-align: right;">Skipped</th>
 <th style="text-align: left;">Reference</th>
@@ -452,10 +452,10 @@
 <tr class="odd">
 <td style="text-align: left;">Stepwise selection (hzr_stepwise)</td>
 <td style="text-align: left;">tested</td>
-<td style="text-align: right;">298</td>
+<td style="text-align: right;">295</td>
 <td style="text-align: right;">1278</td>
-<td style="text-align: right;">3</td>
-<td style="text-align: left;">2 file(s); 5 of 8 tests ran</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: left;">2 of 2 ran (SAS)</td>
 <td style="text-align: left;">none</td>
 <td style="text-align: left;"></td>
 </tr>
@@ -484,19 +484,19 @@
 </h2>
 <table class="table caption-top" style="width:100%;">
 <colgroup>
-<col style="width: 43%">
-<col style="width: 6%">
+<col style="width: 42%">
 <col style="width: 5%">
-<col style="width: 11%">
-<col style="width: 7%">
 <col style="width: 8%">
-<col style="width: 12%">
+<col style="width: 11%">
+<col style="width: 6%">
+<col style="width: 8%">
+<col style="width: 11%">
 <col style="width: 5%">
 </colgroup>
 <thead><tr class="header">
 <th style="text-align: left;">Feature</th>
 <th style="text-align: left;">Status</th>
-<th style="text-align: right;">Tests</th>
+<th style="text-align: right;">Tests run</th>
 <th style="text-align: right;">Expectations</th>
 <th style="text-align: right;">Skipped</th>
 <th style="text-align: left;">Reference</th>
@@ -517,7 +517,7 @@
 <tr class="even">
 <td style="text-align: left;">SAS output readers (hzr_read_outhaz and listings)</td>
 <td style="text-align: left;">tested</td>
-<td style="text-align: right;">84</td>
+<td style="text-align: right;">81</td>
 <td style="text-align: right;">249</td>
 <td style="text-align: right;">3</td>
 <td style="text-align: left;">none</td>
@@ -527,10 +527,11 @@
 </tbody>
 </table></section><section class="level2"><h2 id="regenerating">Regenerating<a class="anchor" aria-label="anchor" href="#regenerating"></a>
 </h2>
-<p>From the package root, after a full run saved as <code>tools/release-suite.R</code> saves it:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">Rscript</span> tools/release-suite.R results.rds</span>
+<p>From the package root, on a committed tree:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">Rscript</span> tools/save-suite.R results.rds</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">Rscript</span> tools/feature-matrix.R results.rds</span></code></pre></div>
-<p>The second command refuses if a test file belongs to no feature, if a pattern in the map matches no file, or if the run does not match the tests on disk.</p>
+<p><code>tools/release-suite.R results.rds</code> makes the same run with the study data required, and its output feeds the second command too. Both attach the run’s provenance: the commit, the installed dependency versions and the time.</p>
+<p>The second command refuses a run made on an uncommitted tree, a run of a commit whose tests, code or data differ from the current one, a run under other dependency versions, a run with a failure, and a run whose test names differ from those on disk. It also refuses a test file that belongs to no feature, a pattern in the map that matches no file, and a cited test that is not in the run. <code>Rscript tools/test-feature-matrix.R</code> plants each of those faults and checks the refusal.</p>
 </section><script id="quarto-html-after-body" type="application/javascript">
   window.document.addEventListener("DOMContentLoaded", function (event) {
       var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
