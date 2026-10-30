@@ -145,7 +145,6 @@ test_that(".hzr_mt_normal() is set.seed() and rnorm(), bit for bit", {
   # than one 624-word block of the state. Both ends of the seed range are here
   # because a negative seed is taken modulo 2^32.
   withr::local_preserve_seed()
-  RNGversion(paste(R.version$major, R.version$minor, sep = "."))
   for (s in c(3L, 1L, 0L, -1L, -7L, 12345L, .Machine$integer.max,
               -.Machine$integer.max)) {
     set.seed(s, kind = "Mersenne-Twister", normal.kind = "Inversion")
