@@ -109,7 +109,8 @@ multiphase models: a covariate can enter one phase and not another.</p>
 
 <dl><dt id="arg-fit">fit<a class="anchor" aria-label="anchor" href="#arg-fit"></a></dt>
 <dd><p>A fitted <code>hazard</code> object built via the
-<code>formula = Surv(...) ~ predictors, data = df</code> interface.</p></dd>
+<code>formula = Surv(...) ~ predictors, data = df</code> interface, or a multiphase
+fit from either interface.</p></dd>
 
 
 <dt id="arg-scope">scope<a class="anchor" aria-label="anchor" href="#arg-scope"></a></dt>
@@ -205,8 +206,10 @@ Default <code>0.20</code> matches SAS <code>SLSTAY</code>.</p></dd>
 
 
 <dt id="arg-max-steps">max_steps<a class="anchor" aria-label="anchor" href="#arg-max-steps"></a></dt>
-<dd><p>Hard cap on total accepted actions.  Emits a
-<code><a href="https://rdrr.io/r/base/warning.html" class="external-link">warning()</a></code> if hit.  Default <code>50</code>.</p></dd>
+<dd><p>Limit on the rows of <code>$steps</code>: accepted actions and the
+<code>"frozen"</code> rows <code>max_move</code> writes.  It is checked before each iteration,
+so the iteration that reaches it can write several rows and pass it.
+Emits a <code><a href="https://rdrr.io/r/base/warning.html" class="external-link">warning()</a></code> if hit.  Default <code>50</code>.</p></dd>
 
 
 <dt id="arg-max-move">max_move<a class="anchor" aria-label="anchor" href="#arg-max-move"></a></dt>
@@ -584,9 +587,7 @@ scopes; <code><a href="stepwise_trace.html">stepwise_trace()</a></code> to retri
 <span class="r-in"><span>               theta <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>mu <span class="op">=</span> <span class="fl">0.01</span>, nu <span class="op">=</span> <span class="fl">0.5</span>, <span class="fl">0</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="va">sw</span> <span class="op">&lt;-</span> <span class="fu">hzr_stepwise</span><span class="op">(</span><span class="va">base</span>, scope <span class="op">=</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">mal</span>,</span></span>
-<span class="r-in"><span>                   data <span class="op">=</span> <span class="va">avc</span>, direction <span class="op">=</span> <span class="st">"forward"</span>,</span></span>
-<span class="r-in"><span>                   control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_starts <span class="op">=</span> <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>'control' element(s) with no effect on this dist = "weibull" fit, ignored: control$n_starts (it applies only to dist = "multiphase").</span>
+<span class="r-in"><span>                   data <span class="op">=</span> <span class="va">avc</span>, direction <span class="op">=</span> <span class="st">"forward"</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Stepwise selection (direction = forward, criterion = score, slentry = 0.30, slstay = 0.20)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Step 1: ENTER  mal   (p = 0.001)</span>

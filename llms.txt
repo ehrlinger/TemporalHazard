@@ -173,9 +173,9 @@ GitHub Actions runs multi-platform `R CMD check` on every push and pull
 request. Coverage is published to Codecov and the pkgdown site deploys
 automatically from `main`.
 
-See the development plan in `inst/dev/DEVELOPMENT-PLAN.md` for the full
-roadmap covering the C/SAS migration, multiphase implementation, CRAN
-release, and planned feature parity work.
+See the
+[milestones](https://github.com/ehrlinger/TemporalHazard/milestones) for
+planned work.
 
 # Package index
 

@@ -36,9 +36,8 @@ A data frame with 124 rows and 3 variables:
 ## Source
 
 National Center for Health Statistics, United States Life Tables, 2023.
-Derived from `/studies/general/uslife/table2023` via
-`data-raw/make_data.R`; `inst/extdata/uslife2023.csv` is the durable
-source, reproducible without a SAS license.
+Built by `data-raw/make_data.R` from `inst/extdata/uslife2023.csv`,
+which needs no SAS license to reproduce.
 
 ## Details
 

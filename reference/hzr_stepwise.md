@@ -42,7 +42,8 @@ as.data.frame(x, ...)
 - fit:
 
   A fitted `hazard` object built via the
-  `formula = Surv(...) ~ predictors, data = df` interface.
+  `formula = Surv(...) ~ predictors, data = df` interface, or a
+  multiphase fit from either interface.
 
 - scope:
 
@@ -137,7 +138,9 @@ as.data.frame(x, ...)
 
 - max_steps:
 
-  Hard cap on total accepted actions. Emits a
+  Limit on the rows of `$steps`: accepted actions and the `"frozen"`
+  rows `max_move` writes. It is checked before each iteration, so the
+  iteration that reaches it can write several rows and pass it. Emits a
   [`warning()`](https://rdrr.io/r/base/warning.html) if hit. Default
   `50`.
 
@@ -536,9 +539,7 @@ base <- hazard(survival::Surv(int_dead, dead) ~ age,
                theta = c(mu = 0.01, nu = 0.5, 0))
 # \donttest{
 sw <- hzr_stepwise(base, scope = ~ age + mal,
-                   data = avc, direction = "forward",
-                   control = list(n_starts = 1))
-#> Warning: 'control' element(s) with no effect on this dist = "weibull" fit, ignored: control$n_starts (it applies only to dist = "multiphase").
+                   data = avc, direction = "forward")
 #> Stepwise selection (direction = forward, criterion = score, slentry = 0.30, slstay = 0.20)
 #> 
 #> Step 1: ENTER  mal   (p = 0.001)
