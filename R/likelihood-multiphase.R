@@ -1646,15 +1646,73 @@
 # Optimizer
 # ============================================================================
 
+#' Normal deviates from a private Mersenne Twister
+#'
+#' Reproduces `set.seed(seed); rnorm(n)` under R's default `RNGkind()`, bit for
+#' bit, without touching `.Random.seed`.  Written out rather than called because
+#' calling it means writing to the global environment, and changing the numbers
+#' would change which optimum existing multiphase fits reach.  The 32-bit words
+#' are held in doubles: every product stays below 2^53, so the arithmetic is
+#' exact.
+#'
+#' @param seed Single whole number within integer range.
+#' @param n Number of deviates.
+#' @return Numeric vector of length `n`.
+#' @keywords internal
+.hzr_mt_normal <- function(seed, n) {
+  word <- 2^32
+  half <- 2^16
+  xor32 <- function(a, b) {
+    bitwXor(a %/% half, b %/% half) * half + bitwXor(a %% half, b %% half)
+  }
+  and32 <- function(a, b) {
+    bitwAnd(a %/% half, b %/% half) * half + bitwAnd(a %% half, b %% half)
+  }
+
+  # set.seed(): 50 scrambling rounds, then one word per slot of the state.
+  # The first slot holds the position, which is reset, so its word is discarded.
+  s <- as.double(seed) %% word
+  for (j in seq_len(51L)) s <- (69069 * s + 1) %% word
+  state <- numeric(624L)
+  for (j in seq_len(624L)) {
+    s <- (69069 * s + 1) %% word
+    state[j] <- s
+  }
+
+  # Two uniforms per deviate, as rnorm()'s inversion takes them.
+  u <- numeric(2 * n)
+  pos <- 625L
+  for (k in seq_along(u)) {
+    if (pos > 624L) {
+      for (i in seq_len(624L)) {
+        y <- (state[i] %/% 2^31) * 2^31 + state[i %% 624L + 1L] %% 2^31
+        state[i] <- xor32(xor32(state[(i + 396L) %% 624L + 1L], y %/% 2),
+                          c(0, 2567483615)[y %% 2 + 1])
+      }
+      pos <- 1L
+    }
+    y <- state[pos]
+    pos <- pos + 1L
+    y <- xor32(y, y %/% 2048)
+    y <- xor32(y, and32((y * 128) %% word, 2636928640))
+    y <- xor32(y, and32((y * 32768) %% word, 4022730752))
+    y <- xor32(y, y %/% 262144)
+    # R's generator never returns 0: a zero word becomes half its smallest step.
+    u[k] <- if (y == 0) 1.1641532185403985e-10 else y * 2.3283064365386963e-10
+  }
+
+  big <- 134217728
+  first <- 2L * seq_len(n) - 1L
+  stats::qnorm((trunc(big * u[first]) + u[first + 1L]) / big)
+}
+
 #' Deterministic multi-start perturbations
 #'
 #' Draws the offsets that shift the starting values for every multiphase start
-#' after the first.  The draw is taken from an internally seeded stream and the
-#' ambient `.Random.seed` is restored on exit, so a fit is reproducible without
-#' `set.seed()` and never advances the caller's stream.  Both halves matter:
-#' seeding alone would still let an intervening draw change the fit, and
-#' restoring alone would leave the fit dependent on whatever the stream
-#' happened to hold when it was called.
+#' after the first.  They are the numbers `set.seed(seed); rnorm()` gives under
+#' R's default generators, computed by [.hzr_mt_normal()] without R's stream, so
+#' a fit is reproducible without `set.seed()`, does not depend on `RNGkind()`,
+#' and neither reads nor writes `.Random.seed`.
 #'
 #' @param n_starts Number of optimization starts.
 #' @param n_par Length of the free-parameter vector being perturbed.
@@ -1667,20 +1725,8 @@
   n_draw <- max(0L, as.integer(n_starts) - 1L)
   if (n_draw == 0L) return(list())
 
-  # Restore the caller's stream exactly as we found it -- including the case
-  # where the session had never drawn from it and `.Random.seed` did not
-  # exist, where leaving ours behind would make the caller's next draw follow
-  # from our seed instead of from R's own initialization.
-  if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
-    old_seed <- get(".Random.seed", envir = globalenv(), inherits = FALSE)
-    on.exit(assign(".Random.seed", old_seed, envir = globalenv()), add = TRUE)
-  } else {
-    on.exit(suppressWarnings(rm(".Random.seed", envir = globalenv())),
-            add = TRUE)
-  }
-
-  set.seed(seed)
-  lapply(seq_len(n_draw), function(i) stats::rnorm(n_par, sd = sd))
+  z <- sd * .hzr_mt_normal(seed, n_draw * n_par)
+  lapply(seq_len(n_draw), function(i) z[(i - 1L) * n_par + seq_len(n_par)])
 }
 
 
@@ -2658,13 +2704,10 @@
   # synthetic two-phase fit in test-multiphase-reproducibility.R) before doing so.
   start_seed <- if (!is.null(control$start_seed)) control$start_seed else 3L
   control$start_seed <- NULL  # remove before passing to optim
-  # Validated against what set.seed() can actually take, and rejected rather
-  # than coerced.  Negative seeds are fine (set.seed(-1) is valid and
-  # deterministic), but a non-whole number is not: set.seed() truncates it, so
-  # 3.9 and 3 select the SAME ensemble, and a user sweeping 3.1/3.5/3.9 would
-  # believe they had tried three sets of starts having tried one.  Out of
-  # integer range, set.seed() fails with "supplied seed is not a valid integer"
-  # and never names the argument that caused it.
+  # Held to what set.seed() takes, and rejected rather than coerced.  Negative
+  # seeds are fine, but a non-whole number is not: truncating it would make 3.9
+  # and 3 select the SAME ensemble, and a user sweeping 3.1/3.5/3.9 would believe
+  # they had tried three sets of starts having tried one.
   if (length(start_seed) != 1L || !is.numeric(start_seed) ||
       !is.finite(start_seed) || start_seed != trunc(start_seed) ||
       abs(start_seed) > .Machine$integer.max) {

@@ -124,7 +124,7 @@ test_that("a negative start_seed is accepted and reproducible", {
 })
 
 # ---------------------------------------------------------------------------
-# .hzr_start_perturbations(): the one place the fitting path touches the RNG
+# .hzr_start_perturbations(): the old offsets, without R's stream
 # ---------------------------------------------------------------------------
 
 test_that(".hzr_start_perturbations is deterministic and correctly shaped", {
@@ -139,12 +139,48 @@ test_that(".hzr_start_perturbations is deterministic and correctly shaped", {
   expect_false(identical(p1[[1L]], p1[[2L]]))
 })
 
+test_that(".hzr_mt_normal() is set.seed() and rnorm(), bit for bit", {
+  # Identical offsets are the reason this generator exists: a different set
+  # moves which optimum existing fits reach. 2000 deviates take 4000 draws, more
+  # than one 624-word block of the state. Both ends of the seed range are here
+  # because a negative seed is taken modulo 2^32.
+  withr::local_preserve_seed()
+  for (s in c(3L, 1L, 0L, -1L, -7L, 12345L, .Machine$integer.max,
+              -.Machine$integer.max)) {
+    set.seed(s, kind = "Mersenne-Twister", normal.kind = "Inversion")
+    expect_identical(.hzr_mt_normal(s, 2000L), stats::rnorm(2000L))
+  }
+})
+
+test_that(".hzr_start_perturbations does not follow RNGkind()", {
+  # Saving and restoring .Random.seed around rnorm() passes the two stream tests
+  # below and writes to the global environment twice. What separates it from
+  # computing the numbers here is that rnorm() follows RNGkind().
+  withr::local_preserve_seed()
+  old_kind <- RNGkind()
+  on.exit(RNGkind(old_kind[1L], old_kind[2L], old_kind[3L]), add = TRUE)
+
+  RNGkind("Mersenne-Twister", "Inversion")
+  a <- .hzr_start_perturbations(5L, 3L, seed = 1L)
+  RNGkind("L'Ecuyer-CMRG", "Box-Muller")
+  expect_identical(.hzr_start_perturbations(5L, 3L, seed = 1L), a)
+})
+
+test_that(".hzr_start_perturbations scales by sd and fills by start", {
+  withr::local_preserve_seed()
+  set.seed(3L, kind = "Mersenne-Twister", normal.kind = "Inversion")
+  expect_identical(
+    .hzr_start_perturbations(3L, 2L, seed = 3L, sd = 0.5),
+    lapply(1:2, function(i) stats::rnorm(2L, sd = 0.5))
+  )
+})
+
 test_that(".hzr_start_perturbations returns nothing for a single start", {
   expect_identical(.hzr_start_perturbations(1L, 3L, seed = 1L), list())
   expect_identical(.hzr_start_perturbations(0L, 3L, seed = 1L), list())
 })
 
-test_that(".hzr_start_perturbations restores an existing .Random.seed", {
+test_that(".hzr_start_perturbations leaves an existing .Random.seed alone", {
   set.seed(4321)
   before <- .Random.seed
 

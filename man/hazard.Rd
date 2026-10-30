@@ -341,9 +341,9 @@ with no iterations is its starting values, not an estimate; to
 evaluate a model at parameters you supply, use \code{\link[=hzr_evaluate]{hzr_evaluate()}}.
 \item \code{n_starts}: Number of optimization starts for multiphase fits (default 5).
 Each start after the first offsets the initial values. The offsets are
-drawn from an internally seeded stream, so a multiphase fit is
-reproducible without \code{set.seed()} and does not advance the caller's RNG
-stream.
+computed by the package without using R's random number stream, so a
+multiphase fit is reproducible without \code{set.seed()} and neither reads nor
+changes that stream.
 \item \code{start_seed}: Seed selecting the ensemble of multi-start offsets
 (default 3). Any whole number within integer range, negative included.
 Fits are reproducible at any value; vary it to probe a different set of

@@ -549,9 +549,9 @@ NULL
 #'   evaluate a model at parameters you supply, use [hzr_evaluate()].
 #' - `n_starts`: Number of optimization starts for multiphase fits (default 5).
 #'   Each start after the first offsets the initial values. The offsets are
-#'   drawn from an internally seeded stream, so a multiphase fit is
-#'   reproducible without `set.seed()` and does not advance the caller's RNG
-#'   stream.
+#'   computed by the package without using R's random number stream, so a
+#'   multiphase fit is reproducible without `set.seed()` and neither reads nor
+#'   changes that stream.
 #' - `start_seed`: Seed selecting the ensemble of multi-start offsets
 #'   (default 3). Any whole number within integer range, negative included.
 #'   Fits are reproducible at any value; vary it to probe a different set of
