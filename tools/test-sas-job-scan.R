@@ -214,6 +214,59 @@ r <- .scan_job(old)
 ok("old listing refused by default", isFALSE(.scan_eligible(r)))
 ok("old listing allowed when asked", isTRUE(.scan_eligible(r, allow_old = TRUE)))
 
+# The translator: a job it refuses is read, but it fits nothing.
+refused_job <- "%HAZARD(PROC HAZARD DATA=WORK.A; TIME T; EVENT E; PARMS MUE=0;);"
+d <- tree()
+r <- .scan_job(plant(d, "t1", job(stmts = "PARMS MUE=1;")))
+ok("a job with a fit translates", identical(r$translate, "ok") && identical(r$reason, ""))
+r <- .scan_job(plant(d, "t2", refused_job))
+ok("a stop() in place of the fit is a refusal", identical(r$translate, "refused"))
+ok("a refusal keeps its reason", nzchar(r$reason))
+r <- .scan_job(plant(d, "t3", "%HAZBOOT(x);"))
+ok("a job with no block is a translator error", identical(r$translate, "error"))
+ok("an error keeps its reason, without the path",
+   startsWith(r$reason, "no HAZARD or HAZPRED block") && !grepl("/", r$reason))
+stops <- function(...) .scan_stops(list(...))
+ok("a guard holding stop() is not a refusal",
+   length(stops(data = quote(if (!exists("A")) stop("assign A")))) == 0L)
+ok("a bare stop() chunk is a refusal",
+   identical(stops(rewrite = quote(stop("a", "b"))), c(rewrite = "a b")))
+ok("an assigned stop() is a refusal",
+   identical(stops(fit = quote(fit <- stop("c"))), c(fit = "c")))
+ok("a message built by paste() is still read",
+   identical(stops(fit = quote(fit <- stop(paste("d", "e")))), c(fit = "d e")))
+ok("a refusal after a clean fit is seen",
+   identical(stops(fit = quote(fit <- hazard()), fit_2 = quote(fit_2 <- stop("f"))),
+             c(fit_2 = "f")))
+good <- quote(fit <- hazard())
+halt <- quote(stop("x"))
+status <- function(...) .scan_fit_status(list(...))
+ok("no stop is ok", identical(status(fit = good), "ok"))
+ok("a refused prediction leaves the fit", identical(status(fit = good, pred = halt), "fit_only"))
+ok("a refused prediction with no fit is refused", identical(status(pred = halt), "refused"))
+ok("a refused fit is refused", identical(status(fit = good, fit_2 = halt), "refused"))
+ok("a refused rewrite is refused, even with predictions",
+   identical(status(fit = good, rewrite = halt, pred = halt), "refused"))
+ok("the reason loses quoted text, paths and files",
+   identical(.scan_reason("bad 'SECRET' `X` \"Y\" at /studies/x/y.sas\tin mine.sas now"),
+             "bad <x> <x> <x> at <path> in <file> now"))
+ok("the reason loses capitalised names and keeps SAS's words",
+   identical(.scan_reason("PROC HAZPRED read the grid NELOUT, and AGE_2"),
+             "PROC HAZPRED read the grid <name>, and <name>"))
+ok("one reason from two jobs tallies once",
+   identical(.scan_reason("the grid NELOUT"), .scan_reason("the grid ARTSW")))
+ok("the reason is cut short", nchar(.scan_reason(strrep("a", 500L))) == 100L)
+
+# Only a job that is comparable and fits can be selected.
+m <- data.frame(eligible = c(TRUE, TRUE, TRUE, TRUE, FALSE),
+                translate = c("ok", "fit_only", "refused", "error", "ok"),
+                hazpred = TRUE, inhaz = TRUE)
+ok("selectable needs both",
+   identical(.scan_selectable(m), c(TRUE, TRUE, FALSE, FALSE, FALSE)))
+ok("a fit_only job earns no prediction credit",
+   identical(.scan_credit(m)$hazpred, c(TRUE, FALSE, TRUE, TRUE, TRUE)) &&
+     identical(.scan_credit(m)$inhaz, c(TRUE, FALSE, TRUE, TRUE, TRUE)))
+
 # Selection.
 m <- data.frame(path = c("a", "b", "c", "d"), n_hazard = 1L, n_hazpred = 0L,
                 f1 = c(TRUE, TRUE, FALSE, FALSE), f2 = c(FALSE, TRUE, FALSE, TRUE),
@@ -231,8 +284,8 @@ root <- tree()
 out <- tree()
 secret <- file.path(root, "STUDYSECRET")
 dir.create(secret)
-plant(secret, "jobsecret", job(stmts = "EARLY VARSECRET; SELECTION SLE=0.1;"))
-plant(secret, "copy", job(stmts = "EARLY VARSECRET; SELECTION SLE=0.1;"))
+plant(secret, "jobsecret", job(stmts = "PARMS MUE=1; EARLY VARSECRET; SELECTION SLE=0.1;"))
+plant(secret, "copy", job(stmts = "PARMS MUE=1; EARLY VARSECRET; SELECTION SLE=0.1;"))
 state <- function(p) {
   f <- sort(list.files(p, recursive = TRUE, full.names = TRUE))
   list(f, unname(tools::md5sum(f)), file.mtime(f))
@@ -244,11 +297,72 @@ sink()
 ok("run exits 0", identical(status, 0L))
 ok("the tree scanned is untouched", identical(before, state(root)))
 ok("selected names the job", any(grepl("jobsecret|copy", readLines(file.path(out, "selected.tsv")))))
+ok("a run with nothing refused writes an empty tally",
+   identical(readLines(file.path(out, "refusals.tsv")), "jobs\ttranslate\treason"))
 ok("an identical copy is not two jobs", nrow(utils::read.delim(file.path(out, "jobs.tsv"))) == 1L)
 summ <- paste(readLines(file.path(out, "summary.txt")), collapse = "\n")
 ok("summary reports the job", grepl("jobs: 2 (1 after", summ, fixed = TRUE))
 ok("summary has no path, job or variable name", !grepl("SECRET|secret|/", gsub("Stepwise|hzr_[a-z_]+", "", summ)))
 ok("output directory is private", identical(format(file.mode(out)), "700"))
+
+# The whole run with jobs that cannot fit: none is selected, each is counted, and
+# the tally of reasons names no job.
+root2 <- tree()
+out2 <- tree()
+secret2 <- file.path(root2, "STUDYSECRET")
+dir.create(secret2)
+plant(secret2, "goodjob", job(stmts = "PARMS MUE=1;"))
+plant(secret2, "refusedjob", refused_job)
+plant(secret2, "bootjob", "%HAZBOOT(x);")
+sink(tempfile())
+status <- scan_main(c("--out", out2, root2))
+sink()
+sel <- readLines(file.path(out2, "selected.tsv"))
+ok("selected holds only the job that fits",
+   length(sel) == 2L && grepl("goodjob", sel[2L]))
+summ2 <- readLines(file.path(out2, "summary.txt"))
+ok("summary splits the translator", "translator: 1 ok, 0 fit only, 1 refused, 1 error" %in% summ2)
+ok("summary counts what can be selected", "comparable and fits: 1" %in% summ2)
+ok("summary counts the reasons", "translator reasons: 2 (see refusals.tsv)" %in% summ2)
+ok("summary names a feature no selectable job has",
+   any(grepl("^seen, but in no job that fits: .*bootstrap", summ2)))
+tally <- utils::read.delim(file.path(out2, "refusals.tsv"), quote = "")
+ok("the tally has one row per reason, with counts",
+   nrow(tally) == 2L && setequal(tally$translate, c("refused", "error")) &&
+     all(tally$jobs == 1L))
+ok("the tally names no job or path",
+   !any(grepl("SECRET|goodjob|refusedjob|bootjob|/",
+              readLines(file.path(out2, "refusals.tsv")))))
+
+# A job whose fit stands and whose prediction refuses covers no prediction. Given
+# one feature to cover, the run takes the plain job, and credits no prediction.
+pred <- tree()
+out3 <- tree()
+plant(pred, "plain", job(stmts = "PARMS MUE=1;"))
+plant(pred, "predicts", c(job(stmts = "PARMS MUE=1;"),
+                          "data grid; t=1; run;",
+                          "%HAZPRED(PROC HAZPRED DATA=GRID INHAZ=WORK.OUTH; TIME T;);"))
+ok("the planted prediction refuses and its fit stands",
+   identical(.scan_job(file.path(pred, "predicts.sas"))$translate, "fit_only"))
+sink(tempfile())
+status <- scan_main(c("--out", out3, "--per-feature", "1", pred))
+sink()
+sel3 <- readLines(file.path(out3, "selected.tsv"))
+ok("a refused prediction wins no selection",
+   length(sel3) == 2L && grepl("plain[.]sas", sel3[2L]))
+summ3 <- readLines(file.path(out3, "summary.txt"))
+row <- strsplit(grep("^hazpred\t", summ3, value = TRUE), "\t")[[1L]]
+ok("a refused prediction is no prediction that fits", identical(row[4L], "0"))
+ok("the summary splits out fit only", "translator: 1 ok, 1 fit only, 0 refused, 0 error" %in% summ3)
+out4 <- tree()
+only <- tree()
+plant(only, "predicts", readLines(file.path(pred, "predicts.sas")))
+sink(tempfile())
+status <- scan_main(c("--out", out4, only))
+sink()
+row <- strsplit(grep("^hazpred\t", readLines(file.path(out4, "summary.txt")), value = TRUE), "\t")[[1L]]
+ok("a selected fit_only job is credited no prediction",
+   length(readLines(file.path(out4, "selected.tsv"))) == 2L && identical(row[5L], "0"))
 
 # Links: the walk stays in the tree and says what it passed over.
 walked <- tree()
