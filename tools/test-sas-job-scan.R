@@ -245,6 +245,10 @@ ok("no stop is ok", identical(status(fit = good), "ok"))
 ok("a refused prediction leaves the fit", identical(status(fit = good, pred = halt), "fit_only"))
 ok("a refused prediction with no fit is refused", identical(status(pred = halt), "refused"))
 ok("a refused fit is refused", identical(status(fit = good, fit_2 = halt), "refused"))
+ok("no fit and no stop is refused", identical(status(pred = quote(p <- predict(x))), "refused"))
+ok("a real fit name counts", identical(status(fit_2 = good, pred_2 = halt), "fit_only"))
+ok("a fit and an unplaced INHAZ is fit only",
+   identical(.scan_fit_status(list(fit = good), FALSE), "fit_only"))
 ok("a refused rewrite is refused, even with predictions",
    identical(status(fit = good, rewrite = halt, pred = halt), "refused"))
 ok("the reason loses quoted text, paths and files",
@@ -253,6 +257,17 @@ ok("the reason loses quoted text, paths and files",
 ok("the reason loses capitalised names and keeps SAS's words",
    identical(.scan_reason("PROC HAZPRED read the grid NELOUT, and AGE_2"),
              "PROC HAZPRED read the grid <name>, and <name>"))
+ok("a leading underscore or digit does not save a name",
+   identical(.scan_reason("grid _STUDY and 2STUDY in hzr_translate_sas()"),
+             "grid <name> and <name> in hzr_translate_sas()"))
+spaced <- "/a b/Smith Avc cohort.sas"
+ok("a path with spaces goes whole",
+   identical(.scan_reason(paste("found in", spaced), spaced), "found in <path>"))
+ok("a file name with spaces goes whole",
+   identical(.scan_reason("block in Smith Avc cohort.sas: bad", spaced), "block in <path>: bad"))
+ok("a stop beyond a prediction decides the reason",
+   identical(.scan_status_reason(list(pred = quote(stop("p")), fit = quote(fit <- stop("f"))),
+                                 "refused"), "f"))
 ok("one reason from two jobs tallies once",
    identical(.scan_reason("the grid NELOUT"), .scan_reason("the grid ARTSW")))
 ok("the reason is cut short", nchar(.scan_reason(strrep("a", 500L))) == 100L)
@@ -260,12 +275,13 @@ ok("the reason is cut short", nchar(.scan_reason(strrep("a", 500L))) == 100L)
 # Only a job that is comparable and fits can be selected.
 m <- data.frame(eligible = c(TRUE, TRUE, TRUE, TRUE, FALSE),
                 translate = c("ok", "fit_only", "refused", "error", "ok"),
-                hazpred = TRUE, inhaz = TRUE)
+                hazpred = TRUE, inhaz = TRUE, hazplot = TRUE)
 ok("selectable needs both",
    identical(.scan_selectable(m), c(TRUE, TRUE, FALSE, FALSE, FALSE)))
 ok("a fit_only job earns no prediction credit",
    identical(.scan_credit(m)$hazpred, c(TRUE, FALSE, TRUE, TRUE, TRUE)) &&
-     identical(.scan_credit(m)$inhaz, c(TRUE, FALSE, TRUE, TRUE, TRUE)))
+     identical(.scan_credit(m)$inhaz, c(TRUE, FALSE, TRUE, TRUE, TRUE)) &&
+     identical(.scan_credit(m)$hazplot, c(TRUE, FALSE, TRUE, TRUE, TRUE)))
 
 # Selection.
 m <- data.frame(path = c("a", "b", "c", "d"), n_hazard = 1L, n_hazpred = 0L,
@@ -304,6 +320,20 @@ summ <- paste(readLines(file.path(out, "summary.txt")), collapse = "\n")
 ok("summary reports the job", grepl("jobs: 2 (1 after", summ, fixed = TRUE))
 ok("summary has no path, job or variable name", !grepl("SECRET|secret|/", gsub("Stepwise|hzr_[a-z_]+", "", summ)))
 ok("output directory is private", identical(format(file.mode(out)), "700"))
+
+# Real translations, not hand-typed chunks.
+pred_out <- "%HAZPRED(PROC HAZPRED DATA=GRID INHAZ=EX.OUTH OUT=WORK.P; TIME T;);"
+grid <- "data grid; t=1; run;"
+r <- .scan_job(plant(d, "t4", c(grid, pred_out)))
+ok("a prediction with no fit and no stop is refused",
+   identical(r$translate, "refused") && identical(r$reason, "no fit in the translation"))
+r <- .scan_job(plant(d, "t5", c(job(stmts = "PARMS MUE=1;"), grid, pred_out)))
+ok("a fit with a prediction from an unplaced fit is fit only",
+   identical(r$translate, "fit_only") && identical(r$reason, "INHAZ not placed"))
+spaced_dir <- file.path(d, "Avc valve trial")
+dir.create(spaced_dir)
+r <- .scan_job(plant(spaced_dir, "Smith Avc", "%HAZBOOT(x);"))
+ok("a real error loses a spaced path", !grepl("valve|Smith|Avc", r$reason))
 
 # The whole run with jobs that cannot fit: none is selected, each is counted, and
 # the tally of reasons names no job.
@@ -354,6 +384,11 @@ summ3 <- readLines(file.path(out3, "summary.txt"))
 row <- strsplit(grep("^hazpred\t", summ3, value = TRUE), "\t")[[1L]]
 ok("a refused prediction is no prediction that fits", identical(row[4L], "0"))
 ok("the summary splits out fit only", "translator: 1 ok, 1 fit only, 0 refused, 0 error" %in% summ3)
+j3 <- utils::read.delim(file.path(out3, "jobs.tsv"), quote = "")
+n3 <- sum(j3$eligible & j3$translate %in% c("ok", "fit_only") & j3$n_untranslated > 0L)
+ok("the planted jobs include one with untranslated rows", n3 > 0L)
+ok("the summary counts fits with untranslated rows",
+   paste0("  of those, with untranslated rows: ", n3) %in% summ3)
 out4 <- tree()
 only <- tree()
 plant(only, "predicts", readLines(file.path(pred, "predicts.sas")))

@@ -165,32 +165,51 @@
   vapply(stops, function(r) paste(strings(r), collapse = " "), character(1L))
 }
 
-# "ok": nothing refused. "fit_only": every fit stands and only predictions refuse,
-# so the fits can still be compared. "refused": a fit or a step it reads refuses,
-# or there is no fit at all.
-.scan_fit_status <- function(calls) {
+# "ok": a fit and nothing refused. This says the translation emits a fit, not that
+# the fit runs or matches the job: n_untranslated counts what it left out. A fit
+# with a prediction that refuses, or that reads a fit the translator could not
+# place, is "fit_only", because the fits can still be compared. "refused": a fit or
+# a step it reads refuses, or there is no fit at all.
+.scan_fit_status <- function(calls, inhaz_resolved = TRUE) {
   stops <- .scan_stops(calls)
-  if (!length(stops)) return("ok")
-  only_pred <- all(startsWith(names(stops), "pred"))
-  if (only_pred && any(startsWith(names(calls), "fit"))) "fit_only" else "refused"
+  beyond_pred <- !startsWith(as.character(names(stops)), "pred")
+  if (any(beyond_pred) || !any(startsWith(as.character(names(calls)), "fit"))) {
+    return("refused")
+  }
+  if (length(stops) || !isTRUE(inhaz_resolved)) "fit_only" else "ok"
 }
 
-# The translator prints SAS's words and the job's own names alike in capitals. Only
-# these words are kept, so a variable or dataset name cannot leave, and one reason
-# tallies as one reason whichever job gave it. A word missing here costs clarity,
-# never privacy.
+# Why a job has that status. A stop that decides "refused" comes before a refused
+# prediction, so a fit's refusal is not tallied under a prediction's reason.
+.scan_status_reason <- function(calls, status) {
+  if (identical(status, "ok")) return("")
+  stops <- .scan_stops(calls)
+  beyond_pred <- stops[!startsWith(as.character(names(stops)), "pred")]
+  if (length(beyond_pred)) return(beyond_pred[[1L]])
+  if (length(stops)) return(stops[[1L]])
+  if (identical(status, "refused")) "no fit in the translation" else "INHAZ not placed"
+}
+
+# The translator prints SAS's words and the job's own names alike in capitals. Of
+# the words in capitals only these are kept, so a variable or dataset name cannot
+# leave, and one reason tallies as one reason whichever job gave it. A word missing
+# here costs clarity, never privacy.
 .scan_sas_words <- c(
-  "CONSTANT", "DATA", "EARLY", "EVENT", "FAST", "HAZARD", "HAZPRED", "ICENSOR",
+  "A", "CONSTANT", "DATA", "EARLY", "EVENT", "FAST", "HAZARD", "HAZPRED", "ICENSOR",
   "INHAZ", "LATE", "MAXVARS", "MOVE", "MU", "NU", "OUTHAZ", "PARMS", "PROC",
   "REPEAT", "RESTRICT", "SAS", "SELECTION", "SLE", "SLS", "THALF", "TIME"
 )
 
-# Quoted text, paths and job file names go first, because they name a study.
-.scan_reason <- function(m) {
+# The job's own path and file name go first, whole, because they can hold spaces
+# no pattern below would cross. Then quoted text and other paths.
+.scan_reason <- function(m, path = NULL) {
+  for (known in c(path, if (!is.null(path)) basename(path))) {
+    m <- gsub(known, "<path>", m, fixed = TRUE)
+  }
   m <- gsub("`[^`]*`|'[^']*'|\"[^\"]*\"", "<x>", m)
   m <- gsub("/[^[:space:]]*", "<path>", m)
   m <- gsub("[^[:space:]]+[.]sas\\b", "<file>", m, ignore.case = TRUE)
-  at <- gregexpr("\\b[A-Z][A-Z0-9_]+\\b", m)
+  at <- gregexpr("(?<![A-Za-z0-9_])[A-Z0-9_]*[A-Z_][A-Z0-9_]*(?![A-Za-z0-9_])", m, perl = TRUE)
   regmatches(m, at) <- lapply(regmatches(m, at), function(w) {
     ifelse(w %in% .scan_sas_words, w, "<name>")
   })
@@ -205,12 +224,12 @@
     j <- suppressWarnings(suppressMessages(
       TemporalHazard::hzr_translate_sas(path)
     ))
-    stops <- .scan_stops(j$calls)
-    list(status = .scan_fit_status(j$calls),
-         reason = if (length(stops)) .scan_reason(stops[[1L]]) else "",
+    status <- .scan_fit_status(j$calls, j$inhaz_resolved)
+    list(status = status,
+         reason = .scan_reason(.scan_status_reason(j$calls, status), path),
          n_untranslated = NROW(j$untranslated))
   }, error = function(e) {
-    list(status = "error", reason = .scan_reason(conditionMessage(e)),
+    list(status = "error", reason = .scan_reason(conditionMessage(e), path),
          n_untranslated = NA_integer_)
   })
 }
@@ -305,9 +324,11 @@
 
 # What a job's translation can show. A fit_only job's predictions refuse, so it
 # proves nothing about prediction, or about reading the fit it predicts from,
-# whatever its text uses.
+# whatever its text uses. Other macros (bootstrap, deciles, chisqgf) stay credited:
+# the translator never emits them, so a selected job has a fit to start from and
+# the macro's step is run by hand.
 .scan_credit <- function(jobs) {
-  jobs[jobs$translate == "fit_only", c("hazpred", "inhaz")] <- FALSE
+  jobs[jobs$translate == "fit_only", c("hazpred", "inhaz", "hazplot")] <- FALSE
   jobs
 }
 
@@ -372,6 +393,8 @@
     sum(jobs$translate == "refused"), " refused, ",
     sum(jobs$translate == "error"), " error")
   w("comparable and fits: ", sum(.scan_selectable(jobs)))
+  w("  of those, with untranslated rows: ",
+    sum(.scan_selectable(jobs) & !is.na(jobs$n_untranslated) & jobs$n_untranslated > 0L))
   w("translator reasons: ", length(unique(jobs$reason[jobs$translate != "ok"])),
     " (see refusals.tsv)")
   w("selected: ", length(selected))
