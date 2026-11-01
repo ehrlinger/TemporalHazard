@@ -532,7 +532,7 @@ scan_main <- function(args = commandArgs(trailingOnly = TRUE)) {
   selected <- pool[.scan_select(.scan_credit(jobs[pool, ]), features, per)]
   utils::write.table(jobs, file.path(out, "jobs.tsv"), sep = "\t",
                      row.names = FALSE, quote = FALSE)
-  utils::write.table(jobs[selected, c("path", features, "translate", "n_untranslated")],
+  utils::write.table(.scan_credit(jobs)[selected, c("path", features, "translate", "n_untranslated")],
                      file.path(out, "selected.tsv"), sep = "\t",
                      row.names = FALSE, quote = FALSE)
   no_fit <- jobs[jobs$translate != "ok", c("translate", "reason")]

@@ -398,6 +398,12 @@ sink()
 row <- strsplit(grep("^hazpred\t", readLines(file.path(out4, "summary.txt")), value = TRUE), "\t")[[1L]]
 ok("a selected fit_only job is credited no prediction",
    length(readLines(file.path(out4, "selected.tsv"))) == 2L && identical(row[5L], "0"))
+sel4 <- utils::read.delim(file.path(out4, "selected.tsv"), quote = "")
+ok("selected.tsv agrees: a fit_only job shows no prediction",
+   nrow(sel4) == 1L && identical(sel4$translate, "fit_only") &&
+     !sel4$hazpred && !sel4$inhaz && !sel4$hazplot)
+j4 <- utils::read.delim(file.path(out4, "jobs.tsv"), quote = "")
+ok("jobs.tsv keeps what the job's text uses", isTRUE(j4$hazpred) && isTRUE(j4$inhaz))
 
 # Links: the walk stays in the tree and says what it passed over.
 walked <- tree()
