@@ -15,6 +15,8 @@
 #
 #   --out/jobs.tsv and --out/selected.tsv hold paths and stay on the server.
 #   --out/summary.txt and standard output hold counts and feature names only.
+#   --out/refusals.tsv tallies the translator's reasons with quoted text, paths and
+#   capitalised names removed. A lower-case name can survive: read it before sharing.
 #
 # USAGE (on the server, never over a desktop mount)
 #   Rscript tools/sas-job-scan.R --out DIR [--per-feature 2]
@@ -148,6 +150,72 @@
                     ignore.case = TRUE)) > 0L
 }
 
+# The translator's refusals in a job's calls, as reasons named by chunk. A refusal
+# is a chunk that is itself stop(...), bound or bare. Searching the text cannot
+# tell it from the guards a translated job carries, which hold a stop() inside an
+# if().
+.scan_stops <- function(calls) {
+  strings <- function(x) {
+    if (is.character(x)) x else if (is.call(x)) unlist(lapply(as.list(x)[-1L], strings))
+  }
+  rhs <- lapply(calls, function(cl) {
+    if (is.call(cl) && identical(cl[[1L]], as.name("<-"))) cl[[3L]] else cl
+  })
+  stops <- Filter(function(r) is.call(r) && identical(r[[1L]], as.name("stop")), rhs)
+  vapply(stops, function(r) paste(strings(r), collapse = " "), character(1L))
+}
+
+# "ok": a fit and nothing refused. This says the translation emits a fit, not that
+# the fit runs or matches the job: n_untranslated counts what it left out. A fit
+# with a prediction that refuses, or that reads a fit the translator could not
+# place, is "fit_only", because the fits can still be compared. "refused": a fit or
+# a step it reads refuses, or there is no fit at all.
+.scan_fit_status <- function(calls, inhaz_resolved = TRUE) {
+  stops <- .scan_stops(calls)
+  beyond_pred <- !startsWith(as.character(names(stops)), "pred")
+  if (any(beyond_pred) || !any(startsWith(as.character(names(calls)), "fit"))) {
+    return("refused")
+  }
+  if (length(stops) || !isTRUE(inhaz_resolved)) "fit_only" else "ok"
+}
+
+# Why a job has that status. A stop that decides "refused" comes before a refused
+# prediction, so a fit's refusal is not tallied under a prediction's reason.
+.scan_status_reason <- function(calls, status) {
+  if (identical(status, "ok")) return("")
+  stops <- .scan_stops(calls)
+  beyond_pred <- stops[!startsWith(as.character(names(stops)), "pred")]
+  if (length(beyond_pred)) return(beyond_pred[[1L]])
+  if (length(stops)) return(stops[[1L]])
+  if (identical(status, "refused")) "no fit in the translation" else "INHAZ not placed"
+}
+
+# The translator prints SAS's words and the job's own names alike in capitals. Of
+# the words in capitals only these are kept, so a variable or dataset name cannot
+# leave, and one reason tallies as one reason whichever job gave it. A word missing
+# here costs clarity, never privacy.
+.scan_sas_words <- c(
+  "A", "CONSTANT", "DATA", "EARLY", "EVENT", "FAST", "HAZARD", "HAZPRED", "ICENSOR",
+  "INHAZ", "LATE", "MAXVARS", "MOVE", "MU", "NU", "OUTHAZ", "PARMS", "PROC",
+  "REPEAT", "RESTRICT", "SAS", "SELECTION", "SLE", "SLS", "THALF", "TIME"
+)
+
+# The job's own path and file name go first, whole, because they can hold spaces
+# no pattern below would cross. Then quoted text and other paths.
+.scan_reason <- function(m, path = NULL) {
+  for (known in c(path, if (!is.null(path)) basename(path))) {
+    m <- gsub(known, "<path>", m, fixed = TRUE)
+  }
+  m <- gsub("`[^`]*`|'[^']*'|\"[^\"]*\"", "<x>", m)
+  m <- gsub("/[^[:space:]]*", "<path>", m)
+  m <- gsub("[^[:space:]]+[.]sas\\b", "<file>", m, ignore.case = TRUE)
+  at <- gregexpr("(?<![A-Za-z0-9_])[A-Z0-9_]*[A-Z_][A-Z0-9_]*(?![A-Za-z0-9_])", m, perl = TRUE)
+  regmatches(m, at) <- lapply(regmatches(m, at), function(w) {
+    ifelse(w %in% .scan_sas_words, w, "<name>")
+  })
+  substr(gsub("[[:space:]]+", " ", m), 1L, 100L)
+}
+
 # Without out_dir, hzr_translate_sas() parses only and writes nothing.
 .scan_translate <- function(path) {
   on.exit(setTimeLimit(), add = TRUE)
@@ -156,8 +224,14 @@
     j <- suppressWarnings(suppressMessages(
       TemporalHazard::hzr_translate_sas(path)
     ))
-    list(status = "ok", n_untranslated = NROW(j$untranslated))
-  }, error = function(e) list(status = "error", n_untranslated = NA_integer_))
+    status <- .scan_fit_status(j$calls, j$inhaz_resolved)
+    list(status = status,
+         reason = .scan_reason(.scan_status_reason(j$calls, status), path),
+         n_untranslated = NROW(j$untranslated))
+  }, error = function(e) {
+    list(status = "error", reason = .scan_reason(conditionMessage(e), path),
+         n_untranslated = NA_integer_)
+  })
 }
 
 # One row for one file. `lst_after_job` is the check that the listing can be
@@ -224,7 +298,7 @@
       log_errors = if (is.null(log_lines)) NA_integer_
                    else sum(grepl("^ERROR", log_lines)),
       data_found = .scan_data_found(s$hazard, lines, path),
-      translate = tr$status, n_untranslated = tr$n_untranslated
+      translate = tr$status, reason = tr$reason, n_untranslated = tr$n_untranslated
     ),
     as.data.frame(flag(.scan_rules(), blocks)),
     as.data.frame(flag(.scan_job_rules(), s$txt))
@@ -240,6 +314,22 @@
   jobs$has_lst & (jobs$lst_after_job | allow_old) &
     (is.na(jobs$log_errors) | jobs$log_errors == 0L) &
     (is.na(jobs$data_found) | jobs$data_found)
+}
+
+# A comparison needs a fit to compare, so only these jobs can be selected. A job
+# without one is still in jobs.tsv, and its reason is tallied in refusals.tsv.
+.scan_selectable <- function(jobs) {
+  jobs$eligible & jobs$translate %in% c("ok", "fit_only")
+}
+
+# What a job's translation can show. A fit_only job's predictions refuse, so it
+# proves nothing about prediction, or about reading the fit it predicts from,
+# whatever its text uses. Other macros (bootstrap, deciles, chisqgf) stay credited:
+# the translator never emits them, so a selected job has a fit to start from and
+# the macro's step is run by hand.
+.scan_credit <- function(jobs) {
+  jobs[jobs$translate == "fit_only", c("hazpred", "inhaz", "hazplot")] <- FALSE
+  jobs
 }
 
 # Greedy cover: repeatedly take the job that adds the most still-needed
@@ -268,12 +358,15 @@
 .scan_write_summary <- function(jobs, n_jobs, rows, selected, path, walk) {
   features <- .scan_features()
   rule_rows <- rbind(.scan_rules(), .scan_job_rules())
+  credit <- .scan_credit(jobs)
   feat <- data.frame(
     feature = features,
     jobs = vapply(features, function(f) sum(jobs[[f]]), integer(1L)),
     comparable = vapply(features, function(f) sum(jobs[[f]] & jobs$eligible),
                         integer(1L)),
-    selected = vapply(features, function(f) sum(jobs[[f]][selected]), integer(1L)),
+    fits = vapply(features, function(f) sum(credit[[f]] & .scan_selectable(jobs)),
+                  integer(1L)),
+    selected = vapply(features, function(f) sum(credit[[f]][selected]), integer(1L)),
     matrix_row = rule_rows$matrix[match(features, rule_rows$feature)],
     row.names = NULL
   )
@@ -295,8 +388,15 @@
   w("  log with errors: ", sum(!is.na(jobs$log_errors) & jobs$log_errors > 0L))
   w("  dataset missing: ", sum(!is.na(jobs$data_found) & !jobs$data_found))
   w("  dataset unknown (kept): ", sum(is.na(jobs$data_found)))
-  w("translator: ", sum(jobs$translate == "ok"), " read, ",
-    sum(jobs$translate != "ok"), " error")
+  w("translator: ", sum(jobs$translate == "ok"), " ok, ",
+    sum(jobs$translate == "fit_only"), " fit only, ",
+    sum(jobs$translate == "refused"), " refused, ",
+    sum(jobs$translate == "error"), " error")
+  w("comparable and fits: ", sum(.scan_selectable(jobs)))
+  w("  of those, with untranslated rows: ",
+    sum(.scan_selectable(jobs) & !is.na(jobs$n_untranslated) & jobs$n_untranslated > 0L))
+  w("translator reasons: ", length(unique(jobs$reason[jobs$translate != "ok"])),
+    " (see refusals.tsv)")
   w("selected: ", length(selected))
   w("")
   w(paste(names(feat), collapse = "\t"))
@@ -308,6 +408,9 @@
     if (length(none)) paste(none, collapse = ", ") else "none")
   w("seen, but in no comparable job: ",
     if (length(gap)) paste(gap, collapse = ", ") else "none")
+  nofit <- feat$feature[feat$comparable > 0L & feat$fits == 0L]
+  w("seen, but in no job that fits: ",
+    if (length(nofit)) paste(nofit, collapse = ", ") else "none")
   invisible(feat)
 }
 
@@ -425,11 +528,20 @@ scan_main <- function(args = commandArgs(trailingOnly = TRUE)) {
   all <- all[order(!all$eligible, all$path), ]
   jobs <- all[!duplicated(all$md5), ]
   features <- .scan_features()
-  selected <- which(jobs$eligible)[.scan_select(jobs[jobs$eligible, ], features, per)]
+  pool <- which(.scan_selectable(jobs))
+  selected <- pool[.scan_select(.scan_credit(jobs[pool, ]), features, per)]
   utils::write.table(jobs, file.path(out, "jobs.tsv"), sep = "\t",
                      row.names = FALSE, quote = FALSE)
-  utils::write.table(jobs[selected, c("path", features, "translate", "n_untranslated")],
+  utils::write.table(.scan_credit(jobs)[selected, c("path", features, "translate", "n_untranslated")],
                      file.path(out, "selected.tsv"), sep = "\t",
+                     row.names = FALSE, quote = FALSE)
+  no_fit <- jobs[jobs$translate != "ok", c("translate", "reason")]
+  key <- paste(no_fit$translate, no_fit$reason)
+  n_key <- table(key)
+  tally <- no_fit[match(names(n_key), key), ]
+  tally$jobs <- as.integer(n_key)
+  utils::write.table(tally[order(-tally$jobs, tally$reason), c("jobs", "translate", "reason")],
+                     file.path(out, "refusals.tsv"), sep = "\t",
                      row.names = FALSE, quote = FALSE)
   .scan_write_summary(jobs, nrow(all), brief, selected,
                       file.path(out, "summary.txt"), walk)
