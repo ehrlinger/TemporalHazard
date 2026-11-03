@@ -1,5 +1,214 @@
 # Changelog
 
+## TemporalHazard 1.2.18
+
+- **The hazard at exactly time 0 was `NaN` for a phase with `m = 0` and
+  `nu > 0`
+  ([\#672](https://github.com/ehrlinger/TemporalHazard/issues/672)).**
+  That phase’s density was formed as a product of a survival that
+  underflows to 0 and a power that overflows, so at time 0 it read
+  `0 * Inf`.
+  [`hzr_phase_hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase_hazard.md)
+  and `hzr_decompos()$g` returned `NaN` where the limit is 0, and in a
+  multiphase fit the `NaN` took the whole hazard with it:
+  `predict(type = "hazard")` at time 0 returned `NaN`, with no message,
+  even for the constant phase’s share. Scoring start/stop data reaches
+  this, because every first segment starts at 0. The same `0 * Inf`
+  struck at times above 0 when `nu` is small or `t_half` is large (1e20
+  is enough near t = 0, where `h` was `NaN` as well), and there the
+  likelihood did read it. Such a point was treated as one where the
+  likelihood is not defined, so a fit could be steered away from it or
+  fail outright: one with an early phase at `nu = 0.01` and three events
+  before t = 0.002 stopped with “no usable fit”, and now converges. The
+  density is now formed on the log scale, giving the limit, 0, where the
+  product was `NaN`, and the same values to rounding elsewhere. A fit
+  that reached such a point can therefore change.
+
+- `predict(se.fit = TRUE)` on a Weibull fit at time 0 gave a standard
+  error of `NaN` from the same `0 * Inf`, in the shape term; it is now 0
+  ([\#619](https://github.com/ehrlinger/TemporalHazard/issues/619) item
+  22). The confidence limits there stay `NA`, as for any prediction with
+  a cumulative hazard of 0.
+
+- [`?hazard`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  now says that `fit$fit$objective`, and the `objective` of each start,
+  is the maximized log-likelihood, larger is better (or PROC HAZARD’s
+  objective under `objective = "sas"`). The `reltol` entry, which
+  describes the negative the optimizer minimizes, says the stored value
+  has the opposite sign
+  ([\#674](https://github.com/ehrlinger/TemporalHazard/issues/674)).
+
+- A test now pins the
+  [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  refusal of an open-code `DATA &DS;` that rewrites a PROC HAZPRED grid
+  (`%LET DS=PRED; DATA &DS; ...` between the grid and the
+  `PROC HAZPRED`). The refusal itself shipped in
+  [\#628](https://github.com/ehrlinger/TemporalHazard/issues/628).
+  Before it, the macro-named write went unrecorded and the earlier grid
+  was emitted with no `$untranslated` row
+  ([\#655](https://github.com/ehrlinger/TemporalHazard/issues/655)).
+
+- `fit$fit$weak` now names a multiphase phase’s `log_mu`, `log_t_half`
+  or `log_tau` when the data do not determine it: no pair of estimates
+  trades off, and its own standard error exceeds 10 log units. Before,
+  `weak` was `NULL`, which means “checked, identified”, on a fit whose
+  Hessian was ill-conditioned and whose conserved constant phase had
+  been switched off at the boundary (`log_mu` near -28, standard error
+  3e4 to 1e5). The single-parameter reading
+  ([\#415](https://github.com/ehrlinger/TemporalHazard/issues/415))
+  named only g3 shapes. The check reads the parameter’s own standard
+  error, which a change of time unit does not alter, so a covariate’s
+  units cannot hide it or trigger it. Fits whose `weak` was `NULL` can
+  now carry a list and raise the “weakly identified fit” warning.
+  Covariate coefficients are still never named on their own, and neither
+  is a log-scale name that a covariate duplicates
+  ([\#673](https://github.com/ehrlinger/TemporalHazard/issues/673)).
+
+- [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  reads a macro call against the definition completed before it, as SAS
+  does, not the last one in the file. A macro defined twice, whose first
+  body rewrites a PROC HAZPRED grid, was read against its second body,
+  and the grid was emitted with no `$untranslated` row (SAS predicts at
+  the rewritten grid). The reverse order no longer refuses a grid over a
+  body defined after the call, and a call before any definition is read
+  as a macro the file does not define, which SAS does not resolve. A
+  macro defined inside another macro, including one that redefines
+  itself, is now one this cannot read: SAS compiles that definition only
+  when the outer macro runs, and each such job had emitted the earlier
+  grid with no row. Its calls follow the rule for any unread call, and
+  when the enclosing definition holds a statement this cannot read, such
+  as `OPTIONS OBS=`, the call refuses the grid wherever it stands. A
+  `%MACRO` inside a macro call’s argument list, such as quoted
+  `%NRSTR()` text, is no longer read as a definition
+  ([\#651](https://github.com/ehrlinger/TemporalHazard/issues/651)).
+
+- **A vector-interface fit made through a wrapper that forwards
+  `formula = fml` could be refit as a formula fit
+  ([\#432](https://github.com/ehrlinger/TemporalHazard/issues/432),
+  [\#406](https://github.com/ehrlinger/TemporalHazard/issues/406)).**
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  takes the formula route only when `formula` evaluates to a formula,
+  but the stored call records `fml` whether it held one or `NULL`, so
+  the refitting tools guessed the route from the call. Where `fml` was
+  later bound to a formula,
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+  resampled a fit given `x =` that the plain vector fit refuses, and
+  reported 3 of 3 replicates with a row labelled `age` carrying `mal`’s
+  coefficients, with no warning. Where `fml` stayed `NULL`,
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  stopped with a message about resolving `fml` instead of the check a
+  vector fit gets, and
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+  refused a fit the plain vector fit resamples; it now resamples it.
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  now records the route it took in `spec$interface`, and
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md),
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  and `predict(newdata = )` read it. A fit saved before this version is
+  read as before.
+
+- The pkgdown site has a feature test matrix
+  ([\#682](https://github.com/ehrlinger/TemporalHazard/issues/682)): one
+  row per feature, with the tests that cover it, whether they compare it
+  with SAS, the C binary or an independent oracle and how many of those
+  comparisons ran, and whether any test fits it from the package’s
+  default starts. It is generated by `tools/feature-matrix.R` from a
+  saved run of the full suite, which refuses a run of another tree, a
+  run with failures, and a test file no feature claims.
+
+- The feature test matrix
+  ([\#682](https://github.com/ehrlinger/TemporalHazard/issues/682)) now
+  reads its Reference column from comparisons cited by name, so tests
+  that only check a reference file is well formed are no longer counted.
+  Its tests column counts only tests that ran. The generator refuses a
+  run saved without provenance, a run of another commit or dependency
+  set, and a run whose generated test names differ from the tree
+  ([\#684](https://github.com/ehrlinger/TemporalHazard/issues/684)
+  review).
+
+- [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  under the default `criterion = "score"` no longer passes over a
+  candidate holding `NA` in silence
+  ([\#686](https://github.com/ehrlinger/TemporalHazard/issues/686)).
+  Such a candidate cannot be scored, and was declined as `non_numeric`
+  with no warning from a completed run, so a weaker variable could enter
+  in its place. It is now declined as `missing_values`, and the run
+  warns that it was not tested.
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+  counts the replicates that declined one this way in its existing
+  warning about declined entries, since the candidate’s selection
+  frequency otherwise tracks how often its `NA` rows were drawn.
+
+- [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  now records SAS macro control flow that decides whether a step runs,
+  where it used to report a clean translation
+  ([\#687](https://github.com/ehrlinger/TemporalHazard/issues/687)). A
+  `%HAZARD(`, `%HAZPRED(` or `%REPEAT(` call inside a `* ... ;` comment,
+  which SAS’s macro processor runs, was dropped with the comment; it now
+  gets an untranslated row. A PROC HAZARD, PROC HAZPRED or `%REPEAT`
+  call inside a `%MACRO` definition, or under an open-code `%IF` or
+  `%DO`, was translated as if it ran once, though SAS runs it once per
+  call, or only when the condition holds; it is still translated, now
+  with an untranslated row and a warning chunk above it. A compact
+  spelling reads the same as a spaced one (`%THEN%DO`, `%DO%WHILE(`,
+  `%ELSE%HAZARD(`, `%IF(`), here and in the HAZPRED grid’s dataset scan.
+  Two jobs in the public HAZARD corpus show the first two shapes.
+
+- Documentation corrected from the 1.3.0 release review
+  ([\#688](https://github.com/ehrlinger/TemporalHazard/issues/688)). The
+  getting-started vignette said one `log_mu` under Conservation of
+  Events has no standard error; all three have had one since
+  [\#652](https://github.com/ehrlinger/TemporalHazard/issues/652).
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  and
+  [`stepwise_trace()`](https://ehrlinger.github.io/TemporalHazard/reference/stepwise_trace.md)
+  examples no longer pass a `control` that warns it is ignored,
+  `@param fit` says which fits are accepted, and `max_steps` says it
+  counts `"frozen"` rows too and is checked between iterations. The
+  `uslife2023` source no longer names an internal path.
+
+- Errors from the 1.3.0 release review
+  ([\#688](https://github.com/ehrlinger/TemporalHazard/issues/688)).
+  [`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  could not step a fit whose
+  [`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) response
+  deparsed to more than one line, and a screen that could drop aborted
+  on a multi-level factor named in `force_in`.
+  [`hzr_read_outhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_read_outhaz.md)
+  failed on a dataset written with `NOCOV`; it now reads, and
+  `se.fit = TRUE` is what refuses. `INHAZ=OA` now finds
+  `OUTHAZ=WORK.OA`.
+  [`hzr_repeated_events()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_repeated_events.md)
+  now refuses a negative `time` or `followup`, which used to build a
+  frame without a warning. A multiphase fit without ‘numDeriv’ warns
+  once, not once per start.
+  [`?hzr_stepwise`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  now says a refit does not inherit the base fit’s `control`.
+
+- A fit stopped where the Hessian is not positive-definite could have
+  `$fit$weak` `NULL`, which reads as examined and well identified
+  ([\#688](https://github.com/ehrlinger/TemporalHazard/issues/688)). It
+  is now `NA`, not examined, with the reason in `degraded_causes`. The
+  fit’s warnings about the Hessian are unchanged.
+
+- A multiphase fit no longer writes `.Random.seed` to the global
+  environment. The `n_starts` offsets are computed by the package and
+  are the same numbers as before, so fits under R’s default random
+  number generators are unchanged. Under another
+  [`RNGkind()`](https://rdrr.io/r/base/Random.html) they now match those
+  default-generator fits, where they previously followed the session’s
+  generator.
+
+- The internal help for the multiphase start generator now cites
+  Matsumoto and Nishimura (1998), the source of its algorithm.
+
+- **The package’s license is now GPL (\>= 2), not MIT.**
+  [`.hzr_mt_normal()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_mt_normal.md),
+  the generator behind the `n_starts` offsets, derives from R’s own GPL
+  code, so the package now carries that license. `inst/COPYRIGHTS` and
+  `Authors@R` credit the R Core Team and the authors of the Mersenne
+  Twister. No fit changes.
+
 ## TemporalHazard 1.2.17
 
 - **[`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md)
