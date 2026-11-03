@@ -2326,7 +2326,12 @@
     if (depth == 0L) next
     scope[[i]] <- n_def
     enclosing[[i]] <- open
-    if (grepl("^%MEND( |$)", t)) {
+    # SAS reads %MEND as a token wherever it stands, so text with no semicolon
+    # before it (the JCL lines of a `%macro skip;` header) ends with it; read
+    # only at the start of a statement, that definition never closed (#708).
+    # A %MEND in a quoted string is text.
+    unquoted <- gsub("'[^']*'|\"[^\"]*\"", "''", t)
+    if (grepl("(^|[^A-Z0-9_&%])%MEND( |$)", unquoted)) {
       nm <- open[[depth]]
       if (depth > 1L) {
         nested <- c(nested, nm)

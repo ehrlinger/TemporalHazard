@@ -350,3 +350,29 @@ test_that("a rewrite inside a skipped macro does not stop a chained %repeat", {
   open_code <- macro_job(macro_repeat, "DATA EVENTS; SET EVENTS; X = 1; RUN;", second, fit2)
   expect_true(any(startsWith(names(open_code$calls), "rewrite")))
 })
+
+test_that("a %MEND after text with no semicolon closes the definition", {
+  # The job-header idiom: old JCL lines, which hold no semicolons, wrapped in
+  # %macro skip; ... %mend; so the %MEND ends the statement those lines open.
+  # SAS reads %MEND as a token wherever it stands. Read only at the start of
+  # a statement, skip never closed and nothing in the job was skipped.
+  header <- c("%macro skip;", "// JOB hm.dead.sas", "sas hm.dead.sas",
+              "// FILE hm.dead.sas", "%mend;")
+  job <- macro_job(header, macro_live, "%MACRO FINAL;", sub("0.3", "0.4", macro_live),
+                   "%MEND FINAL;")
+  expect_identical(macro_run_slots(job), "fit")
+  expect_identical(unname(job$not_run[["fit_2"]]), "FINAL")
+  # The header macro is never called either; nothing in it is a block.
+  called <- macro_job(header, macro_live, "%MACRO FINAL;", sub("0.3", "0.4", macro_live),
+                      "%MEND FINAL;", "%FINAL;")
+  expect_length(called$not_run, 0L)
+})
+
+test_that("a %MEND inside a quoted string does not close the definition", {
+  # RUNIT is never called, so its fit stands not run, which it does only if
+  # the definition runs to the real %MEND and not to the quoted one.
+  job <- macro_job("%MACRO RUNIT;", "%PUT 'the %MEND is here';", macro_live,
+                   "%MEND RUNIT;")
+  expect_identical(unique(unname(job$not_run)), "RUNIT")
+  expect_length(macro_run_slots(job), 0L)
+})
