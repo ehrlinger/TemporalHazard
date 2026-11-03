@@ -56,8 +56,14 @@
           note$body,
           ":::", "")
     }
+    # A chunk from a macro the job never calls: SAS did not run it (#708).
+    never <- job$not_run[nm]
+    skip <- if (is.na(never)) character(0) else
+      c("#| eval: false",
+        sprintf("# Not run: SAS never ran this; %%MACRO %s is not called in the job.", never))
     add("```{r}",
         sprintf("#| label: %s", nm),
+        skip,
         deparse(job$calls[[nm]], width.cutoff = 60L),
         "```", "")
   }

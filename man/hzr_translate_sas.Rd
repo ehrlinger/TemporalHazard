@@ -24,8 +24,11 @@ An \code{hzr_sas_job} object, invisibly. \verb{$calls} holds the emitted
 calls keyed by chunk label, \verb{$grid} the last prediction grid seen and
 \verb{$inhaz} the first unresolved \verb{INHAZ=} (not all of each, when a job has
 several), \verb{$untranslated} the recorded gaps, \verb{$coverage} the token
-counts, and \verb{$notes} any callout attached to a chunk by label, emitted
-immediately above that chunk in the rendered document.
+counts, \verb{$notes} any callout attached to a chunk by label, emitted
+immediately above that chunk in the rendered document, and \verb{$not_run}
+the chunks SAS never ran, named by label, each holding the \verb{\%MACRO} the
+job defines but never calls around it. Those chunks are rendered with
+\code{eval: false}; a caller evaluating \verb{$calls} itself should skip them.
 }
 \description{
 Reads a SAS program containing \verb{PROC HAZARD} and/or \verb{PROC HAZPRED} blocks and

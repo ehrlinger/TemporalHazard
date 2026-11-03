@@ -103,8 +103,11 @@
 #'   calls keyed by chunk label, `$grid` the last prediction grid seen and
 #'   `$inhaz` the first unresolved `INHAZ=` (not all of each, when a job has
 #'   several), `$untranslated` the recorded gaps, `$coverage` the token
-#'   counts, and `$notes` any callout attached to a chunk by label, emitted
-#'   immediately above that chunk in the rendered document.
+#'   counts, `$notes` any callout attached to a chunk by label, emitted
+#'   immediately above that chunk in the rendered document, and `$not_run`
+#'   the chunks SAS never ran, named by label, each holding the `%MACRO` the
+#'   job defines but never calls around it. Those chunks are rendered with
+#'   `eval: false`; a caller evaluating `$calls` itself should skip them.
 #'
 #' @section What the emitted document needs to run:
 #' Base R at the version this package declares in `DESCRIPTION` (`Depends`),
@@ -250,6 +253,18 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
   macro_flag <- function(b, what, runs) {
     ctl <- .hzr_sas_macro_control_at(macro_st, macro_defs, b$start)
     if (is.null(ctl)) return(NULL)
+    never <- .hzr_sas_uncalled_macro_at(macro_st, macro_defs, b$start, star)
+    if (!is.null(never)) {
+      untr <<- rbind(untr, .hzr_untranslated_frame(
+        NA_integer_, paste(ctl, "around", what),
+        paste0("this ", what, " stands inside %MACRO ", never, ", which this ",
+               "file never calls, so SAS does not run it; this translation ",
+               "emits its chunks with eval: false. A call from an %INCLUDEd ",
+               "file, or one built from macro variables, is not seen")
+      ))
+      return(paste0("This ", what, " stands inside %MACRO ", never, ", which ",
+                    "this file never calls, so SAS does not run it."))
+    }
     why <- if (identical(ctl, "%MACRO")) {
       paste("stands inside a %MACRO definition, so SAS runs it once for",
             "each call of the macro, and not at all if it is never called")
@@ -284,8 +299,21 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
   first_unresolved_inhaz <- NULL
   n_unresolved_inhaz <- 0L
   repeat_scan <- list()      # %repeat OUT= -> offset its rewrite scan resumes from
+  not_run <- character(0)    # chunk label -> the uncalled macro it stands in (#708)
 
   for (b in blocks) {
+    # A block in a macro this file never calls is emitted, so the model stays
+    # in the document, but SAS never ran it (#708). Its chunks are marked not
+    # run, and what it set for the blocks after it is put back: a later fit
+    # gets its own data guard, and a later PROC HAZPRED does not predict from
+    # a fit SAS never made.
+    never <- .hzr_sas_uncalled_macro_at(macro_st, macro_defs, b$start, star)
+    if (!is.null(never)) {
+      kept <- list(calls = names(calls), guarded_data = guarded_data,
+                   repeat_scan = repeat_scan, fits = fits, loaded_ext = loaded_ext,
+                   first_unresolved_inhaz = first_unresolved_inhaz,
+                   n_unresolved_inhaz = n_unresolved_inhaz)
+    }
     if (identical(b$proc, "REPEAT")) {
       r <- .hzr_parse_repeat(b)
       macro_warning(macro_flag(b, "%REPEAT call", "builds its dataset"))
@@ -515,6 +543,11 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
     untr <- rbind(untr, r$untranslated)
     seen <- seen + r$tokens_seen
     mapped <- mapped + r$tokens_mapped
+    if (!is.null(never)) {
+      made <- setdiff(names(calls), kept$calls)
+      not_run[made] <- never
+      for (v in setdiff(names(kept), "calls")) assign(v, kept[[v]])
+    }
   }
 
   outhaz_vec <- unlist(lapply(fits, function(x) x$outhaz))
@@ -526,7 +559,7 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
     calls = calls, grid = grid, inhaz = first_unresolved_inhaz,
     outhaz = outhaz_vec, untranslated = untr,
     coverage = list(tokens_seen = seen, tokens_mapped = mapped),
-    notes = notes
+    notes = notes, not_run = not_run
   )
   job$inhaz_resolved <- is.null(first_unresolved_inhaz)
   .hzr_validate_sas_job(job)

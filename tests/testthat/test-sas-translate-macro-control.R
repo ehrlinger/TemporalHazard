@@ -167,3 +167,132 @@ test_that("a macro name that starts with a control keyword is not control", {
   job <- macro_job("%DO;", "%ENDIT;", macro_live, "%END;")
   expect_equal(nrow(macro_rows(job, "%IF around PROC HAZARD")), 1L)
 })
+
+# A %MACRO the file never calls never runs (#708). Its blocks are still emitted,
+# so the model stays visible, but in chunks the document does not evaluate.
+
+macro_run_slots <- function(job) setdiff(macro_fit_slots(job), names(job$not_run))
+
+test_that("a fit inside a macro the file never calls is not run", {
+  job <- macro_job(macro_live, "%MACRO FINAL;", sub("0.3", "0.4", macro_live), "%MEND FINAL;")
+  expect_length(macro_fit_slots(job), 2L)
+  expect_identical(macro_run_slots(job), "fit")
+  expect_identical(unname(job$not_run[["fit_2"]]), "FINAL")
+  # Every chunk the block made is not run, its warning chunk included.
+  made <- names(job$calls)[seq(match("fit", names(job$calls)) + 1L, length(job$calls))]
+  expect_setequal(names(job$not_run), made)
+  row <- macro_rows(job, "%MACRO around PROC HAZARD")
+  expect_equal(nrow(row), 1L)
+  expect_match(row$reason, "FINAL, which this file never calls", fixed = TRUE)
+})
+
+test_that("a called macro's fit still runs", {
+  for (call in c("%FINAL;", "%IF &X = 1 %THEN %FINAL;", "DATA _NULL_; CALL EXECUTE('%FINAL'); RUN;")) {
+    job <- macro_job(macro_live, "%MACRO FINAL;", sub("0.3", "0.4", macro_live),
+                     "%MEND FINAL;", call)
+    expect_length(job$not_run, 0L)
+    expect_length(macro_run_slots(job), 2L)
+  }
+})
+
+test_that("a call in a * comment counts as a call", {
+  # SAS's macro processor runs a call inside a statement comment (#687).
+  job <- macro_job(macro_live, "%MACRO FINAL;", sub("0.3", "0.4", macro_live),
+                   "%MEND FINAL;", "* %FINAL;")
+  expect_length(job$not_run, 0L)
+})
+
+test_that("a bare PROC HAZARD in an uncalled macro is not run", {
+  job <- macro_job(macro_live, "%MACRO V;",
+                   "PROC HAZARD DATA=AVCS; TIME INT_DEAD; EVENT DEAD; PARMS MUE=0.4 THALF=0.2 NU=1 M=1;",
+                   "%MEND V;")
+  expect_identical(macro_run_slots(job), "fit")
+})
+
+test_that("a macro that calls only itself is never called", {
+  job <- macro_job(macro_live, "%MACRO LOOP;", sub("0.3", "0.4", macro_live),
+                   "%LOOP;", "%MEND LOOP;")
+  expect_identical(macro_run_slots(job), "fit")
+})
+
+test_that("a nested macro runs only when it and its enclosing macro are both called", {
+  inner <- c("%MACRO OUTER;", "%MACRO INNER;", sub("0.3", "0.4", macro_live),
+             "%MEND INNER;", "%INNER;", "%MEND OUTER;")
+  expect_length(do.call(macro_job, as.list(c(macro_live, inner, "%OUTER;")))$not_run, 0L)
+  job <- do.call(macro_job, as.list(c(macro_live, inner)))
+  expect_identical(macro_run_slots(job), "fit")
+  expect_identical(unname(job$not_run[["fit_2"]]), "OUTER")
+})
+
+test_that("a skipped block does not take a later fit's data guard", {
+  # Both fits read AVCS. The guard belongs to the fit that runs.
+  job <- macro_job("%MACRO OLD;", sub("0.3", "0.4", macro_live), "%MEND OLD;", macro_live)
+  guards <- grep("^data", names(job$calls), value = TRUE)
+  expect_length(setdiff(guards, names(job$not_run)), 1L)
+  expect_lt(match(setdiff(guards, names(job$not_run)), names(job$calls)),
+            match(macro_run_slots(job), names(job$calls)))
+})
+
+test_that("the rendered document does not evaluate a skipped chunk", {
+  f <- tempfile(fileext = ".sas")
+  writeLines(c(macro_live, "%MACRO FINAL;", sub("0.3", "0.4", macro_live), "%MEND FINAL;"), f)
+  out <- tempfile()
+  suppressWarnings(hzr_translate_sas(f, out_dir = out))
+  qmd <- readLines(file.path(out, sub("[.]sas$", ".qmd", basename(f))))
+  at <- grep("^#\\| label: fit(_2)?$", qmd)
+  expect_length(at, 2L)
+  expect_false(identical(qmd[at[[1L]] + 1L], "#| eval: false"))
+  expect_identical(qmd[at[[2L]] + 1L], "#| eval: false")
+  expect_match(qmd[at[[2L]] + 2L], "FINAL", fixed = TRUE)
+})
+
+test_that("a prediction after a skipped fit predicts from the fit that ran", {
+  # Both fits write OUTHAZ=OUTEST; only the first one runs in SAS.
+  live <- sub("DATA=AVCS;", "DATA=AVCS OUTHAZ=OUTEST;", macro_live, fixed = TRUE)
+  pred <- "%HAZPRED( PROC HAZPRED DATA=P INHAZ=OUTEST OUT=P; TIME MONTHS; );"
+  grid <- "DATA P; DO MONTHS = 1 TO 3; OUTPUT; END; RUN;"
+  job <- macro_job(live, "%MACRO OLD;", sub("0.3", "0.4", live), "%MEND OLD;", grid, pred)
+  expect_identical(macro_run_slots(job), "fit")
+  expect_identical(deparse1(job$calls$pred[[1L]]), "predict")
+  expect_identical(deparse1(job$calls$pred[[2L]]), "fit")
+})
+
+test_that("a skipped prediction does not replace the job's grid", {
+  live <- sub("DATA=AVCS;", "DATA=AVCS OUTHAZ=OUTEST;", macro_live, fixed = TRUE)
+  pred <- "%HAZPRED( PROC HAZPRED DATA=P INHAZ=OUTEST OUT=P; TIME MONTHS; );"
+  ran <- c(live, "DATA P; DO MONTHS = 1 TO 3; OUTPUT; END; RUN;", pred)
+  old <- c("%MACRO OLD;", "DATA P; DO MONTHS = 10 TO 30; OUTPUT; END; RUN;", pred, "%MEND OLD;")
+  alone <- do.call(macro_job, as.list(ran))
+  job <- do.call(macro_job, as.list(c(ran, old)))
+  expect_false(is.null(alone$grid))
+  expect_true(any(startsWith(names(job$not_run), "pred")))
+  expect_identical(job$grid, alone$grid)
+})
+
+test_that("a skipped prediction's INHAZ neither stops the document nor loads its fit", {
+  pred <- "%HAZPRED( PROC HAZPRED DATA=P INHAZ=EX.HZD OUT=P; TIME MONTHS; );"
+  grid <- "DATA P; DO MONTHS = 1 TO 3; OUTPUT; END; RUN;"
+  # Unresolved: only the skipped block reads EX.HZD.
+  job <- macro_job(macro_live, "%MACRO OLD;", grid, pred, "%MEND OLD;")
+  expect_null(job$inhaz)
+  expect_true(job$inhaz_resolved)
+  # Resolved through librefs: the live prediction loads its own fit.
+  f <- tempfile(fileext = ".sas")
+  writeLines(c(macro_live, "%MACRO OLD;", grid, pred, "%MEND OLD;", grid, pred), f)
+  job <- suppressWarnings(hzr_translate_sas(f, librefs = c(EX = "estimates")))
+  live_pred <- setdiff(grep("^pred", names(job$calls), value = TRUE), names(job$not_run))
+  loaded <- deparse1(job$calls[[live_pred[[1L]]]][[2L]])
+  expect_false(loaded %in% names(job$not_run))
+  expect_true(loaded %in% names(job$calls))
+})
+
+test_that("a skipped %repeat does not stop a later fit on its dataset", {
+  # SAS fits EVENTS as the job's own steps built it; the %repeat never ran, so a
+  # step that changes EVENTS is not a rewrite of the macro's output.
+  job <- macro_job("%MACRO R;", macro_repeat, "%MEND R;",
+                   "DATA EVENTS; SET EVENTS; X = 1; RUN;", macro_repeat_fit)
+  expect_true(any(startsWith(names(job$not_run), "repeated")))
+  live <- setdiff(names(job$calls), names(job$not_run))
+  expect_false(any(startsWith(live, "rewrite")))
+  expect_true(any(startsWith(live, "data")))
+})
