@@ -11,9 +11,9 @@ Data,Right censoring and data handling,^time-zero-rows$|^zero-time-rows$|^hazard
 Data,Interval and left censoring,^interval-censoring-|^sas-censoring$|^vector-surv-status$|^entry-time-surv-status$|^sas-interval-objective$,,tested,
 Data,Entry times (left truncation),^entry-time-|^time-lower-entry$|^coe-left-truncation$|^gof-entry-km$,,tested,
 Data,Observation weights,weights,,in progress,SAS parity covers fractional weights; weights beside repeated events are untested (#681).
-Data,Repeated events,^repeated-events|^repeating-events$|^sas-translate-repeat$,,in progress,Parity runs only with the study volume; the SAS targets are not yet set (#681).
+Data,Repeated events,^repeated-events|^repeating-events$|^sas-translate-repeat$,,in progress,The SAS listing comparisons run only with the private study data, in the release suite; no fit from default starts is tested yet (#681).
 Data,Time-varying coefficients (time_windows),^time-varying-coefficients$|^deciles-time-windows$|^phase-inherits-legacy-windows$|^gof-grid-and-windows$,,tested,
-Data,Time-varying covariates (start/stop epochs),^repeating-events$,,in progress,Named as under-tested at the 2026-10-29 review. The epoch tests check that splitting a row into epochs leaves the log-likelihood unchanged. Production time-varying covariate work is under way in the Hsich and COMMENCE studies; none of it is in the test suite yet.
+Data,Time-varying covariates (start/stop epochs),^repeating-events$,,in progress,Named as under-tested at the 2026-10-29 review. The epoch tests check that splitting a row into epochs leaves the log-likelihood unchanged. Production time-varying covariate analyses are under way; none of them is in the test suite yet.
 Covariates,Formula and vector interfaces,^formula-|^fit-interface$|^hazard-api$|^global-formula-no-intercept$|^vector-surv-status$|^placeholder-unresolved$|^theta-|^control-|^maxit-below-one$|^argument-mapping$,,tested,
 Covariates,Phase-specific covariates,^phase-specific-covariates$|^phase-formula-|^phase-inherits-legacy-windows$,,tested,
 Inference,Standard errors and the Hessian,hessian|^numeric-hessian-step$|^gradient-weibull$,,tested,
