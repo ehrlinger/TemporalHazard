@@ -2410,6 +2410,29 @@
   NULL
 }
 
+#' The job text with every never-called macro's statements blanked (#709
+#' review).
+#'
+#' A scan that reads the text between two blocks, such as the `%repeat`
+#' rewrite scan, would otherwise see a never-called macro's DATA steps and
+#' stop a live fit for changes SAS never made. Blanking keeps every offset.
+#' @noRd
+.hzr_sas_blank_uncalled <- function(txt, st, defs, star = character(0)) {
+  key <- vapply(defs$open, function(o) paste(o, collapse = ">"), "")
+  ends <- c(st$start[-1L] - 1L, nchar(txt))
+  never <- list()
+  for (i in which(nzchar(key))) {
+    k <- key[[i]]
+    if (is.null(never[[k]])) {
+      never[[k]] <- !is.null(.hzr_sas_uncalled_macro_at(st, defs, st$start[[i]], star))
+    }
+    if (never[[k]] && ends[[i]] >= st$start[[i]]) {
+      substr(txt, st$start[[i]], ends[[i]]) <- strrep(" ", ends[[i]] - st$start[[i]] + 1L)
+    }
+  }
+  txt
+}
+
 #' Whether a statement opens a `%DO` block.
 #'
 #' SAS's macro tokenizer ends a name at any character a name cannot hold, so

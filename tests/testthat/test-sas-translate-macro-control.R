@@ -323,3 +323,30 @@ test_that("print() names the chunks SAS never ran", {
   expect_true(any(grepl("not run *: .*fit_2", out)))
   expect_false(any(grepl("not run", capture.output(print(macro_job(macro_live))))))
 })
+
+test_that("a rewrite inside a skipped macro does not stop a later live fit", {
+  # A live %repeat builds EVENTS; a never-called macro changes it and fits it;
+  # the live fit after it reads EVENTS as the %repeat left it (#709 review).
+  job <- macro_job(macro_repeat,
+                   "%MACRO OLD;", "DATA EVENTS; SET EVENTS; X = 1; RUN;",
+                   macro_repeat_fit, "%MEND OLD;",
+                   macro_repeat_fit)
+  live <- setdiff(names(job$calls), names(job$not_run))
+  expect_false(any(startsWith(live, "rewrite")))
+  expect_length(setdiff(macro_fit_slots(job), names(job$not_run)), 1L)
+  # The same step outside any macro still stops the fit.
+  open_code <- macro_job(macro_repeat, "DATA EVENTS; SET EVENTS; X = 1; RUN;",
+                         macro_repeat_fit)
+  expect_true(any(startsWith(names(open_code$calls), "rewrite")))
+})
+
+test_that("a rewrite inside a skipped macro does not stop a chained %repeat", {
+  second <- sub("in=bd_card, out=events", "in=events, out=ev2", macro_repeat, fixed = TRUE)
+  fit2 <- sub("data=events", "data=ev2", macro_repeat_fit, fixed = TRUE)
+  job <- macro_job(macro_repeat,
+                   "%MACRO OLD;", "DATA EVENTS; SET EVENTS; X = 1; RUN;", "%MEND OLD;",
+                   second, fit2)
+  expect_false(any(startsWith(names(job$calls), "rewrite")))
+  open_code <- macro_job(macro_repeat, "DATA EVENTS; SET EVENTS; X = 1; RUN;", second, fit2)
+  expect_true(any(startsWith(names(open_code$calls), "rewrite")))
+})

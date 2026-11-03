@@ -246,6 +246,8 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
   # Whether each block runs once where it stands (#687).
   macro_st <- .hzr_sas_statements(txt)
   macro_defs <- .hzr_sas_macro_defs(macro_st$text)
+  # What the rewrite scans read: the job text without never-called macros.
+  scan_txt <- .hzr_sas_blank_uncalled(txt, macro_st, macro_defs, star)
   # Under macro control SAS may run a block never, once, or many times. The
   # usual case is a macro called once, so the block is still translated, with
   # a row here and the returned warning text for a chunk above it. NULL when
@@ -322,7 +324,7 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       # untranslated rewrite a fit would read; stop on it here, ahead of the
       # second macro's chunk.
       if (!is.null(r$in_name) && !is.null(repeat_scan[[r$in_name]])) {
-        rs <- .hzr_rewrite_stops(substring(txt, repeat_scan[[r$in_name]] + 1L, b$start - 1L), r$in_name)
+        rs <- .hzr_rewrite_stops(substring(scan_txt, repeat_scan[[r$in_name]] + 1L, b$start - 1L), r$in_name)
         for (cl in rs$calls) calls[[.hzr_next_call_name(calls, "rewrite")]] <- cl
         untr <- rbind(untr, rs$untranslated)
         repeat_scan[[r$in_name]] <- b$end
@@ -367,7 +369,7 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       dvars <- all.vars(r$call[["data"]])
       dname <- if (length(dvars)) dvars[[1L]] else NULL
       if (!is.null(dname) && !is.null(repeat_scan[[dname]])) {
-        rs <- .hzr_rewrite_stops(substring(txt, repeat_scan[[dname]] + 1L, b$start - 1L), dname)
+        rs <- .hzr_rewrite_stops(substring(scan_txt, repeat_scan[[dname]] + 1L, b$start - 1L), dname)
         for (cl in rs$calls) calls[[.hzr_next_call_name(calls, "rewrite")]] <- cl
         untr <- rbind(untr, rs$untranslated)
         repeat_scan[[dname]] <- b$end
