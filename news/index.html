@@ -13,7 +13,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">TemporalHazard</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.18</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.19</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -58,6 +58,10 @@
       <small>Source: <a href="https://github.com/ehrlinger/TemporalHazard/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="1.2.19" id="temporalhazard-1219">TemporalHazard 1.2.19<a class="anchor" aria-label="anchor" href="#temporalhazard-1219"></a></h2>
+<ul><li>The cardioversion parity test (<code>test-repeated-events-parity.R</code>) now expects the two <code>%MACRO</code> rows <a href="https://github.com/ehrlinger/TemporalHazard/issues/687" class="external-link">#687</a> records for the job’s PROC HAZPRED and stratified PROC HAZARD, both inside <code>%macro final</code>. It failed on the 1.2.18 release suite. Only a run with the study data reaches it.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="1.2.18" id="temporalhazard-1218">TemporalHazard 1.2.18<a class="anchor" aria-label="anchor" href="#temporalhazard-1218"></a></h2>
 <ul><li><p><strong>The hazard at exactly time 0 was <code>NaN</code> for a phase with <code>m = 0</code> and <code>nu &gt; 0</code> (<a href="https://github.com/ehrlinger/TemporalHazard/issues/672" class="external-link">#672</a>).</strong> That phase’s density was formed as a product of a survival that underflows to 0 and a power that overflows, so at time 0 it read <code>0 * Inf</code>. <code><a href="../reference/hzr_phase_hazard.html">hzr_phase_hazard()</a></code> and <code>hzr_decompos()$g</code> returned <code>NaN</code> where the limit is 0, and in a multiphase fit the <code>NaN</code> took the whole hazard with it: <code>predict(type = "hazard")</code> at time 0 returned <code>NaN</code>, with no message, even for the constant phase’s share. Scoring start/stop data reaches this, because every first segment starts at 0. The same <code>0 * Inf</code> struck at times above 0 when <code>nu</code> is small or <code>t_half</code> is large (1e20 is enough near t = 0, where <code>h</code> was <code>NaN</code> as well), and there the likelihood did read it. Such a point was treated as one where the likelihood is not defined, so a fit could be steered away from it or fail outright: one with an early phase at <code>nu = 0.01</code> and three events before t = 0.002 stopped with “no usable fit”, and now converges. The density is now formed on the log scale, giving the limit, 0, where the product was <code>NaN</code>, and the same values to rounding elsewhere. A fit that reached such a point can therefore change.</p></li>
