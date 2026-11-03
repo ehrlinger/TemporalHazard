@@ -1,1 +1,0 @@
-* The cardioversion parity test (`test-repeated-events-parity.R`) now expects the two `%MACRO` rows #687 records for the job's PROC HAZPRED and stratified PROC HAZARD, both inside `%macro final`. It failed on the 1.2.18 release suite. Only a run with the study data reaches it.

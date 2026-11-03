@@ -1,6 +1,6 @@
 Package: TemporalHazard
 Title: Temporal Parametric Hazard Modeling
-Version: 1.2.18
+Version: 1.2.19
 Authors@R: c(
     person("John", "Ehrlinger", email = "john.ehrlinger@gmail.com", role = c("aut", "cre", "cph")),
     person("R Core Team", role = "cph", comment = "seeding and inversion in .hzr_mt_normal()"),

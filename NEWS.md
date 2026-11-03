@@ -1,3 +1,7 @@
+# TemporalHazard 1.2.19
+
+* The cardioversion parity test (`test-repeated-events-parity.R`) now expects the two `%MACRO` rows #687 records for the job's PROC HAZPRED and stratified PROC HAZARD, both inside `%macro final`. It failed on the 1.2.18 release suite. Only a run with the study data reaches it.
+
 # TemporalHazard 1.2.18
 
 * **The hazard at exactly time 0 was `NaN` for a phase with `m = 0` and
