@@ -20,11 +20,14 @@
 #   Only the final "RELEASE SUITE PASSED" line means it passed.
 #
 # USAGE (from the package root)
-#   Rscript tools/release-suite.R [results.rds]
+#   Rscript tools/release-suite.R results.rds
+#   The results file is required, in a directory that already exists. It
+#   used to default to R's session temp directory, which R deletes on exit,
+#   so the 1.2.19 run's results were gone before anyone could use them.
 #   The resolvers have no default path, so point them at the data first,
 #   once in ~/.Renviron or on the command line:
 #   HAZARD_MAZE_DATASETS=<dir> HAZARD_ACHALASIA_DIR=<dir> \
-#     Rscript tools/release-suite.R
+#     Rscript tools/release-suite.R results.rds
 
 volume_files <- c(
   "test-repeated-events-parity.R",
@@ -41,8 +44,19 @@ if (!file.exists("DESCRIPTION") ||
   refuse("run this from the TemporalHazard package root.")
 }
 
+# Checked before the run, not after it: the run takes about an hour.
 out <- commandArgs(trailingOnly = TRUE)[1]
-if (is.na(out)) out <- file.path(tempdir(), "release-suite.rds")
+if (is.na(out)) {
+  refuse("give the results .rds to write as the first argument.")
+}
+out_dir <- normalizePath(dirname(out), mustWork = FALSE)
+if (!dir.exists(out_dir) || file.access(out_dir, 2L) != 0L) {
+  refuse("cannot write the results to ", out_dir, ".")
+}
+if (dir.exists(out)) refuse(out, " is a directory; give a file name.")
+if (file.exists(out) && file.access(out, 2L) != 0L) {
+  refuse("cannot overwrite ", out, ".")
+}
 
 resolvers <- new.env()
 sys.source(file.path("inst", "sas-parity", "helper-sas-parity.R"),

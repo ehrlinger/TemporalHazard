@@ -125,7 +125,7 @@ main (X.Y.Z) accumulates, patch-bumping as fixes land
    suite passes with the study data in reach:**
 
    ```sh
-   Rscript tools/release-suite.R
+   Rscript tools/release-suite.R results.rds
    ```
 
    Only a final `RELEASE SUITE PASSED` line means it passed. Step 6 does not
@@ -136,7 +136,9 @@ main (X.Y.Z) accumulates, patch-bumping as fixes land
    every test with none skipped and the suite has no failure or error. It asks
    the tests' own resolvers where the data are, and they have no default
    path, so set `HAZARD_MAZE_DATASETS` and `HAZARD_ACHALASIA_DIR` first (once,
-   in `~/.Renviron`). v1.2.13 shipped two
+   in `~/.Renviron`). The results file is required, in a directory that
+   exists; keep it, since `tools/feature-matrix.R` reads it.
+   v1.2.13 shipped two
    red cardioversion tests from a gate that ran with the volume unmounted, and
    the skip count that said so was read past.
 5. **Adversarial review of the accumulated release diff.** Every PR is reviewed
