@@ -53,6 +53,10 @@ out_dir <- normalizePath(dirname(out), mustWork = FALSE)
 if (!dir.exists(out_dir) || file.access(out_dir, 2L) != 0L) {
   refuse("cannot write the results to ", out_dir, ".")
 }
+if (dir.exists(out)) refuse(out, " is a directory; give a file name.")
+if (file.exists(out) && file.access(out, 2L) != 0L) {
+  refuse("cannot overwrite ", out, ".")
+}
 
 resolvers <- new.env()
 sys.source(file.path("inst", "sas-parity", "helper-sas-parity.R"),
