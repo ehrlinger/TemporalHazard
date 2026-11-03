@@ -102,8 +102,11 @@ directory) to name an already-converted fit directly, e.g.
 calls keyed by chunk label, <code>$grid</code> the last prediction grid seen and
 <code>$inhaz</code> the first unresolved <code>INHAZ=</code> (not all of each, when a job has
 several), <code>$untranslated</code> the recorded gaps, <code>$coverage</code> the token
-counts, and <code>$notes</code> any callout attached to a chunk by label, emitted
-immediately above that chunk in the rendered document.</p>
+counts, <code>$notes</code> any callout attached to a chunk by label, emitted
+immediately above that chunk in the rendered document, and <code>$not_run</code>
+the chunks SAS never ran, named by label, each holding the <code>%MACRO</code> the
+job defines but never calls around it. Those chunks are rendered with
+<code>eval: false</code>; a caller evaluating <code>$calls</code> itself should skip them.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>

@@ -38,9 +38,12 @@ hzr_translate_sas(path, out_dir = NULL, librefs = NULL)
 An `hzr_sas_job` object, invisibly. `$calls` holds the emitted calls
 keyed by chunk label, `$grid` the last prediction grid seen and `$inhaz`
 the first unresolved `INHAZ=` (not all of each, when a job has several),
-`$untranslated` the recorded gaps, `$coverage` the token counts, and
+`$untranslated` the recorded gaps, `$coverage` the token counts,
 `$notes` any callout attached to a chunk by label, emitted immediately
-above that chunk in the rendered document.
+above that chunk in the rendered document, and `$not_run` the chunks SAS
+never ran, named by label, each holding the `%MACRO` the job defines but
+never calls around it. Those chunks are rendered with `eval: false`; a
+caller evaluating `$calls` itself should skip them.
 
 ## Details
 

@@ -517,7 +517,7 @@ summary(fit_mv)
 #>   age     -0.001650775 2.498765e-03 -0.660636410 5.088455e-01
 #>   status   1.068010078 4.075660e-01  2.620459314 8.781141e-03
 #>   mal      0.583277928 1.140547e+00  0.511402043 6.090696e-01
-#>   com_iv -20.367312067 1.395749e+04 -0.001459239 9.988357e-01
+#>   com_iv -20.367312072 1.395749e+04 -0.001459239 9.988357e-01
 ```
 
 The coefficient table shows phase-specific covariate effects. A positive
@@ -617,7 +617,7 @@ fit_step <- hzr_stepwise(
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
 #> 4.41e-19); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(hess_result): Hessian is ill-conditioned (rcond =
-#> 4.97e-12); standard errors may be unreliable
+#> 4.98e-12); standard errors may be unreliable
 #> Warning in .hzr_safe_solve(H_unc): Hessian is ill-conditioned (rcond =
 #> 4.33e-19); standard errors may be unreliable
 fit_step
