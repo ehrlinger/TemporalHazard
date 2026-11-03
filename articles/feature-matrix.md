@@ -6,8 +6,8 @@ from one saved run of the full test suite by `tools/feature-matrix.R`,
 which refuses to write it unless the run has no failure and its recorded
 commit, installed dependencies and test names all match the tree.
 
-**Measured at 6b1588e5 on 2026-10-30, version 1.2.17.** That run: 2688
-tests run, 15800 expectations, 12 tests skipped. A page older than the
+**Measured at 4b8e6221 on 2026-11-03, version 1.2.19.** That run: 2720
+tests run, 16039 expectations, 6 tests skipped. A page older than the
 code it describes is still possible: regenerate it at each release.
 
 ## How to read it
@@ -46,9 +46,9 @@ code it describes is still possible: regenerate it at each release.
 | Weibull distribution | tested | 68 | 303 | 1 | none cited | none | The C-binary file tests the binary interface (command, input and output parsing), not estimates. |
 | Log-normal distribution | tested | 35 | 77 | 0 | 2 of 2 ran (oracle) | none |  |
 | Log-logistic distribution | tested | 36 | 77 | 0 | 2 of 2 ran (oracle) | none |  |
-| Multiphase likelihood and optimizer | tested | 148 | 775 | 1 | 8 of 9 ran (C binary, SAS) | none | No criterion yet separates a genuine multiphase optimum from a stuck fit (#589). |
+| Multiphase likelihood and optimizer | tested | 151 | 785 | 1 | 8 of 9 ran (C binary, SAS) | none | No criterion yet separates a genuine multiphase optimum from a stuck fit (#589). |
 | Phase specification and shapes (hzr_phase) | tested | 125 | 862 | 0 | 2 of 2 ran (oracle) | none |  |
-| Phase identifiability and weak directions | tested | 85 | 275 | 0 | none cited | none |  |
+| Phase identifiability and weak directions | tested | 87 | 282 | 0 | none cited | none |  |
 | Conservation of Events | tested | 42 | 238 | 0 | none cited | cited test passed | The default-start test fixes the shapes at SAS’s values, so only the coefficients start from defaults. |
 
 ## Data
@@ -59,9 +59,9 @@ code it describes is still possible: regenerate it at each release.
 | Interval and left censoring | tested | 112 | 369 | 0 | none cited | none |  |
 | Entry times (left truncation) | tested | 43 | 302 | 0 | 7 of 7 ran (oracle, SAS) | none |  |
 | Observation weights | in progress | 56 | 182 | 2 | 1 of 3 ran (SAS) | none | SAS parity covers fractional weights; weights beside repeated events are untested (#681). |
-| Repeated events | in progress | 74 | 228 | 6 | 0 of 4 ran (SAS) | none | Parity runs only with the study volume; the SAS targets are not yet set (#681). |
+| Repeated events | in progress | 81 | 361 | 0 | 4 of 4 ran (SAS) | none | The SAS listing comparisons run only in the release suite with the private study data; no fit from default starts is tested yet (#681). |
 | Time-varying coefficients (time_windows) | tested | 23 | 107 | 0 | none cited | none |  |
-| Time-varying covariates (start/stop epochs) | in progress | 6 | 14 | 0 | none cited | none | Named as under-tested at the 2026-10-29 review. The epoch tests check that splitting a row into epochs leaves the log-likelihood unchanged. Production time-varying covariate work is under way in the Hsich and COMMENCE studies; none of it is in the test suite yet. |
+| Time-varying covariates (start/stop epochs) | in progress | 6 | 14 | 0 | none cited | none | Named as under-tested at the 2026-10-29 review. The epoch tests check that splitting a row into epochs leaves the log-likelihood unchanged. Production time-varying covariate analyses are under way; none of them is in the test suite yet. |
 
 ## Covariates
 
@@ -75,7 +75,7 @@ code it describes is still possible: regenerate it at each release.
 | Feature | Status | Tests run | Expectations | Skipped | Reference | Default start | Notes |
 |:---|:---|---:|---:|---:|:---|:---|:---|
 | Standard errors and the Hessian | tested | 92 | 268 | 0 | 1 of 1 ran (C binary) | none |  |
-| Convergence and degraded-fit reporting | in progress | 86 | 498 | 0 | none cited | none | Single-distribution false maxima warn (#531); the multiphase criterion is open (#589). |
+| Convergence and degraded-fit reporting | in progress | 87 | 500 | 0 | none cited | none | Single-distribution false maxima warn (#531); the multiphase criterion is open (#589). |
 | Prediction (predict.hazard) | tested | 256 | 1816 | 0 | 3 of 3 ran (SAS) | none |  |
 | Decomposition and evaluation | tested | 83 | 436 | 0 | none cited | none |  |
 | Goodness of fit and deciles | tested | 135 | 531 | 0 | 3 of 3 ran (SAS) | none |  |
@@ -84,7 +84,7 @@ code it describes is still possible: regenerate it at each release.
 
 | Feature | Status | Tests run | Expectations | Skipped | Reference | Default start | Notes |
 |:---|:---|---:|---:|---:|:---|:---|:---|
-| Stepwise selection (hzr_stepwise) | tested | 296 | 1284 | 0 | 2 of 2 ran (SAS) | none |  |
+| Stepwise selection (hzr_stepwise) | tested | 301 | 1304 | 0 | 2 of 2 ran (SAS) | none |  |
 | Score and Wald tests | tested | 96 | 503 | 0 | none cited | none |  |
 | Bootstrap (hzr_bootstrap) | tested | 85 | 632 | 0 | none cited | none |  |
 
@@ -92,8 +92,8 @@ code it describes is still possible: regenerate it at each release.
 
 | Feature | Status | Tests run | Expectations | Skipped | Reference | Default start | Notes |
 |:---|:---|---:|---:|---:|:---|:---|:---|
-| SAS job translator (hzr_translate_sas) | tested | 486 | 5196 | 0 | none cited | none |  |
-| SAS output readers (hzr_read_outhaz and listings) | tested | 81 | 249 | 3 | none cited | none |  |
+| SAS job translator (hzr_translate_sas) | tested | 499 | 5255 | 0 | none cited | none |  |
+| SAS output readers (hzr_read_outhaz and listings) | tested | 82 | 257 | 3 | none cited | none |  |
 
 ## Regenerating
 

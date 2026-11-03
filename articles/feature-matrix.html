@@ -91,7 +91,7 @@
 
 
     <p>This page lists each TemporalHazard feature, the tests that cover it, and whether it is compared with an external reference. It is generated from one saved run of the full test suite by <code>tools/feature-matrix.R</code>, which refuses to write it unless the run has no failure and its recorded commit, installed dependencies and test names all match the tree.</p>
-<p><strong>Measured at 6b1588e5 on 2026-10-30, version 1.2.17.</strong> That run: 2688 tests run, 15800 expectations, 12 tests skipped. A page older than the code it describes is still possible: regenerate it at each release.</p>
+<p><strong>Measured at 4b8e6221 on 2026-11-03, version 1.2.19.</strong> That run: 2720 tests run, 16039 expectations, 6 tests skipped. A page older than the code it describes is still possible: regenerate it at each release.</p>
 <section class="level2"><h2 id="how-to-read-it">How to read it<a class="anchor" aria-label="anchor" href="#how-to-read-it"></a>
 </h2>
 <ul>
@@ -172,8 +172,8 @@
 <tr class="odd">
 <td style="text-align: left;">Multiphase likelihood and optimizer</td>
 <td style="text-align: left;">tested</td>
-<td style="text-align: right;">148</td>
-<td style="text-align: right;">775</td>
+<td style="text-align: right;">151</td>
+<td style="text-align: right;">785</td>
 <td style="text-align: right;">1</td>
 <td style="text-align: left;">8 of 9 ran (C binary, SAS)</td>
 <td style="text-align: left;">none</td>
@@ -192,8 +192,8 @@
 <tr class="odd">
 <td style="text-align: left;">Phase identifiability and weak directions</td>
 <td style="text-align: left;">tested</td>
-<td style="text-align: right;">85</td>
-<td style="text-align: right;">275</td>
+<td style="text-align: right;">87</td>
+<td style="text-align: right;">282</td>
 <td style="text-align: right;">0</td>
 <td style="text-align: left;">none cited</td>
 <td style="text-align: left;">none</td>
@@ -214,14 +214,14 @@
 </h2>
 <table class="table caption-top">
 <colgroup>
-<col style="width: 11%">
+<col style="width: 12%">
 <col style="width: 3%">
 <col style="width: 2%">
 <col style="width: 3%">
 <col style="width: 2%">
 <col style="width: 6%">
 <col style="width: 3%">
-<col style="width: 67%">
+<col style="width: 65%">
 </colgroup>
 <thead><tr class="header">
 <th style="text-align: left;">Feature</th>
@@ -277,12 +277,12 @@
 <tr class="odd">
 <td style="text-align: left;">Repeated events</td>
 <td style="text-align: left;">in progress</td>
-<td style="text-align: right;">74</td>
-<td style="text-align: right;">228</td>
-<td style="text-align: right;">6</td>
-<td style="text-align: left;">0 of 4 ran (SAS)</td>
+<td style="text-align: right;">81</td>
+<td style="text-align: right;">361</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: left;">4 of 4 ran (SAS)</td>
 <td style="text-align: left;">none</td>
-<td style="text-align: left;">Parity runs only with the study volume; the SAS targets are not yet set (#681).</td>
+<td style="text-align: left;">The SAS listing comparisons run only in the release suite with the private study data; no fit from default starts is tested yet (#681).</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Time-varying coefficients (time_windows)</td>
@@ -302,7 +302,7 @@
 <td style="text-align: right;">0</td>
 <td style="text-align: left;">none cited</td>
 <td style="text-align: left;">none</td>
-<td style="text-align: left;">Named as under-tested at the 2026-10-29 review. The epoch tests check that splitting a row into epochs leaves the log-likelihood unchanged. Production time-varying covariate work is under way in the Hsich and COMMENCE studies; none of it is in the test suite yet.</td>
+<td style="text-align: left;">Named as under-tested at the 2026-10-29 review. The epoch tests check that splitting a row into epochs leaves the log-likelihood unchanged. Production time-varying covariate analyses are under way; none of them is in the test suite yet.</td>
 </tr>
 </tbody>
 </table></section><section class="level2"><h2 id="covariates">Covariates<a class="anchor" aria-label="anchor" href="#covariates"></a>
@@ -387,8 +387,8 @@
 <tr class="even">
 <td style="text-align: left;">Convergence and degraded-fit reporting</td>
 <td style="text-align: left;">in progress</td>
-<td style="text-align: right;">86</td>
-<td style="text-align: right;">498</td>
+<td style="text-align: right;">87</td>
+<td style="text-align: right;">500</td>
 <td style="text-align: right;">0</td>
 <td style="text-align: left;">none cited</td>
 <td style="text-align: left;">none</td>
@@ -452,8 +452,8 @@
 <tr class="odd">
 <td style="text-align: left;">Stepwise selection (hzr_stepwise)</td>
 <td style="text-align: left;">tested</td>
-<td style="text-align: right;">296</td>
-<td style="text-align: right;">1284</td>
+<td style="text-align: right;">301</td>
+<td style="text-align: right;">1304</td>
 <td style="text-align: right;">0</td>
 <td style="text-align: left;">2 of 2 ran (SAS)</td>
 <td style="text-align: left;">none</td>
@@ -507,8 +507,8 @@
 <tr class="odd">
 <td style="text-align: left;">SAS job translator (hzr_translate_sas)</td>
 <td style="text-align: left;">tested</td>
-<td style="text-align: right;">486</td>
-<td style="text-align: right;">5196</td>
+<td style="text-align: right;">499</td>
+<td style="text-align: right;">5255</td>
 <td style="text-align: right;">0</td>
 <td style="text-align: left;">none cited</td>
 <td style="text-align: left;">none</td>
@@ -517,8 +517,8 @@
 <tr class="even">
 <td style="text-align: left;">SAS output readers (hzr_read_outhaz and listings)</td>
 <td style="text-align: left;">tested</td>
-<td style="text-align: right;">81</td>
-<td style="text-align: right;">249</td>
+<td style="text-align: right;">82</td>
+<td style="text-align: right;">257</td>
 <td style="text-align: right;">3</td>
 <td style="text-align: left;">none cited</td>
 <td style="text-align: left;">none</td>
