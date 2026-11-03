@@ -60,6 +60,10 @@
 print.hzr_sas_job <- function(x, ...) {
   cat("<hzr_sas_job>", basename(x$source$path), "\n")
   cat("  calls       :", paste(names(x$calls), collapse = ", "), "\n")
+  if (length(x$not_run)) {
+    cat("  not run     :", paste(names(x$not_run), collapse = ", "),
+        "(in a %MACRO this file never calls)\n")
+  }
   cat("  coverage    : ", x$coverage$tokens_mapped, "/",
       x$coverage$tokens_seen, " tokens mapped\n", sep = "")
   if (nrow(x$untranslated)) {

@@ -2278,7 +2278,9 @@
 #'   every macro with a definition inside another definition, and
 #'   `nested_in` holds, per such name, the `scope` numbers of the outermost
 #'   definitions that enclose one. `open[[i]]` names the definitions statement
-#'   `i` stands inside, outermost first (#708).
+#'   `i` stands inside, outermost first, and `closed` is `FALSE` when the file
+#'   ends inside a definition or a call's argument list, so `open` cannot be
+#'   trusted (#708).
 #' @noRd
 .hzr_sas_macro_defs <- function(stmts) {
   scope <- integer(length(stmts))
@@ -2339,7 +2341,8 @@
     for (nm in open) bodies[[nm]] <- c(bodies[[nm]], t)
   }
   list(scope = scope, ends = ends, versions = versions, nested = nested,
-       nested_in = nested_in, open = enclosing)
+       nested_in = nested_in, open = enclosing,
+       closed = depth == 0L && arg_bal == 0L)
 }
 
 #' The body a call of `mac` at statement `i` runs (#651).
@@ -2382,11 +2385,19 @@
 #'
 #' The check reads this file only. A call from an `%INCLUDE`d file, or one
 #' built at run time from macro variables, is not seen, which the reason
-#' text says.
+#' text says. When the reading of definitions does not close (a `%MEND` after
+#' a call with no semicolon, an argument list that never closes), every later
+#' statement would read as inside the macro, its call included, so nothing is
+#' called uncalled (#708 review).
+#'
+#' It errs toward running a block: text that only looks like a call (a
+#' quoted string, `%NRSTR()`) counts, as does a call from a macro that is
+#' itself never called, or a call before a later redefinition.
 #' @param star The job's `*` comments, upper case, as `.hzr_sas_star_comments()`
 #'   returns them.
 #' @noRd
 .hzr_sas_uncalled_macro_at <- function(st, defs, pos, star = character(0)) {
+  if (!isTRUE(defs$closed)) return(NULL)
   i <- which(st$start <= pos)
   if (!length(i)) return(NULL)
   around <- defs$open[[max(i)]]

@@ -465,7 +465,9 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
       #    ambiguous -- record it rather than guess. With 0 or 1 local fits
       #    it is the pre-existing "unresolved INHAZ" case, reported via
       #    job$inhaz/job$inhaz_resolved and the stop() chunk in the render.
-      fit_ref <- "fit"
+      # The first fit that runs: a fit from a macro the file never calls can
+      # hold the bare `fit` slot (#708 review).
+      fit_ref <- if (length(fits)) fits[[1L]]$slot else "fit"
       this_inhaz <- r$inhaz
       if (!is.null(this_inhaz)) {
         match_slot <- NULL

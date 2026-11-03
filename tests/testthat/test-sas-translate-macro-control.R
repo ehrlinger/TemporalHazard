@@ -296,3 +296,30 @@ test_that("a skipped %repeat does not stop a later fit on its dataset", {
   expect_false(any(startsWith(live, "rewrite")))
   expect_true(any(startsWith(live, "data")))
 })
+
+test_that("a file whose definitions do not close skips nothing", {
+  # A call with no semicolon before %MEND, or an argument list that never
+  # closes, leaves the definition open to the end of the file, so the real
+  # call reads as inside the macro (#708 review). Both macros are called.
+  for (body_end in c("%CLEANUP", "%NOTE(fit done :-( );")) {
+    job <- macro_job("%MACRO RUNIT;", macro_live, body_end, "%MEND RUNIT;", "%RUNIT;")
+    expect_length(job$not_run, 0L)
+    expect_equal(nrow(macro_rows(job, "%MACRO around PROC HAZARD")), 1L)
+  }
+})
+
+test_that("an unresolved prediction after a skipped first fit names the live fit", {
+  pred <- "%HAZPRED( PROC HAZPRED DATA=P INHAZ=OUTEST OUT=P; TIME MONTHS; );"
+  grid <- "DATA P; DO MONTHS = 1 TO 3; OUTPUT; END; RUN;"
+  job <- macro_job("%MACRO OLD;", sub("0.3", "0.4", macro_live), "%MEND OLD;",
+                   macro_live, grid, pred)
+  expect_identical(macro_run_slots(job), "fit_2")
+  expect_identical(deparse1(job$calls$pred[[2L]]), "fit_2")
+})
+
+test_that("print() names the chunks SAS never ran", {
+  job <- macro_job(macro_live, "%MACRO FINAL;", sub("0.3", "0.4", macro_live), "%MEND FINAL;")
+  out <- capture.output(print(job))
+  expect_true(any(grepl("not run *: .*fit_2", out)))
+  expect_false(any(grepl("not run", capture.output(print(macro_job(macro_live))))))
+})

@@ -60,7 +60,7 @@
     never <- job$not_run[nm]
     skip <- if (is.na(never)) character(0) else
       c("#| eval: false",
-        sprintf("# Not run: SAS never ran this; %%MACRO %s is not called in the job.", never))
+        sprintf("# Not run: %%MACRO %s is never called in this file.", never))
     add("```{r}",
         sprintf("#| label: %s", nm),
         skip,
