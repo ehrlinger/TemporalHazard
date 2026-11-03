@@ -2277,10 +2277,14 @@
 #'   compiled, in file order, for `.hzr_sas_macro_body_at()`; `nested` names
 #'   every macro with a definition inside another definition, and
 #'   `nested_in` holds, per such name, the `scope` numbers of the outermost
-#'   definitions that enclose one.
+#'   definitions that enclose one. `open[[i]]` names the definitions statement
+#'   `i` stands inside, outermost first, and `closed` is `FALSE` when the file
+#'   ends inside a definition or a call's argument list, so `open` cannot be
+#'   trusted (#708).
 #' @noRd
 .hzr_sas_macro_defs <- function(stmts) {
   scope <- integer(length(stmts))
+  enclosing <- vector("list", length(stmts))
   bodies <- list()
   ends <- list()
   versions <- list()
@@ -2302,6 +2306,7 @@
       arg_bal <- arg_bal + .hzr_sas_paren_balance(t)
       if (depth > 0L) {
         scope[[i]] <- n_def
+        enclosing[[i]] <- open
         for (nm in open) bodies[[nm]] <- c(bodies[[nm]], t)
       }
       next
@@ -2315,10 +2320,12 @@
       open <- c(open, sub("^%MACRO +([A-Z_][A-Z0-9_]*).*$", "\\1", t))
       bodies[[open[[depth]]]] <- character(0)
       scope[[i]] <- n_def
+      enclosing[[i]] <- open
       next
     }
     if (depth == 0L) next
     scope[[i]] <- n_def
+    enclosing[[i]] <- open
     if (grepl("^%MEND( |$)", t)) {
       nm <- open[[depth]]
       if (depth > 1L) {
@@ -2334,7 +2341,8 @@
     for (nm in open) bodies[[nm]] <- c(bodies[[nm]], t)
   }
   list(scope = scope, ends = ends, versions = versions, nested = nested,
-       nested_in = nested_in)
+       nested_in = nested_in, open = enclosing,
+       closed = depth == 0L && arg_bal == 0L)
 }
 
 #' The body a call of `mac` at statement `i` runs (#651).
@@ -2363,6 +2371,66 @@
 .hzr_sas_scope_at <- function(st, defs, pos) {
   i <- which(st$start <= pos)
   if (length(i)) defs$scope[[max(i)]] else 0L
+}
+
+#' The macro a block stands in that this file never calls, or `NULL` (#708).
+#'
+#' SAS runs a `%MACRO` body only where the macro is called, so a block in a
+#' definition nothing calls never runs. A block in a nested definition runs
+#' only when every definition around it is called, so each is checked, outermost
+#' first. A call counts wherever it stands in a statement outside the macro's
+#' own body (`%IF &X %THEN %RUNIT;`, `CALL EXECUTE('%RUNIT')`), and in a `*`
+#' comment, where SAS's macro processor runs it too (#687). A call from the
+#' macro's own body does not count: it runs only once the macro is running.
+#'
+#' The check reads this file only. A call from an `%INCLUDE`d file, or one
+#' built at run time from macro variables, is not seen, which the reason
+#' text says. When the reading of definitions does not close (a `%MEND` after
+#' a call with no semicolon, an argument list that never closes), every later
+#' statement would read as inside the macro, its call included, so nothing is
+#' called uncalled (#708 review).
+#'
+#' It errs toward running a block: text that only looks like a call (a
+#' quoted string, `%NRSTR()`) counts, as does a call from a macro that is
+#' itself never called, or a call before a later redefinition.
+#' @param star The job's `*` comments, upper case, as `.hzr_sas_star_comments()`
+#'   returns them.
+#' @noRd
+.hzr_sas_uncalled_macro_at <- function(st, defs, pos, star = character(0)) {
+  if (!isTRUE(defs$closed)) return(NULL)
+  i <- which(st$start <= pos)
+  if (!length(i)) return(NULL)
+  around <- defs$open[[max(i)]]
+  for (nm in around) {
+    pat <- paste0("%", nm, "([^A-Z0-9_]|$)")
+    outside <- !vapply(defs$open, function(o) nm %in% o, logical(1L))
+    called <- any(grepl(pat, st$text[outside])) || any(grepl(pat, star))
+    if (!called) return(nm)
+  }
+  NULL
+}
+
+#' The job text with every never-called macro's statements blanked (#709
+#' review).
+#'
+#' A scan that reads the text between two blocks, such as the `%repeat`
+#' rewrite scan, would otherwise see a never-called macro's DATA steps and
+#' stop a live fit for changes SAS never made. Blanking keeps every offset.
+#' @noRd
+.hzr_sas_blank_uncalled <- function(txt, st, defs, star = character(0)) {
+  key <- vapply(defs$open, function(o) paste(o, collapse = ">"), "")
+  ends <- c(st$start[-1L] - 1L, nchar(txt))
+  never <- list()
+  for (i in which(nzchar(key))) {
+    k <- key[[i]]
+    if (is.null(never[[k]])) {
+      never[[k]] <- !is.null(.hzr_sas_uncalled_macro_at(st, defs, st$start[[i]], star))
+    }
+    if (never[[k]] && ends[[i]] >= st$start[[i]]) {
+      substr(txt, st$start[[i]], ends[[i]]) <- strrep(" ", ends[[i]] - st$start[[i]] + 1L)
+    }
+  }
+  txt
 }
 
 #' Whether a statement opens a `%DO` block.
