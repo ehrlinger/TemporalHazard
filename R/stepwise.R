@@ -207,8 +207,13 @@
 #'   other `hazard()` argument (the response, `weights`, `time_windows`,
 #'   `dist`, `theta`, `phases`, `fit` and so on) is set by the refit itself,
 #'   from the base model and `data`, so that each candidate is compared with
-#'   the model it extends. The base fit's own `control` is not inherited: a
-#'   candidate refit uses the defaults unless `control` is given here.
+#'   the model it extends. Every candidate refit, and the selected model,
+#'   runs under the elements of the base fit's `control` that a fit reads
+#'   (`maxit`, `reltol` and, for a multiphase fit, `n_starts`, `conserve`,
+#'   `phase_share_tol` and `start_seed`), as every step of a SAS
+#'   `SELECTION` runs under one `PROC HAZARD`'s options. A `control` given
+#'   here overrides it entry by entry: `control = list(maxit = 500)` changes
+#'   `maxit` and keeps the rest.
 #'   The `print()`, `summary()` and `as.data.frame()` methods ignore `...`.
 #'
 #' @return An object of class `c("hzr_stepwise", "hazard")`, the
@@ -456,6 +461,7 @@ hzr_stepwise <- function(fit,
   extra_args <- .hzr_check_forwarded_dots(list(...), "hzr_stepwise",
                                           own = names(formals(hzr_stepwise)),
                                           fit = fit)
+  extra_args <- .hzr_inherit_control(extra_args, fit)
   extra_args <- .hzr_validate_control_once(extra_args, fit)
   if (missing(data) || !is.data.frame(data)) {
     stop("`data` must be a data frame (typically the frame used for the base fit).",
@@ -1338,6 +1344,32 @@ hzr_stepwise <- function(fit,
 
   class(result) <- unique(c("hzr_stepwise", class(result)))
   result
+}
+
+# Every candidate refit runs under the base fit's `control`, as every step of
+# a SAS SELECTION runs under one PROC HAZARD's options (#688). Without it, a
+# base fit run with conserve = FALSE or a raised maxit was stepped, and its
+# selected model fitted, at hazard()'s defaults. A `control` given to
+# hzr_stepwise() overrides the base entry by entry. Only the names a fit
+# reads are taken: spec$control also records the state the fit applied
+# (conserve_applied), which a refit would warn it does not read, and
+# shape_param_count, which the refit counts for itself (#489).
+.hzr_inherit_control <- function(extra_args, fit) {
+  base <- fit$spec$control
+  base <- base[intersect(names(base), c(.hzr_control_names$all,
+                                        .hzr_control_names$multiphase))]
+  if (!length(base)) return(extra_args)
+  # The given list is validated before the merge: modifyList() would drop an
+  # unnamed element unwarned, and read `maxit = NULL` as "remove the base's
+  # maxit" where hazard() refuses it. Validation is idempotent, so the
+  # merged list draws no second warning.
+  given <- if (is.list(extra_args$control)) {
+    .hzr_validate_control(extra_args$control, fit$spec$dist)
+  } else {
+    list()
+  }
+  extra_args$control <- utils::modifyList(base, given)
+  extra_args
 }
 
 # Validate a forwarded `control` ONCE, here, and forward what survives (#410).

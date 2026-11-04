@@ -2361,6 +2361,14 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
 
   # Reconstruct the call components
   cl <- object$call
+  # The same reason as `data` below: `control` in the call is an expression,
+  # and a variable it names may have changed or gone since the fit. Use the
+  # evaluated control the fit stored, without the two results hazard() added.
+  if ("control" %in% names(cl) && is.list(object$spec$control)) {
+    cl$control <- object$spec$control[setdiff(
+      names(object$spec$control), c("conserve_applied", "conserve_disabled_reason")
+    )]
+  }
   # Prefer the evaluated `data` argument stored on the fitted object
   # (`object$data$frame` -- the data frame passed to hazard(), not a
   # model.frame() result): it is guaranteed available and needs no caller-frame
