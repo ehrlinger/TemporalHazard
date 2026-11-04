@@ -9,6 +9,8 @@
 # screen from SAS's, which scores the same candidates from the same block.
 
 valves_fit <- function(n_interval) {
+  # Every test here reaches the numeric Hessian, which needs the suggested numDeriv.
+  skip_if_not_installed("numDeriv")
   data(valves, package = "TemporalHazard", envir = environment())
   d <- valves[!is.na(valves$nyha), ]
   st <- d$dead
