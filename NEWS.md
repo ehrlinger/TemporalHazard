@@ -1,4 +1,4 @@
-# TemporalHazard (unreleased)
+# TemporalHazard 1.3.0 (development)
 
 This is the first CRAN release since 1.1.0. The nineteen 1.2.x versions below
 were released internally and never sent to CRAN; their sections are the
