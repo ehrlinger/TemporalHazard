@@ -159,8 +159,11 @@ fit's are accepted. Any other name is an error: a misspelling such as
 other \code{hazard()} argument (the response, \code{weights}, \code{time_windows},
 \code{dist}, \code{theta}, \code{phases}, \code{fit} and so on) is set by the refit itself,
 from the base model and \code{data}, so that each candidate is compared with
-the model it extends. The base fit's own \code{control} is not inherited: a
-candidate refit uses the defaults unless \code{control} is given here.
+the model it extends. Every candidate refit, and the selected model,
+runs under the base fit's own \code{control}, as every step of a SAS
+\code{SELECTION} runs under one \verb{PROC HAZARD}'s options. A \code{control} given
+here overrides it entry by entry: \code{control = list(maxit = 500)} changes
+\code{maxit} and keeps the rest.
 The \code{print()}, \code{summary()} and \code{as.data.frame()} methods ignore \code{...}.}
 
 \item{x}{An \code{hzr_stepwise} object.}
