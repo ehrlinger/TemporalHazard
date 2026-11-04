@@ -4,4 +4,4 @@
   check read the definition as never closing and, playing safe, skipped
   nothing: every fit in a macro the job never calls stayed live. SAS reads
   `%MEND` wherever it stands, and so does the check now. A `%MEND` inside a
-  quoted string is still text.
+  quoted string, or quoted by `%STR()` or `%NRSTR()`, is still text.
