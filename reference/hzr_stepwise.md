@@ -194,8 +194,13 @@ as.data.frame(x, ...)
   argument (the response, `weights`, `time_windows`, `dist`, `theta`,
   `phases`, `fit` and so on) is set by the refit itself, from the base
   model and `data`, so that each candidate is compared with the model it
-  extends. The base fit's own `control` is not inherited: a candidate
-  refit uses the defaults unless `control` is given here. The
+  extends. Every candidate refit, and the selected model, runs under the
+  elements of the base fit's `control` that a fit reads (`maxit`,
+  `reltol` and, for a multiphase fit, `n_starts`, `conserve`,
+  `phase_share_tol` and `start_seed`), as every step of a SAS
+  `SELECTION` runs under one `PROC HAZARD`'s options. A `control` given
+  here overrides it entry by entry: `control = list(maxit = 500)`
+  changes `maxit` and keeps the rest. The
   [`print()`](https://rdrr.io/r/base/print.html),
   [`summary()`](https://rdrr.io/r/base/summary.html) and
   [`as.data.frame()`](https://rdrr.io/r/base/as.data.frame.html) methods

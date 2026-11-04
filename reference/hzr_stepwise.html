@@ -258,8 +258,13 @@ fit's are accepted. Any other name is an error: a misspelling such as
 other <code><a href="hazard.html">hazard()</a></code> argument (the response, <code>weights</code>, <code>time_windows</code>,
 <code>dist</code>, <code>theta</code>, <code>phases</code>, <code>fit</code> and so on) is set by the refit itself,
 from the base model and <code>data</code>, so that each candidate is compared with
-the model it extends. The base fit's own <code>control</code> is not inherited: a
-candidate refit uses the defaults unless <code>control</code> is given here.
+the model it extends. Every candidate refit, and the selected model,
+runs under the elements of the base fit's <code>control</code> that a fit reads
+(<code>maxit</code>, <code>reltol</code> and, for a multiphase fit, <code>n_starts</code>, <code>conserve</code>,
+<code>phase_share_tol</code> and <code>start_seed</code>), as every step of a SAS
+<code>SELECTION</code> runs under one <code>PROC HAZARD</code>'s options. A <code>control</code> given
+here overrides it entry by entry: <code>control = list(maxit = 500)</code> changes
+<code>maxit</code> and keeps the rest.
 The <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code>, <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> and <code><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame()</a></code> methods ignore <code>...</code>.</p></dd>
 
 
