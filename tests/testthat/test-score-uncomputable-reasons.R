@@ -180,8 +180,8 @@ test_that("a candidate whose own information is not positive says so", {
   # load_all() or against the installed package.
   orig <- .hzr_score_information_expanded
   local_mocked_bindings(
-    .hzr_score_information_expanded = function(current, exp_) {
-      info <- orig(current, exp_)
+    .hzr_score_information_expanded = function(current, exp_, ...) {
+      info <- orig(current, exp_, ...)
       if (!is.null(info)) {
         b <- exp_$beta_idx
         info[b, b] <- -1e-3
