@@ -376,3 +376,15 @@ test_that("a %MEND inside a quoted string does not close the definition", {
   expect_identical(unique(unname(job$not_run)), "RUNIT")
   expect_length(macro_run_slots(job), 0L)
 })
+
+test_that("a %MEND quoted by %NRSTR or %STR does not close the definition", {
+  # Both quote their argument while the macro is compiled, so the %MEND in it
+  # is text and OLD runs to the real %MEND (Codex, #710). Closed at the quoted
+  # one, the fit after it read as outside every macro and ran.
+  for (q in c("%put %nrstr(%mend );", "%put %str(a (%mend ) b);",
+              "%put %str(%) %mend );")) {
+    job <- macro_job("%MACRO OLD;", q, macro_live, "%MEND OLD;")
+    expect_identical(unique(unname(job$not_run)), "OLD", info = q)
+    expect_length(macro_run_slots(job), 0L)
+  }
+})

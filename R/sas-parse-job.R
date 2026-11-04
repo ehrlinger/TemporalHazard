@@ -2269,6 +2269,36 @@
   if (nm %in% lang) NULL else nm
 }
 
+#' Blank the arguments of `%STR()` and `%NRSTR()` in a statement.
+#'
+#' Both quote their argument while a macro definition is compiled, so a
+#' `%MEND` inside one is text, not the end of the definition (Codex, #710).
+#' The execution-time functions (`%QUOTE()`, `%BQUOTE()` and the rest) do not
+#' mask it, and are left alone. Inside the argument a `%` escapes the next
+#' character, so `%(` and `%)` do not count as parentheses. An argument that
+#' never closes quotes the rest of the statement.
+#' @noRd
+.hzr_sas_mask_compile_quoting <- function(t) {
+  repeat {
+    m <- regexpr("%(NR)?STR *\\(", t, ignore.case = TRUE)
+    if (m < 0L) return(t)
+    n <- nchar(t)
+    j <- m + attr(m, "match.length")
+    depth <- 1L
+    while (j <= n && depth > 0L) {
+      ch <- substr(t, j, j)
+      if (ch == "%") {
+        j <- j + 2L
+        next
+      }
+      if (ch == "(") depth <- depth + 1L
+      if (ch == ")") depth <- depth - 1L
+      j <- j + 1L
+    }
+    t <- paste0(substr(t, 1L, m - 1L), "''", substr(t, j, n))
+  }
+}
+
 #' The `%MACRO ... %MEND` definitions among a job's statements.
 #' @return `list(scope, ends, versions, nested, nested_in)`: `scope[i]` numbers the
 #'   outermost definition statement `i` belongs to, `%MACRO` and `%MEND`
@@ -2329,8 +2359,9 @@
     # SAS reads %MEND as a token wherever it stands, so text with no semicolon
     # before it (the JCL lines of a `%macro skip;` header) ends with it; read
     # only at the start of a statement, that definition never closed (#708).
-    # A %MEND in a quoted string is text.
-    unquoted <- gsub("'[^']*'|\"[^\"]*\"", "''", t)
+    # A %MEND in a quoted string is text, and so is one in a %STR() or
+    # %NRSTR() argument, which quote while the macro is compiled.
+    unquoted <- gsub("'[^']*'|\"[^\"]*\"", "''", .hzr_sas_mask_compile_quoting(t))
     if (grepl("(^|[^A-Z0-9_&%])%MEND( |$)", unquoted)) {
       nm <- open[[depth]]
       if (depth > 1L) {
