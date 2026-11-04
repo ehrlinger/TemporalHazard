@@ -336,12 +336,21 @@ test_that("criterion = 'score' rejects a non-converged base up front", {
     "did not converge"
   )
 
-  # wald refits each candidate from the call and tolerates the bad base.
-  # Assert the screen tested something: a screen whose refits all failed
-  # also returns without error.
+  # A candidate refits under the base's control (#688), so its maxit = 1
+  # stops the candidate short too, and the screen records the failure.
+  stuck <- suppressWarnings(
+    hzr_stepwise(base_bad, scope = ~ age + mal, data = avc,
+                 criterion = "wald", direction = "forward", trace = FALSE)
+  )
+  expect_length(stuck$criteria$refit_failures, 1L)
+  expect_length(stuck$steps$variable[stuck$steps$action == "enter"], 0L)
+
+  # wald refits each candidate from the call and tolerates the bad base once
+  # the refits may converge. Assert the screen tested something: a screen
+  # whose refits all failed also returns without error.
   res <- hzr_stepwise(base_bad, scope = ~ age + mal, data = avc,
                       criterion = "wald", direction = "forward",
-                      trace = FALSE)
+                      trace = FALSE, control = list(maxit = 100))
   expect_length(res$criteria$refit_failures, 0L)
   expect_identical(res$steps$variable[res$steps$action == "enter"], "mal")
 })
