@@ -259,9 +259,20 @@
 #' the score criterion exists to avoid. It fires only where the analytic form
 #' is unavailable, and slower is the correct trade against selecting nothing.
 #'
+#' `positions` limits the differentiation to the parameters a caller reads.
+#' A block of second partials taken with the other parameters held fixed is
+#' that block of the full Hessian, so nothing it returns changes. What
+#' changes is that a parameter the caller never reads can no longer void it:
+#' a shape fixed on its boundary (`nu = 0` in a PROC HAZARD early phase) has
+#' an infinite negative log-likelihood one step below, and that one row made
+#' the whole matrix non-finite. Every candidate then scored `NA` as
+#' `nuisance_singular` and the screen ran on Wald refits instead. Entries
+#' outside `positions` are `NA`.
+#'
 #' @noRd
 .hzr_score_multiphase_hessian <- function(current, theta, phases,
-                                           covariate_counts, x_list) {
+                                           covariate_counts, x_list,
+                                           positions = seq_along(theta)) {
   if (!requireNamespace("numDeriv", quietly = TRUE)) {
     # Returning NULL here would NA every candidate and make stepwise report
     # nothing significant -- a plausible-looking wrong answer.
@@ -283,11 +294,18 @@
       objective = .hzr_fit_objective(current)
     )
   }
-  h <- .hzr_score_try(.hzr_numeric_hessian(nll, theta))
-  if (is.null(h) || !is.matrix(h) || nrow(h) != length(theta) ||
-        !all(is.finite(h))) {
+  sub_nll <- function(p) {
+    par <- theta
+    par[positions] <- p
+    nll(par)
+  }
+  blk <- .hzr_score_try(.hzr_numeric_hessian(sub_nll, theta[positions]))
+  k <- length(positions)
+  if (is.null(blk) || !is.matrix(blk) || nrow(blk) != k || !all(is.finite(blk))) {
     return(NULL)
   }
+  h <- matrix(NA_real_, length(theta), length(theta))
+  h[positions, positions] <- blk
   # Mirror .hzr_hessian_multiphase(), which names from `theta`, so the two are
   # interchangeable to a caller. `theta` is unnamed on an expanded model, and
   # this then yields NULL dimnames there -- as the analytic path also does.
@@ -297,8 +315,12 @@
 
 #' Observed information (Hessian of the negative log-likelihood)
 #'
+#' `positions` is passed to the numeric fallback; the analytic Hessian is
+#' always the full matrix.
+#'
 #' @noRd
-.hzr_score_information <- function(current, theta) {
+.hzr_score_information <- function(current, theta,
+                                   positions = seq_along(theta)) {
   d <- current$data
   if (current$spec$dist != "multiphase") {
     return(.hzr_score_single_hessian(current, d$x, theta))
@@ -318,7 +340,8 @@
     return(h)
   }
   .hzr_score_multiphase_hessian(
-    current, theta, phases, current$fit$covariate_counts, current$fit$x_list
+    current, theta, phases, current$fit$covariate_counts, current$fit$x_list,
+    positions = positions
   )
 }
 
@@ -336,7 +359,9 @@
     # No nuisance parameters exist, so there is nothing to adjust for.
     return(list(inv = NULL, idx = idx, ok = TRUE))
   }
-  info <- .hzr_score_information(current, theta = current$fit$theta)
+  # Only the nuisance block is read, so only it is differentiated (#712).
+  info <- .hzr_score_information(current, theta = current$fit$theta,
+                                 positions = idx)
   if (is.null(info)) {
     return(list(inv = NULL, idx = idx, ok = FALSE))
   }
@@ -617,8 +642,12 @@
 
 #' Observed information of the expanded model at (theta_hat, beta = 0)
 #'
+#' `positions` is passed to the numeric fallback, as in
+#' `.hzr_score_information()`.
+#'
 #' @noRd
-.hzr_score_information_expanded <- function(current, exp_) {
+.hzr_score_information_expanded <- function(current, exp_,
+                                            positions = seq_along(exp_$theta)) {
   d <- current$data
   if (current$spec$dist != "multiphase") {
     return(.hzr_score_single_hessian(current, exp_$x, exp_$theta))
@@ -637,7 +666,8 @@
     return(h)
   }
   .hzr_score_multiphase_hessian(
-    current, exp_$theta, exp_$phases, exp_$covariate_counts, exp_$x_list
+    current, exp_$theta, exp_$phases, exp_$covariate_counts, exp_$x_list,
+    positions = positions
   )
 }
 
@@ -1123,7 +1153,12 @@
   if (!is.null(exp_$reason)) return(na_result(exp_$reason))
 
   grad <- .hzr_score_gradient(current, exp_)
-  info <- .hzr_score_information_expanded(current, exp_)
+  # The candidate's row is read against itself and the nuisance positions;
+  # nothing else is, so nothing else is differentiated (#712).
+  info <- .hzr_score_information_expanded(
+    current, exp_,
+    positions = c(exp_$theta_idx[nuisance$idx], exp_$beta_idx)
+  )
   if (is.null(grad) || is.null(info)) return(na_result("no_information"))
 
   b <- exp_$beta_idx
