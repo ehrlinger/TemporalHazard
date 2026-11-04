@@ -160,7 +160,9 @@ other \code{hazard()} argument (the response, \code{weights}, \code{time_windows
 \code{dist}, \code{theta}, \code{phases}, \code{fit} and so on) is set by the refit itself,
 from the base model and \code{data}, so that each candidate is compared with
 the model it extends. Every candidate refit, and the selected model,
-runs under the base fit's own \code{control}, as every step of a SAS
+runs under the elements of the base fit's \code{control} that a fit reads
+(\code{maxit}, \code{reltol} and, for a multiphase fit, \code{n_starts}, \code{conserve},
+\code{phase_share_tol} and \code{start_seed}), as every step of a SAS
 \code{SELECTION} runs under one \verb{PROC HAZARD}'s options. A \code{control} given
 here overrides it entry by entry: \code{control = list(maxit = 500)} changes
 \code{maxit} and keeps the rest.

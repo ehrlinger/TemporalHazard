@@ -208,7 +208,9 @@
 #'   `dist`, `theta`, `phases`, `fit` and so on) is set by the refit itself,
 #'   from the base model and `data`, so that each candidate is compared with
 #'   the model it extends. Every candidate refit, and the selected model,
-#'   runs under the base fit's own `control`, as every step of a SAS
+#'   runs under the elements of the base fit's `control` that a fit reads
+#'   (`maxit`, `reltol` and, for a multiphase fit, `n_starts`, `conserve`,
+#'   `phase_share_tol` and `start_seed`), as every step of a SAS
 #'   `SELECTION` runs under one `PROC HAZARD`'s options. A `control` given
 #'   here overrides it entry by entry: `control = list(maxit = 500)` changes
 #'   `maxit` and keeps the rest.
@@ -1357,7 +1359,15 @@ hzr_stepwise <- function(fit,
   base <- base[intersect(names(base), c(.hzr_control_names$all,
                                         .hzr_control_names$multiphase))]
   if (!length(base)) return(extra_args)
-  given <- if (is.list(extra_args$control)) extra_args$control else list()
+  # The given list is validated before the merge: modifyList() would drop an
+  # unnamed element unwarned, and read `maxit = NULL` as "remove the base's
+  # maxit" where hazard() refuses it. Validation is idempotent, so the
+  # merged list draws no second warning.
+  given <- if (is.list(extra_args$control)) {
+    .hzr_validate_control(extra_args$control, fit$spec$dist)
+  } else {
+    list()
+  }
   extra_args$control <- utils::modifyList(base, given)
   extra_args
 }

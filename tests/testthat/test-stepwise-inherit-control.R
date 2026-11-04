@@ -78,3 +78,40 @@ test_that("a multiphase base passes on conserve, not the state it applied", {
   expect_false(isTRUE(sw$spec$control$conserve_applied))
   expect_identical(sw$spec$control$n_starts, 1L)
 })
+
+test_that("an unnamed control element still warns when the base has a control", {
+  skip_on_cran() # a stepwise screen
+  d <- ic_data()
+  base <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
+    theta = c(0.1, 1), fit = TRUE, control = list(maxit = 777L)
+  ))
+  w <- character()
+  withCallingHandlers(
+    hzr_stepwise(base, scope = ~ age, data = d, direction = "forward",
+                 criterion = "wald", trace = FALSE, control = list(500)),
+    warning = function(x) {
+      w <<- c(w, conditionMessage(x))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_length(grep("unnamed element", w, fixed = TRUE), 1L)
+})
+
+test_that("control = list(maxit = NULL) is refused whatever the base set", {
+  d <- ic_data()
+  fit_with <- function(control) {
+    suppressWarnings(hazard(
+      survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
+      theta = c(0.1, 1), fit = TRUE, control = control
+    ))
+  }
+  for (base in list(fit_with(list()), fit_with(list(maxit = 777L)),
+                    fit_with(list(reltol = 1e-9)))) {
+    expect_error(
+      hzr_stepwise(base, scope = ~ age, data = d, trace = FALSE,
+                   control = list(maxit = NULL)),
+      "maxit"
+    )
+  }
+})
