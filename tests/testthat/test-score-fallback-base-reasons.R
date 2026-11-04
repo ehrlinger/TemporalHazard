@@ -146,8 +146,8 @@ test_that("the information fault itself, at its source, is rescued (#570)", {
   # reason by its own guard.
   orig <- .hzr_score_information_expanded
   local_mocked_bindings(
-    .hzr_score_information_expanded = function(current, exp_) {
-      info <- orig(current, exp_)
+    .hzr_score_information_expanded = function(current, exp_, ...) {
+      info <- orig(current, exp_, ...)
       if (!is.null(info)) info[exp_$beta_idx, exp_$beta_idx] <- -1e-3
       info
     }
