@@ -8,7 +8,7 @@ script that ran under 1.1.0, then what is new.
 
 ## Upgrading from 1.1.0
 
-* **The licence is now GPL (>= 2).** 1.1.0 was MIT.
+* **The license is now GPL (>= 2).** 1.1.0 was MIT.
 
 * **Refit before comparing estimates with 1.1.0.** Several fixes move fitted
   values. Multiphase fits under Conservation of Events (the default) now get
@@ -103,6 +103,11 @@ script that ran under 1.1.0, then what is new.
   Refit from a clearly different `theta` and compare log-likelihoods before
   trusting a multiphase estimate; `n_starts` explores only a neighbourhood of
   the start.
+
+## Changes since 1.2.19
+
+The entries below are the detailed record for this release, in the order the
+changes were merged.
 
 # TemporalHazard 1.2.19
 
