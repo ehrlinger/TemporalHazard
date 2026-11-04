@@ -115,3 +115,45 @@ test_that("control = list(maxit = NULL) is refused whatever the base set", {
     )
   }
 })
+
+# hzr_bootstrap() rebuilds each replicate from the stored call, where
+# `control` is an expression. hazard() snapshots a variable the call names
+# from a function's frame, but not from the global environment, so there the
+# replicates re-read whatever the variable holds by then. They must use the
+# control the fit ran under.
+boot_ctrl_runs <- function(change, ...) {
+  d <- ic_data()
+  assign("ctrl_711", list(maxit = 777L, reltol = 1e-9), envir = globalenv())
+  on.exit(suppressWarnings(rm("ctrl_711", envir = globalenv())), add = TRUE)
+  base <- suppressWarnings(eval(quote(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "weibull",
+    theta = c(0.1, 1), fit = TRUE, control = ctrl_711
+  )), list(d = d), globalenv()))
+  stopifnot(identical(base$spec$control$maxit, 777L))
+  change()
+  suppressWarnings(hzr_bootstrap(base, n_boot = 2L, seed = 1L, ...))
+}
+
+select_args <- list(scope = ~ age, direction = "forward", criterion = "wald")
+
+test_that("bootstrap replicates use the fit's control, not the variable's new value", {
+  skip_on_cran() # bootstrap refits
+  # maxit = 1 cannot converge, so a replicate that read the changed
+  # variable would fail.
+  shrink <- function() assign("ctrl_711", list(maxit = 1L), envir = globalenv())
+  for (args in list(list(), select_args)) {
+    bs <- do.call(boot_ctrl_runs, c(list(shrink), args))
+    expect_identical(bs$n_failed, 0L)
+    expect_identical(bs$n_success, 2L)
+  }
+})
+
+test_that("bootstrap replicates run when the control variable is gone", {
+  skip_on_cran() # bootstrap refits
+  drop <- function() rm("ctrl_711", envir = globalenv())
+  for (args in list(list(), select_args)) {
+    bs <- do.call(boot_ctrl_runs, c(list(drop), args))
+    expect_identical(bs$n_failed, 0L)
+    expect_identical(bs$n_success, 2L)
+  }
+})
