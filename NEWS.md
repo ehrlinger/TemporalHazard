@@ -13,8 +13,12 @@ script that ran under 1.1.0, then what is new.
 * **Refit before comparing estimates with 1.1.0.** Several fixes move fitted
   values. Multiphase fits under Conservation of Events (the default) now get
   the full gradient and reach maxima that 1.1.0 stopped short of (#565).
-  Every fit is now checked against SAS's relative-gradient test and continued
-  with `nlm()` when BFGS stops early (`fit$fit$rel_gradient`). Exponential,
+  When the optimizer reports convergence, the fit is now checked against
+  SAS's relative-gradient test, and on a failure it is continued with `nlm()`,
+  keeping the continued point if it improves the log-likelihood. A fit that
+  did not report convergence, or whose gradient cannot be evaluated, is not
+  checked: `fit$fit$rel_gradient` is then `NA` and
+  `fit$fit$rel_gradient_reason` says why. Exponential,
   log-logistic and log-normal fits now honour left truncation, which 1.1.0
   ignored on status 0 and 1 rows (#253). Standard errors from the numeric
   Hessian (left- and interval-censored fits) and free-shape g3 standard errors
