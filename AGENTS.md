@@ -54,17 +54,18 @@ Four details there are load bearing:
 - **Lint runs before tests** because it is seconds against about a
   minute for the suite. Cheap failures first.
 - **`R CMD check` does not run the whole suite.** It runs with
-  `NOT_CRAN` false, so `skip_on_cran()` tests are skipped: 460 skips and
-  5342 passes under check, against 12 skips and **16013** passes locally
-  with `NOT_CRAN=true` (both measured 2026-11-05 at `db86458e`; the
+  `NOT_CRAN` false, so `skip_on_cran()` tests are skipped: 421 skips and
+  2034 passes under check, against 12 skips and **16020** passes locally
+  with `NOT_CRAN=true` (both measured 2026-11-05 at `549d3140`; the
   local figure needs the SAS fixture checkouts present under
-  `~/Documents/GitHub/hazard`). **That gap is 10,671 passes.** It was
+  `~/Documents/GitHub/hazard`). **That gap is 13,986 passes.** It was
   1,031 on 2026-09-09, when the check ran 2765 passes; by the 1.3.0 cut
-  the check ran 12,758, and win-builder spent 25 minutes in them. The 50
-  test files that took longest under the check now carry a file-level
-  `skip_on_cran()` as their first code line. A green check is **not**
-  evidence that the skipped tests pass; only the local
-  `devtools::test()` line is.
+  the check ran 12,758, and win-builder spent 25 minutes in them. The
+  100 test files that took longest under the check now carry a
+  file-level `skip_on_cran()` as their first code line: 50 from \#716,
+  and 50 more after CRAN’s incoming Windows check of the first 1.3.0
+  submission took 11 minutes. A green check is **not** evidence that the
+  skipped tests pass; only the local `devtools::test()` line is.
 - **Commit before you `git archive`.** It exports the committed tree, so
   an uncommitted fix is silently absent and the check answers a question
   about the wrong code. This has already cost one wrong conclusion.
@@ -369,8 +370,8 @@ Rscript ~/Documents/GitHub/house-style/compose-house-style.R --repo TemporalHaza
   refits per candidate under either criterion: removals are tested on
   the current model’s Wald p-value against `slstay`, as SAS does, and
   only the accepted drop is refitted.
-- Anything slow gets `skip_on_cran()`. There are 503 calls today
-  (2026-11-05, `db86458e`), 50 of them file-level. A new test file that
+- Anything slow gets `skip_on_cran()`. There are 578 calls today
+  (2026-11-05, `549d3140`), 100 of them file-level. A new test file that
   takes more than about a second in CRAN mode (`NOT_CRAN=false`) gets a
   file-level one.
 - No [`browser()`](https://rdrr.io/r/base/browser.html), no bare
@@ -381,16 +382,16 @@ Rscript ~/Documents/GitHub/house-style/compose-house-style.R --repo TemporalHaza
 
 ### Where the check’s time actually goes
 
-Overall `R CMD check --as-cran` with the manual, on this Mac: **3m 55s**
-(235s, at a load average of about 5), tarball **3.98 MB** (measured
-2026-11-05 at `db86458e`). CRAN’s ceiling is about 10 minutes and it
+Overall `R CMD check --as-cran` with the manual, on this Mac: **3m 14s**
+(194s, at a load average of about 5), tarball **4.07 MB** (measured
+2026-11-05 at `549d3140`). CRAN’s ceiling is about 10 minutes and it
 rejects on that even at 0/0/0, which is what got ggRandomForests
 archived in June 2026.
 
 | Component        | Time          |
 |------------------|---------------|
-| Tests            | 30s / 42s     |
-| Vignette rebuild | 55s / 57s     |
+| Tests            | 14s / 23s     |
+| Vignette rebuild | 42s / 47s     |
 | Everything else  | the remainder |
 
 ⚠️ **This Mac’s time does not predict CRAN’s.** On 2026-11-05 the 1.3.0
@@ -400,7 +401,18 @@ rebuild was 57s here and 244s to 246s there. CRAN’s own checks of 1.1.0
 took 528s to 623s on its Windows flavors against 56s on macOS arm64. A
 local overall of 7m 18s looked safe and was a 30-minute Windows check.
 **The release gate for time is win-builder’s per-step timings**, read
-from its `00check.log`, not this table.
+from its `00check.log`, not this table, and even those are optimistic:
+the tarball that took 8m 30s on win-builder’s R-devel took 11 minutes in
+CRAN’s incoming r-devel-windows check the same day (tests 228s against
+113s), and was rejected on it. Leave win-builder’s overall well under 8
+minutes.
+
+The vignette rebuild’s largest cost was one stepwise fit in
+`clinical-analysis-walkthrough`. It now loads a stored result,
+`inst/extdata/vignette-fit-step.rds`, written by
+`data-raw/vignette-fit-step.R`. **Regenerate it whenever the fitting
+code changes:** `test-vignette-fit-step.R` refits the vignette’s code
+and fails when the stored fit differs.
 
 Re-measure these when you change them, and stamp the commit.
 
@@ -425,6 +437,7 @@ not the last delta:
 | 2026-10-10 | `1e3da809`    | 12m 0s to 12m 12s | 508s to 511s |
 | 2026-11-04 | `2b753429`    | 7m 18s            | 291s         |
 | 2026-11-05 | `db86458e`    | 3m 55s            | 42s          |
+| 2026-11-05 | `549d3140`    | 3m 14s            | 23s          |
 
 Across those five the total moved about 49 seconds and the tests about
 37, nearly all of it in tests, over four release cycles. Real, slow, and
@@ -442,8 +455,8 @@ v1.2.12’s code and 120s against the cut’s:
 [`hzr_decompos()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_decompos.md)
 costs about four times as much per call since \#578 and \#574. That is a
 3x code slowdown, far outside the 46-second spread. \#631 closed on
-2026-10-25. The 2026-11-05 drop is the 50 file-level skips, not a code
-change.
+2026-10-25. The two 2026-11-05 drops are file-level skips (50, then 50
+more) and the stored vignette fit, not code changes.
 
 ⚠️ **Assertion counts and seconds are two different measurements.
 Neither explains the other.** Track both, and keep the claims apart.
