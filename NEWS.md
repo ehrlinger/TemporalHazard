@@ -1,4 +1,4 @@
-# TemporalHazard 1.3.0 (development)
+# TemporalHazard 1.3.0
 
 This is the first CRAN release since 1.1.0. The nineteen 1.2.x versions below
 were released internally and never sent to CRAN; their sections are the
@@ -112,6 +112,60 @@ script that ran under 1.1.0, then what is new.
 
 The entries below are the detailed record for this release, in the order the
 changes were merged.
+
+- **`hzr_translate_sas()` no longer runs a model from a macro the job never calls (#708).** A
+  PROC HAZARD, PROC HAZPRED or `%repeat` inside a `%MACRO` that the job defines
+  but never calls used to become a live chunk, so the document fitted a model
+  SAS did not. Those chunks are now emitted with `eval: false` and a comment
+  naming the macro, and listed in the job's new `$not_run`. The data guard and
+  the fit a later prediction uses now come from the blocks that run. A call
+  counts anywhere in the job's text, including a `*` comment and
+  `CALL EXECUTE`. The check reads this file only, so a call from an
+  `%INCLUDE`d file is not seen, and the `$untranslated` row says so. A macro
+  the job does call keeps one flagged fit, as before, and where the check is
+  unsure (a call only from another uncalled macro, a file whose macro
+  definitions it cannot close) the block stays live and flagged.
+
+- **`hzr_translate_sas()` now closes a `%MACRO` whose `%MEND` follows text
+  with no semicolon (#708).** A job that wraps its old job-control lines in
+  `%macro skip; ... %mend;` has no semicolon before the `%MEND`, so the
+  check read the definition as never closing and, playing safe, skipped
+  nothing: every fit in a macro the job never calls stayed live. SAS reads
+  `%MEND` wherever it stands, and so does the check now. A `%MEND` inside a
+  quoted string, or quoted by `%STR()` or `%NRSTR()`, is still text.
+
+- **`hzr_stepwise()` refits under the base fit's `control` (#688).** Every
+  candidate refit, and the selected model, used `hazard()`'s defaults, so a
+  base fit run with `conserve = FALSE`, a raised `maxit` or several
+  `n_starts` was stepped, and its selected model fitted, under settings it
+  never had, with no warning. They now run under the base fit's `control`,
+  as every step of a SAS `SELECTION` runs under one `PROC HAZARD`'s options.
+  A `control` passed to `hzr_stepwise()` overrides it entry by entry. This
+  changes the result of a screen whose base fit set a non-default `control`.
+- **`hzr_bootstrap()` refits under the `control` the fit ran under.** Each
+  replicate rebuilt its fit from the stored call, where `control` is an
+  expression, and a fit made at top level kept no copy of the variable it
+  named. A `control = ctrl` fit whose `ctrl` was changed afterwards
+  bootstrapped under the new value, with no warning, and one whose `ctrl`
+  was removed failed every replicate. Replicates now use the fit's stored
+  `control`.
+
+- **The score criterion no longer declines every candidate when a fixed
+  shape sits on its boundary and rows are interval-censored (#712).** With a
+  left- or interval-censored row the score test falls back to a numeric
+  Hessian, and it differentiated every parameter, fixed shapes included. A
+  shape fixed at its boundary, such as an early phase's `nu = 0`, made that
+  matrix non-finite, so every candidate was declined as `nuisance_singular`
+  and `hzr_stepwise()` ran the screen on Wald refits, a different screen from
+  SAS's. It now differentiates only the parameters the test reads, which
+  changes no value it uses. This changes the result of a score screen on
+  such a fit.
+
+- `NEWS.md` now opens this release with a summary of the net change since
+  1.1.0, the last version on CRAN, written for a user upgrading from it
+  (#688). It lists what can change the result of a 1.1.0 script, with the
+  reversals across the 1.2.x versions netted out, then what is new, and adds
+  #589 as a known limitation.
 
 # TemporalHazard 1.2.19
 
