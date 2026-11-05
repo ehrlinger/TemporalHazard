@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # Predicting from a model loaded out of a SAS `OUTHAZ=` dataset.
 #
 # The fixture is synthetic -- real SAS layout, invented numbers (see

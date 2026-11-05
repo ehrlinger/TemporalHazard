@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # #253 x #226: a counting-type Surv passed as `status =` (#283 reads it by
 # type, so Surv(start, stop, event) sets time_lower = start) must reach the
 # same entry-time likelihood as the other two routes to an entry time: the

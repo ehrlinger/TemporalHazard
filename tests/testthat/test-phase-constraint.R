@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # test-phase-constraint.R
 # hzr_phase(constraint = ): a g3 shape derived from the others, as SAS/C's
 # FIXGAE2 (alpha = gamma*eta/2) and FIXGE2 (eta = 2/gamma) do (#325).

@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # predict(newdata = ) for the single-distribution models matched covariates
 # to coefficients by column POSITION, so newdata with its columns in another
 # order returned a wrong value with no error (#267): a Weibull cumulative

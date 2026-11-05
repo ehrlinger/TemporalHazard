@@ -21,7 +21,7 @@ Inference,Convergence and degraded-fit reporting,^possible-false-maximum$|^stuck
 Inference,Prediction (predict.hazard),^predict-|^log-surv$,,tested,
 Inference,Decomposition and evaluation,^decompos|^decomposition$|^evaluate-at-parameters$,,tested,
 Inference,Goodness of fit and deciles,^gof-|^deciles-|^diagnostics$,,tested,
-Selection,Stepwise selection (hzr_stepwise),^stepwise-|^scope-resolved-pins$|^candidate-score$|^refit-|^pin-343-behaviours$,,tested,
+Selection,Stepwise selection (hzr_stepwise),^stepwise-|^scope-resolved-pins$|^candidate-score$|^refit-|^pin-343-behaviours$|^vignette-fit-step$,,tested,
 Selection,Score and Wald tests,^score-|^wald$,,tested,
 Selection,Bootstrap (hzr_bootstrap),^bootstrap-,,tested,
 SAS migration,SAS job translator (hzr_translate_sas),^sas-lex$|^sas-grammar|^sas-job$|^sas-parse-|^sas-selection$|^sas-hazpred-grid$|^sas-translate-|^sas-render-|^sas-objective-label$|^translate-sas$,,tested,

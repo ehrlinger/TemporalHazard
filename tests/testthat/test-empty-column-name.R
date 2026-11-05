@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # A column of `data` named "" stopped every formula-interface fit with
 # "attempt to use zero-length variable name", even when the formula never
 # named it (#470). No formula can name such a column, so it can play no part

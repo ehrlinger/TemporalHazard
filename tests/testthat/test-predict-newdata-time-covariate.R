@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # A covariate named `time` (#270).  In `newdata` the column `time` is the
 # prediction time, so a model with a covariate of that name cannot be told
 # its value there: the column was dropped from the covariates and the

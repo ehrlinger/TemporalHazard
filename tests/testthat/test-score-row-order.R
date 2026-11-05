@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # The score criterion reads each candidate from `data` by position and scores
 # it against the fit's stored rows. Only the row COUNT was checked, so the
 # same rows in another order scored every candidate against the wrong

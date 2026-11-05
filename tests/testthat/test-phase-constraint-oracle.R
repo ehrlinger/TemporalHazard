@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # test-phase-constraint-oracle.R
 # An answer for hzr_phase(constraint = ) that owes nothing to the package
 # (#325). The late-phase G3 cumulative hazard, its derivative, the simulation

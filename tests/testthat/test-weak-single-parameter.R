@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # test-weak-single-parameter.R
 # The weak-direction detector also names ONE parameter the data do not
 # determine (#415). The pairwise reading cannot: a correlation matrix

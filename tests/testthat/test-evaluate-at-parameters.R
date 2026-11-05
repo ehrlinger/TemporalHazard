@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # Evaluating a model at parameters supplied from elsewhere -- SAS's converged
 # estimates, say -- is the core operation of a parity check, and there was no
 # way to ask for it: predict() on a fit = FALSE object died with "argument of
