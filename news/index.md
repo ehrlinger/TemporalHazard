@@ -227,6 +227,12 @@ the changes were merged.
   [\#589](https://github.com/ehrlinger/TemporalHazard/issues/589) as a
   known limitation.
 
+- The 50 test files that took longest under `R CMD check` now skip on
+  CRAN. The tests that ran under the check had grown about fourfold
+  since September 2026, and a win-builder check spent 25 minutes in
+  them; it now spends about two. The skipped files still run on every
+  GitHub Actions job and in the local suite. No code changes.
+
 ## TemporalHazard 1.2.19
 
 - The cardioversion parity test (`test-repeated-events-parity.R`) now
