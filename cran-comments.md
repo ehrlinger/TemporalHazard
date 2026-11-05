@@ -68,7 +68,7 @@ affected help page.
   PDF manual: `Status: OK`, 0 errors, 0 warnings, 0 notes. The source tarball
   is 4.07 MB.
 * **win-builder,** 2026-11-05, on a tarball that differs from this one only
-  in `NEWS.md`: R-devel (2026-11-04 r90836), R-release (4.6.2) and
+  in `tests/testthat/test-vignette-fit-step.R`, which skips on CRAN: R-devel (2026-11-04 r90836), R-release (4.6.2) and
   R-oldrelease (4.5.3), each `Status: OK` with 0 errors, 0 warnings and
   0 notes.
 * **GitHub Actions, `R CMD check --as-cran` with the manual,** on the commit
