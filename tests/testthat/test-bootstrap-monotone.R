@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # A resample with no events at one level of a binary covariate has its
 # maximum at infinity. The refit stops where the slope falls below the
 # optimizer's tolerance and reports converged = TRUE with a small gradient,

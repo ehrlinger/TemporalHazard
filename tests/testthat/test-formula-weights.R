@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # On the formula interface, `weights = <name>` is looked up in `data` first,
 # then the calling frame, as the vector interface has done since #151 (#392).
 # The formula path used to skip `data`: a column-only name was not found, and

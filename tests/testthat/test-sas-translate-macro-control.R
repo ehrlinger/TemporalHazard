@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # SAS macro control flow decides whether a fit runs at all (#687).
 #
 # The translator reads a job's text in order, so it translated the fits the

@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # A single-distribution fit can stop at a false maximum far below the best
 # one and report converged = TRUE (#518, #531). The relative gradient does not
 # separate those stops from good ones cleanly, so the maintainer's rule

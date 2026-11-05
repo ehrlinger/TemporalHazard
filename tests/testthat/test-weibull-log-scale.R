@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # The Weibull likelihood on the log scale (#566, PR 2).
 #
 # .hzr_logl_weibull() formed mu^nu, (mu * t)^nu and t^(nu - 1) on the natural

@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # A single-distribution refit warm-starts from the base fit's theta. It used
 # to append a zero for an added term, but terms() orders an interaction after
 # every main effect, and hazard() keeps a named theta's names, so the new

@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # A row at time 0 has a well-defined likelihood contribution (#341). Right
 # censored at 0, it contributes log S(0) = 0. An interval (0, u] contributes
 # log(1 - S(u)), which is the left-censored row at u. SAS/C reads an interval

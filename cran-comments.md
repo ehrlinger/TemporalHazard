@@ -2,8 +2,12 @@
 
 ## Summary
 
-This is an update to TemporalHazard 1.1.0, accepted 2026-06-12. There is no
-reviewer feedback to address.
+This is an update to TemporalHazard 1.1.0, accepted 2026-06-12.
+
+This is a resubmission. The first 1.3.0 submission, on 2026-11-05, failed the
+incoming checks on one NOTE, `Overall checktime 11 min > 10 min` on
+r-devel-windows-x86_64. Its Windows and Debian pre-tests were otherwise
+`Status: OK`. "Check time" below says what changed.
 
 The versions between them, 1.2.1 to 1.2.19, were released internally and never
 submitted, so everything since 1.1.0 is new to CRAN. `NEWS.md` opens with a
@@ -77,17 +81,25 @@ affected help page.
 
 ## Check time
 
-1.1.0 took 528 to 623 s to check on CRAN's Windows flavors. A win-builder run
-of the first 1.3.0 tarball spent 25 minutes in the tests on R-devel and
-R-release: the tests that run under `R CMD check` had grown about fourfold
-since September 2026. The 50 test files that took longest under the check now
-carry a file-level `skip_on_cran()`. They still run on every GitHub Actions
-job and in the local suite.
+1.1.0 took 528 to 623 s to check on CRAN's Windows flavors. The tests that run
+under `R CMD check` had grown about fourfold since September 2026, and the
+first 1.3.0 submission's r-devel-windows incoming check took 11 minutes:
+228 s in the tests and 249 s rebuilding the vignettes.
 
-On win-builder the resubmitted tarball's tests took 113 s (R-devel), 117 s
-(R-release) and 123 s (R-oldrelease), and the whole check took 8 min 30 s on
-R-devel and 8 min 24 s on R-release. The vignette rebuild, at 243 to 252 s,
-is now the largest single step.
+For this resubmission:
+
+* **Tests:** the 100 test files that took longest under the check carry a
+  file-level `skip_on_cran()`, against 50 in the first submission. They still
+  run on every GitHub Actions job and in the local suite. On macOS the tests
+  under the check now take about a third of the time they took in the first
+  submission (TODO: measured figure).
+* **Vignettes:** the most expensive vignette chunk, a stepwise selection in
+  `clinical-analysis-walkthrough`, now shows its code and loads its stored
+  result from `inst/extdata/vignette-fit-step.rds` (72 KB). A test that runs
+  on GitHub Actions refits the vignette's code and compares it with the
+  stored result.
+
+TODO: win-builder timings for this tarball.
 
 ## Reverse dependencies
 
