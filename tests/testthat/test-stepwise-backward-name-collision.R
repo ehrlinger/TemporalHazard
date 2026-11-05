@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # A dropped variable is tested on its own coefficient, found by its term (#315).
 #
 # The backward step looked a variable's coefficient up by its bare name.

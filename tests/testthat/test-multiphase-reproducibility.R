@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # test-multiphase-reproducibility.R
 # The multiphase multi-start must be reproducible and must not disturb the
 # caller's RNG stream.  Starts after the first perturb the initial values; when

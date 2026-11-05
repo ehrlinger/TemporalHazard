@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # Broader integration tests for hzr_stepwise() — Step 8.7 /
 # STEPWISE-DESIGN.md §6.1.  These exercise end-to-end scenarios that
 # individual-helper tests do not cover: phase-specific selection,

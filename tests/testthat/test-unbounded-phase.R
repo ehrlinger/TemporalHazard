@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # A "hazard" phase is -log(1 - G(t)), which diverges as G -> 1: the phase is
 # UNBOUNDED BY CONSTRUCTION. Nothing constrains t_half to stay inside the
 # observed support, so the optimizer can walk it below the data, the whole

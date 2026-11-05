@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # predict() on a single-distribution fit returns unnamed values (#309).
 # theta's elements are named (mu, the leading one, is a log rate, a scale or
 # a location, depending on the family), and R carries such a name onto

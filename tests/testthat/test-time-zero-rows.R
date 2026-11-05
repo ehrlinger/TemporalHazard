@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # test-time-zero-rows.R
 # A row at time 0 is dropped before fitting, whatever its status, as PROC
 # HAZARD drops it at input (#374): hazard/src/hazard/readt.c:12-14.

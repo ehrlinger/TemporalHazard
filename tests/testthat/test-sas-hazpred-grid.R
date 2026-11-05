@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # #494: a PROC HAZPRED grid is the job's DATA steps, not the first DO loop.
 #
 # PROC HAZPRED predicts at every row of its DATA= dataset, reading the time

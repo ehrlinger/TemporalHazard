@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # Numerical Hessians at a covariate offset (#598).
 #
 # Every numDeriv::hessian() site used numDeriv's default step, 0.1 * |par|.

@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # A multiphase stepwise refit started from the phase specs' default values,
 # not from the model it extends (#551). The candidate model contains the base
 # (the base's estimates with the new coefficient at 0 reproduce the base

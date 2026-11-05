@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # The score criterion refits a candidate it cannot score and tests it by Wald,
 # but only for the reasons in .hzr_score_fallback_reasons. Two reasons were
 # left out as "no refit can make those candidates testable", and that is wrong

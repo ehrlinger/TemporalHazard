@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # test-sas-translate-fits.R -- nothing in the rest of the suite ever fits
 # the translator's own output. An ICENSOR job's emitted call errored outright
 # (time_lower carried the raw ICENSOR bounds for every row, which are NA off

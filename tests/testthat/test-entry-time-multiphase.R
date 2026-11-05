@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # Multiphase entry time: `time_lower` on status 0/1 rows (issue #253) -------
 #
 # On a status 0 or 1 row, `time_lower` is the counting-process entry time only

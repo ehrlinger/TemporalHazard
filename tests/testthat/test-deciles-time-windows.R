@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # hzr_deciles() on a multiphase time_windows fit (#629): the horizon ranking
 # must use the coefficients of the window that contains the horizon, not the
 # window each subject exited in. The reference is predict(newdata = ), which

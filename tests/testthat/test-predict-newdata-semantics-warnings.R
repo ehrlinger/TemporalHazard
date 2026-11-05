@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # predict(newdata = ) evaluates the formula on newdata as given, as
 # predict.lm() does. Three cases where that silently differs from the fit
 # now warn, naming the cause, and predict the same values as before

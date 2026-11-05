@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # The score test's numeric Hessian differentiates only what it reads (#712).
 #
 # With a left- or interval-censored row the analytic Hessian declines and the
