@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # objective = "sas" -- PROC HAZARD's interval-censored contribution.
 #
 # Design: inst/dev/SAS-INTERVAL-OBJECTIVE-DESIGN.md, §5 tests 2-5.  Tests 1 and

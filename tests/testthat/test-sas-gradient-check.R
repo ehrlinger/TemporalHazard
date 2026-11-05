@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # test-sas-gradient-check.R -- SAS/C's acceptance test in .hzr_optim_generic()
 #
 # SAS/C HAZARD accepts an optimum only when the relative gradient

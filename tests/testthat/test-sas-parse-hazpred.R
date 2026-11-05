@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # The DATA step that builds the grid is part of every fixture below that
 # asserts a predict() call: a DATA= grid no DATA step builds is refused, and
 # the block emits a stop() rather than a predict() over an unbound name.

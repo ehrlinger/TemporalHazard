@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # tests/testthat/test-gof-phase-covariates.R
 # hzr_gof()'s par_cumhaz / par_surv curve is documented to sit at the
 # covariate means.  A multiphase fit whose covariates enter only through the

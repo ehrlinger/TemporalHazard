@@ -67,15 +67,21 @@ affected help page.
   4.1.0, the declared minimum), macos-latest (R-release) and windows-latest
   (R-release). <!-- TODO: confirm all pass on the release commit. macOS and
   Windows check only after a merge to main, not on a pull request. -->
-* <!-- TODO: win-devel (devtools::check_win_devel()) and the check-release
-  workflow, with their results. -->
+* **win-builder:** R-devel (2026-11-04 r90836) and R-release (4.6.2),
+  Status OK. <!-- TODO: results for the resubmitted tarball, and the
+  check-release workflow. -->
 
 ## Check time
 
-<!-- TODO: replace with the idle measurement. A single local run on
-2026-11-04, on a loaded machine, took 438 s overall (tests 291 s, vignette
-rebuild 57 s). The 1.2.13 cut measured about 12 minutes; that slowdown (#631)
-has since been fixed, and the idle runs are what confirm it. -->
+1.1.0 already took 528 to 623 s to check on CRAN's Windows flavors. A
+win-builder run of the first 1.3.0 tarball, on 2026-11-05, gave Status OK on
+R-devel and R-release but spent 25 minutes in the tests on each, because the
+suite had grown about fourfold. 50 test files, the slowest under `R CMD
+check`, now carry a file-level `skip_on_cran()`. They run on every GitHub
+Actions job and in the local suite.
+
+<!-- TODO: the win-builder R-devel and R-release times for the resubmitted
+tarball, and the local idle --as-cran time. -->
 
 ## Reverse dependencies
 
@@ -88,16 +94,15 @@ returns none.
 every CRAN.R-project.org URL at 5 seconds, which says nothing about the
 URLs. -->
 
-## Expected NOTE
+## NOTEs
 
-The CRAN incoming aspell check is expected to flag these words in
-`DESCRIPTION`, none of which is a misspelling: `Naftel` and `Rajeswaran`
-(cited authors, each with a `<doi:...>` reference), `UAB` (an acronym), `et`
-and `al` (from "et al."), and `multiphase` (the model's standard name in the
-literature it implements). `inst/WORDLIST` records them for
-`spelling::spell_check_package()`, which has no effect on CRAN's check.
+None. The win-builder R-devel and R-release checks of 2026-11-05 gave 0
+errors, 0 warnings and 0 notes, incoming feasibility included.
 
-<!-- TODO: confirm the list against win-devel's output. -->
+<!-- TODO: confirm on the resubmitted tarball. The win-builder R-oldrelease
+(4.5.3) run stopped twice, with no message, inside "checking CRAN incoming
+feasibility"; the same check under R 4.5.3 locally completes with no
+finding. -->
 
 ## Background
 

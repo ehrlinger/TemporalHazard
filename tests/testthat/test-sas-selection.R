@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 test_that("SELECTION FORWARD maps to direction = both, not forward", {
   # The obvious mapping is wrong and fails silently on every stepwise job.
   got <- .hzr_selection_spec(c("FORWARD", "SLENTRY=0.05", "SLSTAY=0.10"))

@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # hzr_bootstrap() must resample a fit built with the vector interface.
 #
 # hazard() accepts either a formula plus `data`, or bare time/status vectors.

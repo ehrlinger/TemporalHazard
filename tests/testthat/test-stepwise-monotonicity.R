@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # A forward step must not lower the log-likelihood --------------------------
 #
 # The model a forward step enters CONTAINS the model it started from, so at

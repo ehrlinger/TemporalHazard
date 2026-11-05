@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # A multiphase fit saved before attr(x_list, "from_formula") is classified by
 # its stored design. Under time_windows a phase formula can use columns NAMED
 # like the expanded global ones (x1_w1, x1_w2) that hold other covariates;

@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 test_that("ICENSOR produces interval code 2 and a status-gated time_lower", {
   # ICENSOR's grammar is `ICENSOR c3 = ctime;` (src/hazard/hazard_y.y): C3 is
   # an event COUNT (OBS column 4), not a 0/1 flag -- a row is

@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # Score-test (Q-statistic) unit and parity tests.
 #
 # The multiphase test is an ACCEPTANCE GATE: it compares R's per-step Q against

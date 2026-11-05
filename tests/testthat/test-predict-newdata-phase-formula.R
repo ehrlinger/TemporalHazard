@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # predict(newdata = ) on a multiphase fit whose phase carries its own formula.
 #
 # The phase design at newdata must be the fit's design: the same factor

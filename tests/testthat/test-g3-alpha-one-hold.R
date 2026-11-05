@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # test-g3-alpha-one-hold.R
 # A g3 phase with alpha FIXED at 1 is re-expressed as PROC HAZARD's
 # SETG3_ignore_tau() does (#415), and FIXGE2's alpha rules follow SETG3 (#418).

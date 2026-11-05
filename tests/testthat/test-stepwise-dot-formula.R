@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # tests/testthat/test-stepwise-dot-formula.R
 # hzr_stepwise() read a `~ .` base formula with terms() and no data. That
 # errors, the error was turned into "no terms", and the screen reported zero

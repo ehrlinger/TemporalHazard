@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # This file predicts from models built with fit = FALSE on purpose, so the
 # warning that those numbers come from starting values is switched off for
 # this file only (#398). A file that does not expect the warning sees it as
