@@ -1,5 +1,161 @@
 # Changelog
 
+## TemporalHazard 1.3.0 (development)
+
+This is the first CRAN release since 1.1.0. The nineteen 1.2.x versions
+below were released internally and never sent to CRAN; their sections
+are the detailed record, and several later entries there reverse earlier
+ones. This summary gives the net change from 1.1.0: first what can
+change the result of a script that ran under 1.1.0, then what is new.
+
+### Upgrading from 1.1.0
+
+- **The license is now GPL (\>= 2).** 1.1.0 was MIT.
+
+- **Refit before comparing estimates with 1.1.0.** Several fixes move
+  fitted values. Multiphase fits under Conservation of Events (the
+  default) now get the full gradient and reach maxima that 1.1.0 stopped
+  short of
+  ([\#565](https://github.com/ehrlinger/TemporalHazard/issues/565)).
+  When the optimizer reports convergence, the fit is now checked against
+  SAS’s relative-gradient test, and on a failure it is continued with
+  [`nlm()`](https://rdrr.io/r/stats/nlm.html), keeping the continued
+  point if it improves the log-likelihood. A fit that did not report
+  convergence, or whose gradient cannot be evaluated, is not checked:
+  `fit$fit$rel_gradient` is then `NA` and `fit$fit$rel_gradient_reason`
+  says why. Exponential, log-logistic and log-normal fits now honour
+  left truncation, which 1.1.0 ignored on status 0 and 1 rows
+  ([\#253](https://github.com/ehrlinger/TemporalHazard/issues/253)).
+  Standard errors from the numeric Hessian (left- and interval-censored
+  fits) and free-shape g3 standard errors were too small in 1.1.0 and
+  are now correct.
+
+- **A multiphase fit with `n_starts > 1` no longer reads your random
+  number stream.** Its start offsets come from `control$start_seed`
+  (default 3), so [`set.seed()`](https://rdrr.io/r/base/Random.html)
+  before
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  does not change the fit, and the fit does not advance your stream.
+
+- **[`hzr_stepwise()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_stepwise.md)
+  now defaults to `criterion = "score"`,** the statistic SAS HAZARD’s
+  SELECTION uses. `criterion = "wald"` is no longer the 1.1.0 screen
+  either, so the 1.2.1 advice to pass it “to restore the previous
+  behavior exactly” no longer holds. Under both criteria, candidate
+  refits now also try the default start and keep the better fit
+  ([\#551](https://github.com/ehrlinger/TemporalHazard/issues/551)),
+  test the candidate’s own coefficient rather than a same-named dummy
+  ([\#305](https://github.com/ehrlinger/TemporalHazard/issues/305),
+  [\#315](https://github.com/ehrlinger/TemporalHazard/issues/315)), and
+  add to an inheriting phase’s covariates instead of replacing them
+  ([\#284](https://github.com/ehrlinger/TemporalHazard/issues/284)). A
+  1.1.0 selection can therefore come out differently.
+
+- **`hzr_stepwise()$steps` has new columns between old ones:**
+  `stat_type` between `stat` and `df`, `delta_logLik` between `logLik`
+  and `aic`, and `n_rows` at the end. Code that reads the columns by
+  position breaks. A misspelled argument passed through `...`
+  (`slentyr =`) is now an error rather than ignored
+  ([\#386](https://github.com/ehrlinger/TemporalHazard/issues/386)).
+
+- **Rows at `time == 0` are dropped with a warning** of class
+  `hzr_time_zero_dropped`, and the design is built from the rows that
+  remain
+  ([\#374](https://github.com/ehrlinger/TemporalHazard/issues/374)). If
+  every row is at time 0,
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  stops.
+
+- **Answers that were wrong in 1.1.0 and now change:**
+  `Surv(type = "left")` and interval
+  [`Surv()`](https://rdrr.io/pkg/survival/man/Surv.html) responses were
+  mistranslated on the formula interface
+  ([\#226](https://github.com/ehrlinger/TemporalHazard/issues/226));
+  `Surv(t, d) ~ .` put the response columns into the design
+  ([\#273](https://github.com/ehrlinger/TemporalHazard/issues/273));
+  `predict(type = "survival", se.fit = TRUE)` returned the standard
+  error of the cumulative hazard, not of survival; `predict(newdata =)`
+  matched single-distribution covariates by position, not name; the
+  [`hzr_gof()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_gof.md)
+  conservation ratio was not summed per subject
+  ([\#254](https://github.com/ehrlinger/TemporalHazard/issues/254));
+  [`hzr_deciles()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_deciles.md)
+  ignored entry times and weights
+  ([\#491](https://github.com/ehrlinger/TemporalHazard/issues/491)); and
+  [`hzr_bootstrap()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_bootstrap.md)
+  of a vector-interface fit returned `n_boot` identical replicates.
+
+- **Some input 1.1.0 accepted is now refused or warned about.** Unknown
+  `control` elements warn and are dropped, including `abstol`, `method`,
+  `condition`, `nocov`, `nocor` and `fix`, which 1.1.0 accepted and
+  never applied
+  ([\#376](https://github.com/ehrlinger/TemporalHazard/issues/376)). A
+  single-distribution `fit = TRUE` without `theta` is an error, not an
+  unfitted object. A status outside `{-1, 0, 1, 2}`, a `.` inside a
+  function call (`~ log(.)`) and an
+  [`offset()`](https://rdrr.io/r/stats/offset.html) term are errors. New
+  warnings on ordinary fits (a phase that collapsed, left the data or
+  vanished; a likelihood ridge; a possible false maximum) can stop a
+  script run under `options(warn = 2)`.
+
+- **[`print()`](https://rdrr.io/r/base/print.html) and
+  [`summary()`](https://rdrr.io/r/base/summary.html) read differently.**
+  Every fit prints a “Not done in this run” block, and
+  [`summary()`](https://rdrr.io/r/base/summary.html) gains `objective`
+  and `objective_value` as its last elements. Predictions are unnamed
+  vectors.
+
+- **`hzr_bootstrap(seed =)` behaves as it did in 1.1.0:** it calls
+  [`set.seed()`](https://rdrr.io/r/base/Random.html) and leaves your
+  stream where the replicates left it. The 1.2.13 and 1.2.17 entries
+  below change this and then change it back. What remains is that `seed`
+  must be `NULL` or one whole number. `withr` is a new Suggests, not an
+  Imports.
+
+### New since 1.1.0
+
+- [`hzr_translate_sas()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_translate_sas.md)
+  turns a SAS PROC HAZARD or PROC HAZPRED job into a Quarto document of
+  R calls.
+- `hzr_stepwise(criterion = "score")` reproduces SAS’s selection
+  statistic without refitting each candidate.
+- `hzr_bootstrap(scope =)` repeats the selection in every replicate, as
+  the SAS `%HAZBOOT` macro does (experimental), and `id =` resamples
+  patients rather than rows.
+- `hazard(objective = "sas")` fits PROC HAZARD’s interval objective,
+  with the `uslife2023` life table for relative survival.
+- `hzr_phase(constraint =)` applies SAS/C’s two late-phase g3
+  constraints.
+- [`hzr_evaluate()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_evaluate.md)
+  evaluates a model at given parameter values;
+  [`hzr_theta_names()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_theta_names.md)
+  names a multiphase `theta` before fitting;
+  [`hzr_read_outhaz()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_read_outhaz.md)
+  reads a PROC HAZARD `outhaz=` dataset;
+  [`hzr_repeated_events()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_repeated_events.md)
+  builds repeated-events input.
+- A fit now reports what it could not do: the “Not done in this run”
+  block, weakly identified directions, and phases that left the model.
+
+### Known limitations
+
+- **A converged multiphase fit is not certainly a maximum**
+  ([\#589](https://github.com/ehrlinger/TemporalHazard/issues/589)). The
+  multiphase likelihood can have several optima, and no available signal
+  (the relative gradient, the
+  [`nlm()`](https://rdrr.io/r/stats/nlm.html) exit code, a
+  positive-definite Hessian) yet separates a genuine maximum from a
+  stuck one. In the package’s own test suite about one optimizer call in
+  five fails SAS’s relative-gradient test. Refit from a clearly
+  different `theta` and compare log-likelihoods before trusting a
+  multiphase estimate; `n_starts` explores only a neighbourhood of the
+  start.
+
+### Changes since 1.2.19
+
+The entries below are the detailed record for this release, in the order
+the changes were merged.
+
 ## TemporalHazard 1.2.19
 
 - The cardioversion parity test (`test-repeated-events-parity.R`) now
