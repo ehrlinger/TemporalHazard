@@ -66,10 +66,8 @@ affected help page.
 * **Local:** R 4.6.1 on macOS (aarch64-apple-darwin23). `R CMD check
   --as-cran` on a tarball built from a clean `git archive` export, with the
   PDF manual: `Status: OK`, 0 errors, 0 warnings, 0 notes. The source tarball
-  is 3.98 MB.
-* **win-builder,** 2026-11-05, on a tarball that differs from this one only
-  in `NEWS.md`: R-devel (2026-11-04 r90836), R-release (4.6.2) and R-oldrelease (4.5.3),
-  each `Status: OK` with 0 errors, 0 warnings and 0 notes.
+  is 4.07 MB.
+* **win-builder,** on this tarball: TODO.
 * **GitHub Actions, `R CMD check --as-cran` with the manual,** on the commit
   before the test skips: windows-latest
   (R-devel, R-release, R-oldrel-1), macos-latest (R-release) and
@@ -91,8 +89,8 @@ For this resubmission:
 * **Tests:** the 100 test files that took longest under the check carry a
   file-level `skip_on_cran()`, against 50 in the first submission. They still
   run on every GitHub Actions job and in the local suite. On macOS the tests
-  under the check now take about a third of the time they took in the first
-  submission (TODO: measured figure).
+  under the check now take 23 s, against 42 s for the first submission's
+  tarball.
 * **Vignettes:** the most expensive vignette chunk, a stepwise selection in
   `clinical-analysis-walkthrough`, now shows its code and loads its stored
   result from `inst/extdata/vignette-fit-step.rds` (72 KB). A test that runs
@@ -108,8 +106,7 @@ returns none.
 
 ## NOTEs
 
-None. All three win-builder checks gave 0 errors, 0 warnings and 0 notes,
-incoming feasibility included.
+TODO after win-builder.
 
 ## Background
 
