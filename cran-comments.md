@@ -63,46 +63,41 @@ affected help page.
   --as-cran` on a tarball built from a clean `git archive` export, with the
   PDF manual: `Status: OK`, 0 errors, 0 warnings, 0 notes. The source tarball
   is 3.98 MB.
-* **GitHub Actions:** ubuntu-latest (R-devel, R-release, R-oldrel-1 and R
-  4.1.0, the declared minimum), macos-latest (R-release) and windows-latest
-  (R-release). <!-- TODO: confirm all pass on the release commit. macOS and
-  Windows check only after a merge to main, not on a pull request. -->
-* **win-builder:** R-devel (2026-11-04 r90836) and R-release (4.6.2),
-  Status OK. <!-- TODO: results for the resubmitted tarball, and the
-  check-release workflow. -->
+* **win-builder,** 2026-11-05, on a tarball that differs from this one only
+  in `NEWS.md`: R-devel (2026-11-04 r90836), R-release (4.6.2) and R-oldrelease (4.5.3),
+  each `Status: OK` with 0 errors, 0 warnings and 0 notes.
+* **GitHub Actions, `R CMD check --as-cran` with the manual,** on the commit
+  before the test skips: windows-latest
+  (R-devel, R-release, R-oldrel-1), macos-latest (R-release) and
+  ubuntu-latest (R-devel, R-release), all `Status: OK`, with
+  `urlchecker::url_check()` clean.
+* **GitHub Actions, on every merge:** ubuntu-latest (R-devel, R-release,
+  R-oldrel-1 and R 4.1.0, the declared minimum), macos-latest (R-release) and
+  windows-latest (R-release).
 
 ## Check time
 
-1.1.0 already took 528 to 623 s to check on CRAN's Windows flavors. A
-win-builder run of the first 1.3.0 tarball, on 2026-11-05, gave Status OK on
-R-devel and R-release but spent 25 minutes in the tests on each, because the
-suite had grown about fourfold. 50 test files, the slowest under `R CMD
-check`, now carry a file-level `skip_on_cran()`. They run on every GitHub
-Actions job and in the local suite.
+1.1.0 took 528 to 623 s to check on CRAN's Windows flavors. A win-builder run
+of the first 1.3.0 tarball spent 25 minutes in the tests on R-devel and
+R-release: the tests that run under `R CMD check` had grown about fourfold
+since September 2026. The 50 test files that took longest under the check now
+carry a file-level `skip_on_cran()`. They still run on every GitHub Actions
+job and in the local suite.
 
-<!-- TODO: the win-builder R-devel and R-release times for the resubmitted
-tarball, and the local idle --as-cran time. -->
+On win-builder the resubmitted tarball's tests took 113 s (R-devel), 117 s
+(R-release) and 123 s (R-oldrelease), and the whole check took 8 min 30 s on
+R-devel and 8 min 24 s on R-release. The vignette rebuild, at 243 to 252 s,
+is now the largest single step.
 
 ## Reverse dependencies
 
 `tools::package_dependencies(reverse = TRUE, which = "all")` against CRAN
 returns none.
 
-## URLs
-
-<!-- TODO: urlchecker::url_check() result. The 2026-11-05 run timed out on
-every CRAN.R-project.org URL at 5 seconds, which says nothing about the
-URLs. -->
-
 ## NOTEs
 
-None. The win-builder R-devel and R-release checks of 2026-11-05 gave 0
-errors, 0 warnings and 0 notes, incoming feasibility included.
-
-<!-- TODO: confirm on the resubmitted tarball. The win-builder R-oldrelease
-(4.5.3) run stopped twice, with no message, inside "checking CRAN incoming
-feasibility"; the same check under R 4.5.3 locally completes with no
-finding. -->
+None. All three win-builder checks gave 0 errors, 0 warnings and 0 notes,
+incoming feasibility included.
 
 ## Background
 
