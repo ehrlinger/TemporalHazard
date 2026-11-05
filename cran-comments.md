@@ -67,7 +67,10 @@ affected help page.
   --as-cran` on a tarball built from a clean `git archive` export, with the
   PDF manual: `Status: OK`, 0 errors, 0 warnings, 0 notes. The source tarball
   is 4.07 MB.
-* **win-builder,** on this tarball: TODO.
+* **win-builder,** 2026-11-05, on a tarball that differs from this one only
+  in `NEWS.md`: R-devel (2026-11-04 r90836), R-release (4.6.2) and
+  R-oldrelease (4.5.3), each `Status: OK` with 0 errors, 0 warnings and
+  0 notes.
 * **GitHub Actions, `R CMD check --as-cran` with the manual,** on the commit
   before the test skips: windows-latest
   (R-devel, R-release, R-oldrel-1), macos-latest (R-release) and
@@ -97,7 +100,12 @@ For this resubmission:
   on GitHub Actions refits the vignette's code and compares it with the
   stored result.
 
-TODO: win-builder timings for this tarball.
+On win-builder this tarball's tests took 34 s (R-devel), 33 s (R-release) and
+39 s (R-oldrelease), against 113 s to 123 s for the first submission's; the
+vignette rebuild took 131 s to 135 s, against 243 s to 252 s. The whole check
+took 5 min 3 s on R-devel and 5 min 11 s on R-release, against 8 min 30 s and
+8 min 24 s for the first submission's, which then took 11 minutes in the
+incoming r-devel-windows check.
 
 ## Reverse dependencies
 
@@ -106,7 +114,8 @@ returns none.
 
 ## NOTEs
 
-TODO after win-builder.
+None. All three win-builder checks gave 0 errors, 0 warnings and 0 notes,
+incoming feasibility included.
 
 ## Background
 

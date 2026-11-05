@@ -28,7 +28,14 @@ test_that("the vignette's stored stepwise fit matches a refit", {
   cols <- c("step_num", "action", "variable", "phase")
   expect_gt(nrow(refit$steps), 0L)
   expect_identical(refit$steps[, cols], stored$steps[, cols])
-  expect_equal(refit$steps$p_value, stored$steps$p_value, tolerance = 1e-4)
+  # Every column of the steps table, since the vignette prints it: AIC,
+  # statistics, logLik and counts as well as the identifiers.
+  expect_identical(names(refit$steps), names(stored$steps))
+  expect_equal(refit$steps, stored$steps, tolerance = 1e-4)
+  # What print(fit_step) shows, and what the AIC comparison chunk reads.
+  expect_identical(utils::capture.output(print(refit)),
+                   utils::capture.output(print(stored)))
+  expect_identical(refit$fit$fixed_mask, stored$fit$fixed_mask)
   expect_equal(refit$fit$objective, stored$fit$objective, tolerance = 1e-6)
   expect_equal(unname(refit$fit$theta), unname(stored$fit$theta),
                tolerance = 1e-4)
