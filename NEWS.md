@@ -167,6 +167,12 @@ changes were merged.
   reversals across the 1.2.x versions netted out, then what is new, and adds
   #589 as a known limitation.
 
+- The 50 test files that took longest under `R CMD check` now skip on CRAN.
+  The tests that ran under the check had grown about fourfold since
+  September 2026, and a win-builder check spent 25 minutes in them; it now
+  spends about two. The skipped files still
+  run on every GitHub Actions job and in the local suite. No code changes.
+
 # TemporalHazard 1.2.19
 
 * The cardioversion parity test (`test-repeated-events-parity.R`) now expects the two `%MACRO` rows #687 records for the job's PROC HAZPRED and stratified PROC HAZARD, both inside `%macro final`. It failed on the 1.2.18 release suite. Only a run with the study data reaches it.
