@@ -8,3 +8,9 @@
   looked there. A column of `data` still takes precedence. `hzr_bootstrap()`
   now checks response variables in the same place, so a per-row local in the
   response is refused instead of being left out of the resampling.
+  One case is still not caught: a helper function, defined in the calling
+  environment, that itself uses a per-row vector, such as
+  `cap <- function(x) pmin(x, caps)`. The bootstrap check looks at the
+  names in the formula, not inside the functions they call, so `caps` is
+  bootstrapped without being resampled. The right-hand side has had the same
+  gap since before this change.

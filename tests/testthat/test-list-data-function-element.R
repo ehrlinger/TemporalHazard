@@ -239,12 +239,13 @@ test_that("an element whose name is NA is refused: R binds it as `NA`", {
 })
 
 test_that("each remedy the refusal recommends actually works, on both interfaces", {
-  # The message used to prescribe "define the helper in the calling
-  # environment" for every case. That is true for a vector argument and for
-  # formula `weights`, and false for a helper used in the Surv() RESPONSE,
-  # which is evaluated without the formula's environment (#447). A message
-  # that prescribes an impossible remedy is worse than a generic one, so
-  # each remedy is run here rather than described.
+  # The message prescribes "define the helper in the calling environment".
+  # That used to be false for a helper in the Surv() RESPONSE, which was
+  # evaluated without the formula's environment, so the message once named a
+  # second remedy for it. Since #447 the response sees that environment too,
+  # and one remedy covers every case. A message that prescribes an impossible
+  # remedy is worse than a generic one, so each case is run here rather than
+  # described.
   helper420 <- function(x) x * 2
   d_list <- list(tt = c(2.5, 3.5, 4.5), ss = c(1L, 1L, 0L))
   df <- data.frame(tt = c(2.5, 3.5, 4.5), ss = c(1L, 1L, 0L))
@@ -260,10 +261,8 @@ test_that("each remedy the refusal recommends actually works, on both interfaces
                  dist = "weibull", theta = c(1, 1), fit = TRUE)
   expect_true(is.finite(fit2$fit$objective))
 
-  # Remedy 2, the Surv() response: precompute a column. The caller-environment
-  # remedy does NOT work here, which is why the message must not offer it.
-  df$doubled <- helper420(df$tt)
-  fit3 <- hazard(survival::Surv(doubled, ss) ~ 1, data = df, dist = "weibull",
-                 theta = c(1, 1), fit = TRUE)
+  # The same remedy, the Surv() response (#447).
+  fit3 <- hazard(survival::Surv(helper420(tt), ss) ~ 1, data = df,
+                 dist = "weibull", theta = c(1, 1), fit = TRUE)
   expect_equal(fit3$data$time, c(5, 7, 9))
 })

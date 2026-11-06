@@ -63,3 +63,25 @@ test_that("a formula without an environment still fits from `data`", {
   expect_null(environment(f))
   expect_equal(fit447(f)$data$time, d447$tt)
 })
+
+test_that("a stepwise refit resolves a response local as the fit did", {
+  # Candidate refits rebuild the formula; each must keep the original
+  # formula's environment, or the response would change between the fit
+  # and its refits.
+  assign("cutoff_447", 100, envir = globalenv())
+  withr::defer(rm("cutoff_447", envir = globalenv()))
+  d <- d447
+  d$z <- stats::rnorm(nrow(d))
+  local_sw <- function() {
+    cutoff_447 <- 3
+    base <- hazard(survival::Surv(pmin(tt, cutoff_447), ss) ~ age, data = d,
+                   dist = "weibull", theta = c(mu = 0.2, nu = 1, 0),
+                   fit = TRUE)
+    suppressWarnings(hzr_stepwise(base, scope = ~ z, data = d,
+                                  slentry = 0.99, criterion = "wald"))
+  }
+  # hzr_stepwise() reports its steps as it goes; keep that out of the log.
+  utils::capture.output(sw <- local_sw())
+  expect_gt(nrow(sw$steps), 0L)
+  expect_equal(sw$data$time, pmin(d447$tt, 3))
+})
