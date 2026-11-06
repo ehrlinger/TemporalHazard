@@ -90,11 +90,10 @@ hazard(
   list-column of functions is a list, not a function, and is unaffected,
   as is an element with no name, which no expression can look up – but
   an `NA_character_` name is refused, because R binds such an element
-  under the symbol `` `NA` `` and a call reaches it. Remove the element:
-  for a vector argument or `weights`, define the helper in the calling
-  environment; for one used inside the `Surv()` response, compute the
-  value into a `data` column first, since the response is evaluated
-  without the formula's environment.
+  under the symbol `` `NA` `` and a call reaches it. Remove the element
+  and define the helper in the calling environment. A vector argument,
+  `weights` and the formula's `Surv()` response all see that environment
+  (the response since \#447).
 
 - time:
 
