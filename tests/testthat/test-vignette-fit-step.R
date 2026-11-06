@@ -6,6 +6,11 @@ skip_on_cran()
 
 test_that("the vignette's stored stepwise fit matches a refit", {
   skip_if_not_installed("knitr")
+  # covr installs from the source tree without building vignettes, and runs
+  # the tests from that installed copy, so neither path below holds the
+  # .qmd. Skip there only: anywhere else a missing .qmd is a failure.
+  skip_if(identical(Sys.getenv("R_COVR"), "true"),
+          "vignette source is not installed under covr")
   name <- "clinical-analysis-walkthrough.qmd"
   qmd <- c(
     system.file("doc", name, package = "TemporalHazard"),
