@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # hazard() checks `control` against the elements the fitter reads (#376).
 # An element it would ignore used to be accepted silently: a typo such as
 # `n_startz` left the default in force, and `control$fix` returned a fit

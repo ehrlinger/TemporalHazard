@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # test-multiphase-gradient.R — Validate analytic gradient against numerical
 #
 # Tests that .hzr_gradient_multiphase() returns gradients consistent with

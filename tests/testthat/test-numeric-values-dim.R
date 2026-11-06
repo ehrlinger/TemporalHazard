@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # A classed numeric column whose stored doubles are not its values is read as
 # its values whether or not it has a dim (#371). A column with a dim is kept
 # as a matrix, because a genuine matrix column (I(cbind(p, q)), a Surv) is a

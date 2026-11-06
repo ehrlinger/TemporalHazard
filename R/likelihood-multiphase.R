@@ -900,6 +900,11 @@
 #' @param sanitize Logical; `FALSE` returns `NA` where the default returns 0.
 #'   Used by SAS/C's acceptance test, which must not read a zero it could not
 #'   compute as a small gradient.
+#' @param phase_cache `NULL`, or an environment: the per-phase quantities,
+#'   which do not read `status`, are kept there by the first call and reused
+#'   by a later one with the same `theta`, times, entry times, `phases`,
+#'   `covariate_counts` and `x_list`. The Conservation of Events gradient
+#'   passes one to its two score evaluations (#631).
 #' @keywords internal
 .hzr_gradient_multiphase <- function(theta, time, status,
                                       time_lower = NULL, time_upper = NULL,
@@ -907,6 +912,7 @@
                                       phases, covariate_counts, x_list,
                                       objective = c("likelihood", "sas"),
                                       sanitize = TRUE,
+                                      phase_cache = NULL,
                                       ...) {
   objective <- match.arg(objective)
   # A gradient that cannot be evaluated is zeros for the optimizer, which
@@ -984,69 +990,104 @@
   need_start <- !is.null(entry) && any(entry > 0)
   start_vec <- if (need_start) entry else NULL
 
-  for (j in seq_along(phases)) {
-    nm <- names(phases)[j]
-    pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
+  # The per-phase quantities depend on theta, the times, the entry times and
+  # the model (phases, covariate counts and designs), not on status. Under
+  # Conservation of Events the gradient is evaluated twice at one theta, the
+  # second time with every status 0 (#565), and the CoE wrapper passes one
+  # `phase_cache` environment to both calls so the second reuses the first's
+  # (#631). The key holds every input the loop reads and is compared with
+  # identical(), so a call that differs in any of them is computed afresh.
+  # The two CoE calls pass the same model objects, which identical() accepts
+  # at once.
+  cache_key <- list(theta = theta, time = time, start_vec = start_vec,
+                    phases = phases, covariate_counts = covariate_counts,
+                    x_list = x_list)
+  cached <- !is.null(phase_cache) && identical(phase_cache$key, cache_key)
+  if (cached) {
+    phase_mu          <- phase_cache$phase_mu
+    phase_Phi         <- phase_cache$phase_Phi
+    phase_phi         <- phase_cache$phase_phi
+    phase_deriv       <- phase_cache$phase_deriv
+    phase_Phi_start   <- phase_cache$phase_Phi_start
+    phase_deriv_start <- phase_cache$phase_deriv_start
+    H_t               <- phase_cache$H_t
+    h_t               <- phase_cache$h_t
+  } else {
+    for (j in seq_along(phases)) {
+      nm <- names(phases)[j]
+      pars <- .hzr_unpack_phase_theta(theta_split[[nm]], phases[[nm]])
 
-    # mu_j(x_i) = exp(log_mu + x * beta)
-    if (length(pars$beta) > 0 && !is.null(x_list[[nm]])) {
-      eta_j <- pars$log_mu + as.numeric(x_list[[nm]] %*% pars$beta)
-    } else {
-      eta_j <- rep(pars$log_mu, n)
-    }
-    mu_j <- exp(eta_j)
-    phase_mu[[j]] <- mu_j
+      # mu_j(x_i) = exp(log_mu + x * beta)
+      if (length(pars$beta) > 0 && !is.null(x_list[[nm]])) {
+        eta_j <- pars$log_mu + as.numeric(x_list[[nm]] %*% pars$beta)
+      } else {
+        eta_j <- rep(pars$log_mu, n)
+      }
+      mu_j <- exp(eta_j)
+      phase_mu[[j]] <- mu_j
 
-    # Phi_j, phi_j, and shape derivatives at observation time
-    if (phases[[nm]]$type == "constant") {
-      phase_Phi[[j]] <- time
-      phase_phi[[j]] <- rep(1, n)
-      phase_deriv[[j]] <- NULL  # no shape params for constant
-    } else if (phases[[nm]]$type == "g3") {
-      tau_j <- exp(pars$log_tau)
-      d3 <- hzr_decompos_g3(time, tau = tau_j, gamma = pars$gamma,
-                              alpha = pars$alpha, eta = pars$eta)
-      phase_Phi[[j]] <- d3$G3
-      phase_phi[[j]] <- d3$g3
-      # G3 shape derivatives via finite differences (for now)
-      phase_deriv[[j]] <- .hzr_g3_phase_derivatives(
-        time, tau = tau_j, gamma = pars$gamma,
-        alpha = pars$alpha, eta = pars$eta)
-    } else {
-      t_half_j <- exp(pars$log_t_half)
-      pd <- .hzr_phase_derivatives(time, t_half = t_half_j, nu = pars$nu,
-                                    m = pars$m, type = phases[[nm]]$type)
-      phase_Phi[[j]]   <- pd$Phi
-      phase_phi[[j]]   <- pd$phi
-      phase_deriv[[j]] <- pd
-    }
-
-    # Matching quantities at start_vec -- only Phi_j and its shape
-    # derivatives matter for the H(start) gradient contribution.
-    if (need_start) {
+      # Phi_j, phi_j, and shape derivatives at observation time
       if (phases[[nm]]$type == "constant") {
-        phase_Phi_start[[j]] <- start_vec
-        phase_deriv_start[[j]] <- NULL
+        phase_Phi[[j]] <- time
+        phase_phi[[j]] <- rep(1, n)
+        phase_deriv[[j]] <- NULL  # no shape params for constant
       } else if (phases[[nm]]$type == "g3") {
         tau_j <- exp(pars$log_tau)
-        d3s <- hzr_decompos_g3(start_vec, tau = tau_j, gamma = pars$gamma,
-                                 alpha = pars$alpha, eta = pars$eta)
-        phase_Phi_start[[j]] <- d3s$G3
-        phase_deriv_start[[j]] <- .hzr_g3_phase_derivatives(
-          start_vec, tau = tau_j, gamma = pars$gamma,
+        d3 <- hzr_decompos_g3(time, tau = tau_j, gamma = pars$gamma,
+                                alpha = pars$alpha, eta = pars$eta)
+        phase_Phi[[j]] <- d3$G3
+        phase_phi[[j]] <- d3$g3
+        # G3 shape derivatives via finite differences (for now)
+        phase_deriv[[j]] <- .hzr_g3_phase_derivatives(
+          time, tau = tau_j, gamma = pars$gamma,
           alpha = pars$alpha, eta = pars$eta)
       } else {
         t_half_j <- exp(pars$log_t_half)
-        pds <- .hzr_phase_derivatives(start_vec, t_half = t_half_j,
-                                        nu = pars$nu, m = pars$m,
-                                        type = phases[[nm]]$type)
-        phase_Phi_start[[j]]   <- pds$Phi
-        phase_deriv_start[[j]] <- pds
+        pd <- .hzr_phase_derivatives(time, t_half = t_half_j, nu = pars$nu,
+                                      m = pars$m, type = phases[[nm]]$type)
+        phase_Phi[[j]]   <- pd$Phi
+        phase_phi[[j]]   <- pd$phi
+        phase_deriv[[j]] <- pd
       }
-    }
 
-    H_t <- H_t + mu_j * phase_Phi[[j]]
-    h_t <- h_t + mu_j * phase_phi[[j]]
+      # Matching quantities at start_vec -- only Phi_j and its shape
+      # derivatives matter for the H(start) gradient contribution.
+      if (need_start) {
+        if (phases[[nm]]$type == "constant") {
+          phase_Phi_start[[j]] <- start_vec
+          phase_deriv_start[[j]] <- NULL
+        } else if (phases[[nm]]$type == "g3") {
+          tau_j <- exp(pars$log_tau)
+          d3s <- hzr_decompos_g3(start_vec, tau = tau_j, gamma = pars$gamma,
+                                   alpha = pars$alpha, eta = pars$eta)
+          phase_Phi_start[[j]] <- d3s$G3
+          phase_deriv_start[[j]] <- .hzr_g3_phase_derivatives(
+            start_vec, tau = tau_j, gamma = pars$gamma,
+            alpha = pars$alpha, eta = pars$eta)
+        } else {
+          t_half_j <- exp(pars$log_t_half)
+          pds <- .hzr_phase_derivatives(start_vec, t_half = t_half_j,
+                                          nu = pars$nu, m = pars$m,
+                                          type = phases[[nm]]$type)
+          phase_Phi_start[[j]]   <- pds$Phi
+          phase_deriv_start[[j]] <- pds
+        }
+      }
+
+      H_t <- H_t + mu_j * phase_Phi[[j]]
+      h_t <- h_t + mu_j * phase_phi[[j]]
+    }
+    if (!is.null(phase_cache)) {
+      phase_cache$key               <- cache_key
+      phase_cache$phase_mu          <- phase_mu
+      phase_cache$phase_Phi         <- phase_Phi
+      phase_cache$phase_phi         <- phase_phi
+      phase_cache$phase_deriv       <- phase_deriv
+      phase_cache$phase_Phi_start   <- phase_Phi_start
+      phase_cache$phase_deriv_start <- phase_deriv_start
+      phase_cache$H_t               <- H_t
+      phase_cache$h_t               <- h_t
+    }
   }
 
   # Guard: if total hazard or cumhaz is non-finite, return zero gradient
@@ -1605,15 +1646,92 @@
 # Optimizer
 # ============================================================================
 
+#' Normal deviates from a private Mersenne Twister
+#'
+#' Reproduces `set.seed(seed); rnorm(n)` under R's default `RNGkind()`, bit for
+#' bit, without touching `.Random.seed`.  Written out rather than called because
+#' calling it means writing to the global environment, and changing the numbers
+#' would change which optimum existing multiphase fits reach.  The 32-bit words
+#' are held in doubles: every product stays below 2^53, so the arithmetic is
+#' exact.
+#'
+#' The generator is that of Matsumoto and Nishimura (1998).  The seeding, the
+#' zero-word substitution and the inversion are derived from R's own
+#' `src/main/RNG.c` and `src/nmath/snorm.c`, and a test pins them against `set.seed()` and
+#' `rnorm()`.  See `system.file("COPYRIGHTS", package = "TemporalHazard")`.
+#'
+#' @references Matsumoto M, Nishimura T (1998). Mersenne Twister: a
+#'   623-dimensionally equidistributed uniform pseudo-random number generator.
+#'   *ACM Transactions on Modeling and Computer Simulation*, 8(1), 3-30.
+#'   \doi{10.1145/272991.272995}
+#'
+#' @param seed Single whole number within integer range.
+#' @param n Number of deviates.
+#' @return Numeric vector of length `n`.
+#' @keywords internal
+.hzr_mt_normal <- function(seed, n) {
+  # Derived from R's src/main/RNG.c:
+  #   Copyright (C) 1997--2026  The R Core Team
+  #   Copyright (C) 1995, 1996  Robert Gentleman and Ross Ihaka
+  # and src/nmath/snorm.c:
+  #   Copyright (C) 2000-2025 The R Core Team
+  #   Copyright (C) 1998   Ross Ihaka
+  # The Mersenne Twister part of RNG.c is:
+  #   Copyright (C) 1997, 1999 Makoto Matsumoto and Takuji Nishimura.
+  # GPL (>= 2), as is this package.  See inst/COPYRIGHTS.
+  word <- 2^32
+  half <- 2^16
+  xor32 <- function(a, b) {
+    bitwXor(a %/% half, b %/% half) * half + bitwXor(a %% half, b %% half)
+  }
+  and32 <- function(a, b) {
+    bitwAnd(a %/% half, b %/% half) * half + bitwAnd(a %% half, b %% half)
+  }
+
+  # set.seed(): 50 scrambling rounds, then one word per slot of the state.
+  # The first slot holds the position, which is reset, so its word is discarded.
+  s <- as.double(seed) %% word
+  for (j in seq_len(51L)) s <- (69069 * s + 1) %% word
+  state <- numeric(624L)
+  for (j in seq_len(624L)) {
+    s <- (69069 * s + 1) %% word
+    state[j] <- s
+  }
+
+  # Two uniforms per deviate, as rnorm()'s inversion takes them.
+  u <- numeric(2 * n)
+  pos <- 625L
+  for (k in seq_along(u)) {
+    if (pos > 624L) {
+      for (i in seq_len(624L)) {
+        y <- (state[i] %/% 2^31) * 2^31 + state[i %% 624L + 1L] %% 2^31
+        state[i] <- xor32(xor32(state[(i + 396L) %% 624L + 1L], y %/% 2),
+                          c(0, 2567483615)[y %% 2 + 1])
+      }
+      pos <- 1L
+    }
+    y <- state[pos]
+    pos <- pos + 1L
+    y <- xor32(y, y %/% 2048)
+    y <- xor32(y, and32((y * 128) %% word, 2636928640))
+    y <- xor32(y, and32((y * 32768) %% word, 4022730752))
+    y <- xor32(y, y %/% 262144)
+    # R's generator never returns 0: a zero word becomes half its smallest step.
+    u[k] <- if (y == 0) 1.1641532185403985e-10 else y * 2.3283064365386963e-10
+  }
+
+  big <- 134217728
+  first <- 2L * seq_len(n) - 1L
+  stats::qnorm((trunc(big * u[first]) + u[first + 1L]) / big)
+}
+
 #' Deterministic multi-start perturbations
 #'
 #' Draws the offsets that shift the starting values for every multiphase start
-#' after the first.  The draw is taken from an internally seeded stream and the
-#' ambient `.Random.seed` is restored on exit, so a fit is reproducible without
-#' `set.seed()` and never advances the caller's stream.  Both halves matter:
-#' seeding alone would still let an intervening draw change the fit, and
-#' restoring alone would leave the fit dependent on whatever the stream
-#' happened to hold when it was called.
+#' after the first.  They are the numbers `set.seed(seed); rnorm()` gives under
+#' R's default generators, computed by [.hzr_mt_normal()] without R's stream, so
+#' a fit is reproducible without `set.seed()`, does not depend on `RNGkind()`,
+#' and neither reads nor writes `.Random.seed`.
 #'
 #' @param n_starts Number of optimization starts.
 #' @param n_par Length of the free-parameter vector being perturbed.
@@ -1626,20 +1744,8 @@
   n_draw <- max(0L, as.integer(n_starts) - 1L)
   if (n_draw == 0L) return(list())
 
-  # Restore the caller's stream exactly as we found it -- including the case
-  # where the session had never drawn from it and `.Random.seed` did not
-  # exist, where leaving ours behind would make the caller's next draw follow
-  # from our seed instead of from R's own initialization.
-  if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
-    old_seed <- get(".Random.seed", envir = globalenv(), inherits = FALSE)
-    on.exit(assign(".Random.seed", old_seed, envir = globalenv()), add = TRUE)
-  } else {
-    on.exit(suppressWarnings(rm(".Random.seed", envir = globalenv())),
-            add = TRUE)
-  }
-
-  set.seed(seed)
-  lapply(seq_len(n_draw), function(i) stats::rnorm(n_par, sd = sd))
+  z <- sd * .hzr_mt_normal(seed, n_draw * n_par)
+  lapply(seq_len(n_draw), function(i) z[(i - 1L) * n_par + seq_len(n_par)])
 }
 
 
@@ -1692,6 +1798,155 @@
       )
     )
   )
+}
+
+
+#' Formula variables that the drop would pair with the wrong rows
+#'
+#' `hazard()` builds the design on the rows it keeps, in their order, so a
+#' term that reads an outside vector by position,
+#' `function(a) a + g[seq_along(a)]`, gives kept row j the value of `g[j]`
+#' rather than that of its own row (#590). This evaluates each variable of
+#' each formula -- `age`, `scale(age)`, `hf(z)`, one per entry of the terms'
+#' `variables` -- on every row in order, and again on every row with the
+#' kept rows first, in their order, and the dropped rows after them. At the
+#' kept rows the second evaluation reads what the fit reads, and the first
+#' what each row's own values give, so a variable that differs between the
+#' two is one the fit would mis-pair, and it is named. All the rows are
+#' present both times, so a term computed from the rows as a set --
+#' `scale()`, `poly()`, `ns()`, a factor -- comes out the same. This is read
+#' from behaviour, so it sees inside a function body, where the name-based
+#' check in `hazard()` cannot. A term that depends on the order of the rows,
+#' `cumsum()`, or is random, `jitter()`, is named too, unless the dropped
+#' rows are already last.
+#'
+#' A variable that cannot be evaluated on every row -- `poly()` over an NA
+#' that only a dropped row carries -- is evaluated with the dropped rows
+#' replaced by copies of the first kept row, the same in both orders. One
+#' that cannot be evaluated even so is named if it can be evaluated on the
+#' kept rows alone, as a phase design is built, since it cannot be checked;
+#' otherwise the fit fails on it itself. Each variable is
+#' evaluated on its own, so one that fails does not take the others out of
+#' the check. When only the reordered evaluation fails, the variable
+#' depends on the order of the rows and is named.
+#'
+#' Values are compared as values: a factor by its labels, so one whose
+#' levels are taken in order of appearance passes; anything else without
+#' its class, matrices column by column, numbers to a tolerance scaled to
+#' the spread of the column over both evaluations, at the kept rows only. Columns of `data` named "" are dropped first,
+#' as the fit drops them (#470). The global formula (two-sided) is read by
+#' its right-hand side.
+#'
+#' Not covered: a helper that depends on how many rows it is given --
+#' `tail(g, length(a))`, `a * mean(g[seq_along(a)])`, a test of
+#' `length(a)` -- sees `n` rows both times where the fit sees the kept
+#' ones. When the dropped rows are all last, the two orders are the same,
+#' and only such helpers can mis-pair.
+#'
+#' @param forms List of formulas. A two-sided one is the global formula.
+#' @param data The data: a data frame, or a list whose columns have `n`
+#'   rows or are scalars.
+#' @param keep Logical, length `n`: the rows that are kept.
+#' @return Character vector of offending variables; empty when none.
+#' @keywords internal
+#' @noRd
+.hzr_position_bound_columns <- function(forms, data, keep) {
+  n <- length(keep)
+  if (!any(keep) || all(keep) || !length(forms)) return(character(0))
+  data <- .hzr_drop_empty_names(data)
+  take_rows <- function(d, rows) {
+    pick <- function(v) {
+      if (NROW(v) != n) v
+      else if (is.matrix(v) || is.data.frame(v)) v[rows, , drop = FALSE]
+      else v[rows]
+    }
+    if (is.data.frame(d)) d[rows, , drop = FALSE] else lapply(d, pick)
+  }
+  # The fit's order: kept rows first, in their order. `back` returns a value
+  # computed in that order to the rows' own order.
+  order_fit <- c(which(keep), which(!keep))
+  # Dropped rows already last: the fit reads every kept row's own values,
+  # and a second evaluation would only see a random term differ.
+  if (identical(order_fit, seq_len(n))) return(character(0))
+  back <- match(seq_len(n), order_fit)
+  # The fallback: the dropped rows replaced by the first kept row.
+  patched <- take_rows(data, ifelse(keep, seq_len(n), which(keep)[1L]))
+  # One variable evaluated on `d`; NULL when it fails or does not have a
+  # value per row.
+  value <- function(expr, d, env, m = n) {
+    v <- tryCatch(suppressWarnings(eval(expr, d, env)),
+                  error = function(e) NULL)
+    if (NROW(v) == m) v
+  }
+  # Do two evaluations of a variable differ?
+  differs <- function(a, b) {
+    if (is.matrix(a) || is.matrix(b)) {
+      a <- as.matrix(a)
+      b <- as.matrix(b)
+      if (!identical(dim(a), dim(b))) return(TRUE)
+      return(any(vapply(seq_len(ncol(a)), function(j) {
+        differs(a[, j], b[, j])
+      }, logical(1))))
+    }
+    a <- if (is.factor(a)) as.character(a) else as.vector(unclass(a))
+    b <- if (is.factor(b)) as.character(b) else as.vector(unclass(b))
+    if (length(a) != length(b)) return(TRUE)
+    if (!is.numeric(a) || !is.numeric(b)) return(!identical(a, b))
+    fin <- is.finite(a) & is.finite(b)
+    if (!identical(a[!fin], b[!fin])) return(TRUE)
+    if (!any(fin)) return(FALSE)
+    spread <- diff(range(a[fin], b[fin]))
+    tol <- 1e-8 * if (spread > 0) spread else max(1, abs(a[fin]))
+    any(abs(a[fin] - b[fin]) > tol)
+  }
+  # NA when the variable cannot be evaluated on `d` at all.
+  mis_paired <- function(expr, d, env) {
+    a <- value(expr, d, env)
+    if (is.null(a)) return(NA)
+    b <- value(expr, take_rows(d, order_fit), env)
+    if (is.null(b)) return(TRUE)
+    # Compared at the kept rows only: the dropped rows are not fitted, and
+    # an outlier among them would widen the tolerance.
+    if (is.matrix(a) || is.data.frame(a)) {
+      a <- a[keep, , drop = FALSE]
+      b <- b[back, , drop = FALSE][keep, , drop = FALSE]
+    } else {
+      a <- a[keep]
+      b <- b[back][keep]
+    }
+    differs(a, b)
+  }
+  unique(unlist(lapply(forms, function(fm) {
+    env <- environment(fm)
+    # A global formula's `.` takes in the response's columns too; those are
+    # plain columns, which always follow their rows.
+    rhs <- if (length(fm) == 3L) fm[-2L] else fm
+    tt <- tryCatch(stats::terms(rhs, data = data), error = function(e) NULL)
+    if (is.null(tt)) return(character(0))
+    vars <- as.list(attr(tt, "variables"))[-1L]
+    # Only the variables a remaining term uses, interactions included: one
+    # that `- hf(age)` removed keeps its entry in `variables`, with a row of
+    # zeros in `factors`, and is not in the design.
+    fac <- attr(tt, "factors")
+    vars <- if (length(fac) && nrow(fac) == length(vars)) {
+      vars[rowSums(fac != 0) > 0]
+    } else {
+      list()
+    }
+    hit <- vapply(vars, function(expr) {
+      out <- mis_paired(expr, data, env)
+      if (is.na(out)) out <- mis_paired(expr, patched, env)
+      # Not checkable on n rows, but a phase design is built on the kept
+      # rows alone and may still succeed there: refuse rather than pass.
+      if (is.na(out)) {
+        out <- !is.null(value(expr, take_rows(data, keep), env, sum(keep)))
+      }
+      isTRUE(out)
+    }, logical(1))
+    vapply(vars[hit], function(e) {
+      paste(deparse(e, width.cutoff = 500L), collapse = " ")
+    }, character(1))
+  })))
 }
 
 
@@ -2191,7 +2446,8 @@
       time_lower = time_lower, time_upper = time_upper, x = x,
       weights = weights,
       phases = phases, covariate_counts = covariate_counts, x_list = x_list,
-      objective = objective, sanitize = sanitize
+      objective = objective, sanitize = sanitize,
+      phase_cache = list(...)$phase_cache
     )
 
     # Fallback: if gradient is all zero (e.g. at infeasible point), try
@@ -2328,15 +2584,17 @@
           time, status, phases, covariate_counts, x_list, total_events,
           weights = weights, time_lower = time_lower, details = TRUE
         )
+        # One cache for the two calls below, which share theta (#631).
+        cache <- new.env(parent = emptyenv())
         g <- gradient_fn_pre_coe(coe$theta, time, status, time_lower,
                                  time_upper, x, weights = weights,
-                                 sanitize = sanitize, ...)
+                                 sanitize = sanitize, phase_cache = cache, ...)
         # Where there was nothing to solve, c stayed where it was and does
         # not move with phi: the partial score is the whole gradient.
         if (!coe$solved) return(g)
         g_s <- gradient_fn_pre_coe(coe$theta, time, 0 * status, time_lower,
                                    time_upper, x, weights = weights,
-                                   sanitize = sanitize, ...)
+                                   sanitize = sanitize, phase_cache = cache, ...)
         g - g[fixmu_pos] * g_s / g_s[fixmu_pos]
       }
     } else {
@@ -2465,13 +2723,10 @@
   # synthetic two-phase fit in test-multiphase-reproducibility.R) before doing so.
   start_seed <- if (!is.null(control$start_seed)) control$start_seed else 3L
   control$start_seed <- NULL  # remove before passing to optim
-  # Validated against what set.seed() can actually take, and rejected rather
-  # than coerced.  Negative seeds are fine (set.seed(-1) is valid and
-  # deterministic), but a non-whole number is not: set.seed() truncates it, so
-  # 3.9 and 3 select the SAME ensemble, and a user sweeping 3.1/3.5/3.9 would
-  # believe they had tried three sets of starts having tried one.  Out of
-  # integer range, set.seed() fails with "supplied seed is not a valid integer"
-  # and never names the argument that caused it.
+  # Held to what set.seed() takes, and rejected rather than coerced.  Negative
+  # seeds are fine, but a non-whole number is not: truncating it would make 3.9
+  # and 3 select the SAME ensemble, and a user sweeping 3.1/3.5/3.9 would believe
+  # they had tried three sets of starts having tried one.
   if (length(start_seed) != 1L || !is.numeric(start_seed) ||
       !is.finite(start_seed) || start_seed != trunc(start_seed) ||
       abs(start_seed) > .Machine$integer.max) {
@@ -2539,6 +2794,7 @@
     n_starts, length(theta_start_optim), seed = start_seed
   )
 
+  warned_no_numderiv <- FALSE
   for (start_i in seq_len(n_starts)) {
     if (start_i == 1L) {
       theta_try <- theta_start_optim
@@ -2575,24 +2831,31 @@
     }
 
     result <- tryCatch(
-      .hzr_optim_generic(
-        logl_fn     = logl_fn,
-        gradient_fn = gradient_fn,
-        time        = time, status = status,
-        time_lower  = time_lower, time_upper = time_upper,
-        x           = x,
-        theta_start = theta_try,
-        weights     = weights,
-        control     = control,
-        use_bounds  = FALSE,
-        hessian_fn  = hessian_fn_mp,
-        # Under CoE too: gradient_fn carries the conserved log_mu's
-        # chain-rule term, so it is the gradient of the objective (#565).
-        gradient_exact = TRUE,
-        sign_bounded = m_free_idx,
-        # Each start is scored against the likelihood below and an
-        # infeasible one recorded in `starts` (#486).
-        mark_infeasible = FALSE
+      withCallingHandlers(
+        .hzr_optim_generic(
+          logl_fn     = logl_fn,
+          gradient_fn = gradient_fn,
+          time        = time, status = status,
+          time_lower  = time_lower, time_upper = time_upper,
+          x           = x,
+          theta_start = theta_try,
+          weights     = weights,
+          control     = control,
+          use_bounds  = FALSE,
+          hessian_fn  = hessian_fn_mp,
+          # Under CoE too: gradient_fn carries the conserved log_mu's
+          # chain-rule term, so it is the gradient of the objective (#565).
+          gradient_exact = TRUE,
+          sign_bounded = m_free_idx,
+          # Each start is scored against the likelihood below and an
+          # infeasible one recorded in `starts` (#486).
+          mark_infeasible = FALSE
+        ),
+        # The same missing package, once per fit rather than once per start.
+        hzr_no_numderiv = function(w) {
+          if (warned_no_numderiv) invokeRestart("muffleWarning")
+          warned_no_numderiv <<- TRUE
+        }
       ),
       error = function(e) e
     )
@@ -2854,15 +3117,29 @@
         }
       }
       if (!recomputed) {
-        # Fall back to the reduced (search-only) vcov, in which the conserved
-        # log_mu has no variance. Warn loudly so the understated uncertainty is
-        # visible rather than silent, and record it, so it is not only a
-        # warning that scrolled past.
+        # The reduced (search-only) vcov is no fallback (#652). It inverts the
+        # Hessian with the conserved log_mu held fixed, as if it were known,
+        # and it was taken at the start's conserved log_mu, not the re-solved
+        # one, so its SEs can be wrong in either direction. On avc it put one
+        # SE at 0.17 of its full-information value and another at 1.3. No
+        # standard errors are reported rather than wrong ones, and the reason
+        # is recorded, so it is not only a warning that scrolled past.
         warning(
           "Could not compute the full-information variance for the ",
-          "Conservation-of-Events-conserved phase 'log_mu' (", cv_reason,
-          "). Its standard error stays NA and downstream standard errors / ",
-          "confidence limits for that phase may be understated.", call. = FALSE)
+          "Conservation-of-Events fit (", .hzr_reason_or_unrecorded(cv_reason),
+          "), so no standard ",
+          "errors are reported. The search-only variance holds the conserved ",
+          "phase's 'log_mu' fixed and would misstate them.", call. = FALSE)
+        best_result$vcov  <- NA
+        best_result$rcond <- NA_real_
+        best_result$pd    <- NA
+        # The conserved log_mu is estimated, by the CoE solve, whether or not
+        # its variance could be computed: counted as fixed, a failed recompute
+        # gave an AIC 2 below the same fit with a successful one.
+        best_result$fixed_mask <- !free_unc
+        best_result$se_unavailable_reason <- paste0(
+          "Conservation-of-Events full-information variance could not be ",
+          "computed (", .hzr_reason_or_unrecorded(cv_reason), ")")
         best_result$conserved_variance_reason <- .hzr_reason_or_unrecorded(cv_reason)
       }
     }

@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # predict(type = "hazard") for multiphase models: the instantaneous additive
 # hazard h(t|x) = sum_j mu_j(x) * phi_j'(t). Single-distribution "hazard"
 # (exp(eta)) is unchanged; this covers the multiphase path added so the

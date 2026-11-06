@@ -1,0 +1,31 @@
+TemporalHazard is licensed under the GNU General Public License, version 2 or
+later. Except as listed below, it is Copyright (C) 2026 John Ehrlinger.
+
+R/likelihood-multiphase.R, the function .hzr_mt_normal()
+
+  This function reproduces, in R, the numbers that set.seed() and rnorm() give
+  under R's default generators. Its seeding, zero-word substitution and normal
+  inversion are derived from R's source, which is GPL (>= 2):
+
+    src/main/RNG.c
+    Copyright (C) 1997--2026  The R Core Team
+    Copyright (C) 1995, 1996  Robert Gentleman and Ross Ihaka
+
+    src/nmath/snorm.c
+    Copyright (C) 2000-2025 The R Core Team
+    Copyright (C) 1998   Ross Ihaka
+
+  Its generator is the Mersenne Twister, which R's doc/COPYRIGHTS records as:
+
+    Copyright (C) 1997, 1999 Makoto Matsumoto and Takuji Nishimura.
+
+  Reference: Matsumoto M, Nishimura T (1998). Mersenne Twister: a
+  623-dimensionally equidistributed uniform pseudo-random number generator. ACM
+  Transactions on Modeling and Computer Simulation, 8(1), 3-30.
+  doi:10.1145/272991.272995
+
+  The authors' current distribution and its license terms are at
+  http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/emt.html
+
+The text of the GPL is in the file COPYING in the source package, and in R's
+share/licenses directory, or at https://www.R-project.org/Licenses/.

@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # Layout variants in SAS HAZARD .lst output.
 #
 # The parsers were built against the AVC/KUL captures, which happen to print

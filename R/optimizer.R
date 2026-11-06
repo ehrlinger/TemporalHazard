@@ -539,12 +539,17 @@ NULL
     # The user-visible symptom was diag(vcov(fit)) complaining about an
     # invalid 'nrow', which is unrecognisable from the cause.
     if (!.hzr_numderiv_available()) {
-      warning("No analytic Hessian was obtained for this fit, and the ",
-              "'numDeriv' fallback is not installed, so standard errors ",
-              "cannot be computed. Install it with ",
-              "install.packages(\"numDeriv\"); note numDeriv is a Suggests ",
-              "dependency, so install.packages() and install_github() do ",
-              "not pull it by default.", call. = FALSE)
+      warning(structure(
+        class = c("hzr_no_numderiv", "warning", "condition"),
+        list(call = NULL, message = paste0(
+          "No analytic Hessian was obtained for this fit, and the ",
+          "'numDeriv' fallback is not installed, so standard errors ",
+          "cannot be computed. Install it with ",
+          "install.packages(\"numDeriv\"); note numDeriv is a Suggests ",
+          "dependency, so install.packages() and install_github() do ",
+          "not pull it by default."
+        ))
+      ))
       se_reason <- "numDeriv not installed and no analytic Hessian"
     } else {
       hess_result <- tryCatch(

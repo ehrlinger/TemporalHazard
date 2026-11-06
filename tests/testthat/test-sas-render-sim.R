@@ -477,7 +477,7 @@ test_that("render_sim resolves stats without consulting the search path", {
 })
 
 test_that("sas_synth_data() stops on a status chunk it cannot read (#340)", {
-  # The oracle found the dataset through the status chunk's transform(). When
+  # The oracle finds the dataset through the status chunk's with(). When
   # that chunk changed shape it found nothing, silently, and two corpus jobs
   # then failed at an unrelated check. It must now say which chunk it could
   # not read.
@@ -487,7 +487,7 @@ test_that("sas_synth_data() stops on a status chunk it cannot read (#340)", {
   # Both legitimate shapes are read.
   ok <- list(calls = list(status = quote({
     if (FALSE) stop()
-    D <- transform(D, .hzr_status = ifelse(DEAD > 0, 1, 0))
+    D[[".hzr_status"]] <- with(D, ifelse(DEAD > 0, 1, 0))
   })))
   expect_true("DEAD" %in% names(sas_synth_data(ok)$D))
   bare <- list(calls = list(status = quote(.hzr_status <- ifelse(DEAD > 0, 1, 0))))

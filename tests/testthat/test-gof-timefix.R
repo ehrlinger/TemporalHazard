@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # #286: survfit()'s timefix merges near-tied exit times into one
 # Kaplan-Meier time. hzr_gof() matched each subject's raw exit time to the
 # grid, so a subject merged onto a neighbour's time matched no point on the

@@ -1,3 +1,4 @@
+ACM
 AVC
 Aalen
 BCH
@@ -13,16 +14,17 @@ CMD
 CoE
 Codecov
 Commissurotomy
+dimensionally
 DSL
 Decile
 EL
+equidistributed
 GOF
 Gompertz
 HAZARD's
 HAZPRED
 HMDEATH
 Hessians
-HVTI
 ICENSOR
 Interventricular
 Ishwaran
@@ -33,6 +35,8 @@ Kalbfleisch
 Kaplan
 LOESS
 Leuven
+Matsumoto
+Mersenne
 MSURVIV
 Machler
 Malalignment
@@ -40,6 +44,7 @@ Multiphase
 Multivariable
 Mächler
 NCHS
+Nishimura
 NYHA
 Naftel
 Nelder
@@ -47,6 +52,7 @@ OMC
 PARMS
 PEXPECT
 PROC
+pseudo
 PVE
 Parides
 Pre
@@ -88,11 +94,13 @@ bigl
 bigr
 bioprosthesis
 biostatisticians
+biostatistics
 boldsymbol
 callout
 cancelling
 cardiogenic
 cardiothoracic
+cardioversion
 cdf
 cdot
 centre
@@ -211,6 +219,7 @@ reintervention
 reoperation
 reparameterization
 replicate's
+resolvers
 roadmap
 rollout
 roxygen

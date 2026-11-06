@@ -36,6 +36,10 @@ articles:
       - fitting-hazard-models
       - prediction-visualization
       - inference-diagnostics
+  - title: Project status
+    navbar: Status
+    contents:
+      - articles/feature-matrix
 
 reference:
   - title: Hazard model

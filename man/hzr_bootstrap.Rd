@@ -20,6 +20,7 @@ hzr_bootstrap(
   max_move = 4L,
   force_in = character(),
   force_out = character(),
+  id = NULL,
   ...
 )
 
@@ -34,11 +35,14 @@ hzr_bootstrap(
 replicate (default 1.0 for full bootstrap; < 1 for bagging).}
 
 \item{seed}{Optional integer random seed for reproducibility. When
-supplied, the resampling runs from that seed and the caller's RNG
-state is restored on exit, so the call neither resets nor advances
-the caller's stream. Pass \code{NULL} (the default) to resample from the
-caller's current RNG state instead, which the bootstrap then
-advances as it draws.}
+supplied, the call runs \code{set.seed(seed)} and resamples from there, so
+the same seed gives the same replicates. This sets the session's
+random number stream, as \code{set.seed()} would: after the call it
+continues from where the bootstrap's draws left it, not from where it
+was before. To keep a stream of your own, save \code{.Random.seed} before
+the call and restore it after, or use \code{withr::with_preserve_seed()}.
+Pass \code{NULL} (the default) to resample from the caller's current
+stream instead, which the bootstrap then advances as it draws.}
 
 \item{verbose}{Logical; if \code{TRUE}, display a text progress bar over the
 \code{n_boot} replicates (via \code{\link[utils:txtProgressBar]{utils::txtProgressBar()}}).}
@@ -80,6 +84,22 @@ suggested \pkg{numDeriv} package and errors if it is not installed; a
 multiphase fit uses the analytic Hessian instead and does not need it.
 See \code{\link[=hzr_stepwise]{hzr_stepwise()}}.}
 
+\item{id}{Optional patient identifier, for data with more than one row per
+patient, such as time-varying covariates in counting-process form
+(\code{Surv(start, stop, event)} or \verb{time_lower =}). Either the name of a
+column of the fit's \code{data}, or a vector with one value per row the fit
+kept. Prefer the column name: when \code{hazard()} drops rows, such as those
+at time 0, a vector built from the original data is the wrong length,
+and a column is looked up in the rows the fit kept. When
+given, each replicate draws patients with replacement and keeps every row
+of each patient drawn, so a patient drawn twice contributes all of its
+rows twice, and \code{fraction} counts patients rather than rows. This is SAS
+\verb{\%HAZBOOT} with \verb{_TVC=1, _IDVAR=}. The default, \code{NULL}, resamples rows,
+which treats each row as a patient: it splits a patient's segments across
+replicates when they are not. A fit with entry times and no \code{id} draws a
+warning saying so, because the rows may not be patients; with one row per
+patient (plain left truncation), the warning can be ignored.}
+
 \item{...}{Additional arguments forwarded to \code{\link[=hzr_stepwise]{hzr_stepwise()}} (e.g.
 \code{control = list(maxit = 500)}, which every \code{dist} reads) when \code{scope}
 is supplied. Only \code{control} and an \code{objective} equal to the fit's are
@@ -103,14 +123,16 @@ and the other statistics are conditional on selection. A free
 parameter whose \code{sd} is 0, to within rounding, across two or more
 replicates draws a warning naming it: the replicates did not
 re-estimate it. Parameters the fit holds fixed are exempt: those held
-by \code{hzr_phase(fixed = )}, shapes a constraint derives, and a conserved
-\code{log_mu}.}
+by \code{hzr_phase(fixed = )} and shapes a constraint derives. A conserved
+\code{log_mu} is not exempt: it is re-solved in every replicate.}
 \item{n_success}{Number of successfully converged replicates.}
 \item{n_failed}{Number of replicates that failed: the refit stopped with
 an error, returned something other than a fit, returned a non-finite
 objective or one at the optimizer's -1e10 sentinel (which stands in for
-a likelihood that could not be evaluated), did not converge, or
-returned a finite objective but no parameter estimates. A
+a likelihood that could not be evaluated), did not converge,
+returned a finite objective but no parameter estimates, or reported
+convergence on a likelihood that is flat or still rising past its
+estimate. A
 single-distribution refit that
 ends where the likelihood is not defined reports no objective, so it
 fails as a non-finite objective, not at the sentinel (#486).}
@@ -126,7 +148,19 @@ defined, #486), or
 (a refit whose reported objective is still the sentinel), or
 \code{"refit did not converge (converged = FALSE)"} (a refit that reports
 \code{converged = FALSE}, including one stopped on a score that is not
-finite, #518).
+finite, #518), or
+\code{"likelihood flat or still rising (no unique finite maximum)"} (a
+refit that reports convergence where stepping its estimates further
+out, along a coefficient or the direction its standard errors or
+Hessian say is flattest, does not lower the log-likelihood. Under
+separation in the resample an estimate is at infinity; with
+collinear columns the estimates are finite but not determined. Such
+replicates also draw a warning naming their count, #654), or, in
+select mode,
+\code{"base refit did not converge"} (a base refit with a non-finite
+objective) or \code{"base refit did not converge (converged = FALSE)"} (a
+base refit that reports \code{converged = FALSE}: the screen measures its
+candidates against the base, so the replicate is not screened).
 It sums to \code{n_failed}, and
 is an empty named integer vector, never \code{NULL}, when none failed. When
 every replicate fails, \code{hzr_bootstrap()} also warns, naming the most
@@ -204,6 +238,10 @@ A replicate in which any fit (the base refit, a stepwise refit or the final
 fit) may not be a maximum, by the rule \code{\link[=hazard]{hazard()}} warns on with class
 \code{"hzr_possible_false_maximum"}, is counted, and \code{hzr_bootstrap()} warns
 once with that count. Such replicates are kept in the pooled results.
+Two more kinds of replicate are counted, warned about once and kept in the
+same way: one whose base refit or final fit stopped on \code{nlm()} code 4 or 5
+and failed the relative-gradient test, and, in selection mode, one whose
+screen had a candidate refit fail, so that candidate was never tested.
 }
 \section{Selection mode is experimental}{
 

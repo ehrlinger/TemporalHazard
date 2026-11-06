@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # A Weibull scale mu the double range cannot hold (#566).
 #
 # The model depends on mu only through nu * log(mu). With a covariate far from

@@ -252,6 +252,11 @@ test_that("the bootstrap aggregates Wald fallbacks instead of dropping them", {
   # bootstrap is where a wholesale substitution matters most, since these
   # entries drive the pooled selection frequencies.
   D <- planted()
+  # The planted data are exponential, so in every selected replicate the
+  # early phase vanishes (log_mu near -23) and the replicate is dropped as
+  # having no finite maximum (#654), leaving no fallback to aggregate. That
+  # check is tested in test-bootstrap-monotone.R; here it is off.
+  local_mocked_bindings(.hzr_monotone_likelihood = function(...) FALSE)
   # No `data =`: hzr_bootstrap() supplies the resampled frame itself, and
   # passing one collides with it through `...`.
   boot <- suppressWarnings(hzr_bootstrap(

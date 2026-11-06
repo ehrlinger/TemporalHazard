@@ -95,16 +95,25 @@ data-dependent term such as \code{scale(age)} uses the retained rows. Two
 inputs are refused because they cannot follow the rows: a response
 whose values change once the rows are dropped, such as
 \code{Surv(time - min(time), status)}, and a formula that reads a per-row
-value from outside \code{data}. That check reads the formula's own
-variables, so it cannot see inside a function: a helper that indexes a
-vector from outside \code{data} by position, such as
-\code{function(a) a + g[seq_along(a)]}, sees only the retained rows and pairs
-them with the first elements of \code{g}, so every row after the first
-dropped one is paired with the wrong value. Only the drop itself is
-warned about; the mis-pairing is not.
-\code{stats::lm(subset = )} is not a guide here: it evaluates the terms on
-every row and subsets afterwards, so the same helper pairs correctly
-there. Put such a vector in \code{data}, where it is dropped with its rows.
+value from outside \code{data}. The second is read two ways. A variable
+named in the formula is refused when it is not a column of \code{data}. A
+helper that reads an outside vector inside its body, such as
+\code{function(a) a + g[seq_along(a)]}, names no such variable, and on the
+retained rows would pair them with the first elements of \code{g}. So the
+formula's variables are evaluated on every row in order, and again with
+the retained rows first, in their order, as the fit sees them; a
+variable that then gives a retained row a different value is refused
+(#590). Both times every row is present, so \code{scale()}, \code{poly()},
+\code{ns()} and factors pass, including a factor whose levels are taken in
+order of appearance. A term that cannot be evaluated on the dropped
+rows, such as \code{poly()} over an NA only they carry, is evaluated with
+those rows replaced by a copy of a retained one. A term that depends on
+the order of the rows, such as \code{cumsum(age)}, or is random, such as
+\code{jitter(age)}, is refused unless the dropped rows are the last ones. A
+helper that depends on how many rows it is given, such as
+\code{tail(g, length(a))} or \code{a * mean(g[seq_along(a)])}, is not caught,
+because both evaluations see every row. Put such a vector in \code{data}, where it is
+dropped with its rows.
 A caller-supplied row-aligned input whose row count differs from
 \code{time}'s is refused before any row is dropped: \code{x} and \code{weights} on the
 \verb{time =}/\verb{status =} interface, and \code{data} wherever a formula reads it row
@@ -214,15 +223,18 @@ An object of class \code{hazard}, a named list with components:
 \code{time_windows}, \code{phases}),
 \code{data} (input data: \code{time}, \code{status}, \code{x},
 \code{weights}, etc.),
-\code{fit} (optimisation results: \code{theta}, \code{objective},
-\code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message},
+\code{fit} (optimisation results: \code{theta}, \code{objective}, the
+maximized log-likelihood, so larger is better, or PROC HAZARD's objective
+under \code{objective = "sas"} (\code{summary()} reports which, as its
+\code{objective}); \code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message},
 and \code{rel_gradient}, \code{rel_gradient_reason} and
 \code{polish_code}, the SAS/C acceptance
 test described under "Convergence";
 all \code{NULL} when \code{fit = FALSE}; multiphase fits add
 \code{starts}, one row per optimisation start with its \code{status}
 (\code{"ok"}, \code{"nonconverged"}, \code{"infeasible"},
-\code{"nonfinite"} or \code{"error"}), \code{objective} (\code{NA}
+\code{"nonfinite"} or \code{"error"}), \code{objective} (on the same
+scale as the fit's, so the best start has the largest; \code{NA}
 unless the start reached a point where the likelihood is defined, and
 recorded as the optimizer returned it, before any Conservation of Events
 adjustment to the conserved phase's scale), \code{convergence} (the
@@ -240,11 +252,14 @@ single parameter carries the direction on its own, the list has one
 \code{params} entry, \code{single = TRUE}, its \code{estimate}, and
 \code{correlation = NA}, and \code{se_metric}, its standard error on
 the log scale; only a g3 shape, \code{gamma}, \code{alpha} or
-\code{eta}, is named this way);
+\code{eta}, or a multiphase phase's \code{log_mu}, \code{log_t_half}
+or \code{log_tau}, is named this way, the last three when their
+standard error exceeds 10 log units, and with \code{weights = NA});
 \code{NULL} when the fit was examined and is well identified; and
 \code{NA} when the check could not run because no usable Hessian was
 available, which includes an unfitted object, an install without
-the suggested \pkg{numDeriv}, and an ill-conditioned fit in which an
+the suggested \pkg{numDeriv}, a Hessian that is not positive-definite
+(unless a ridge was found, which is reported), and an ill-conditioned fit in which an
 estimated parameter has no finite variance and no ridge was found among
 the others, since that parameter was not examined. Test with \code{is.list(fit$fit$weak)},
 not \code{!is.null()}: the \code{NA} case has not been examined and
@@ -326,9 +341,9 @@ with no iterations is its starting values, not an estimate; to
 evaluate a model at parameters you supply, use \code{\link[=hzr_evaluate]{hzr_evaluate()}}.
 \item \code{n_starts}: Number of optimization starts for multiphase fits (default 5).
 Each start after the first offsets the initial values. The offsets are
-drawn from an internally seeded stream, so a multiphase fit is
-reproducible without \code{set.seed()} and does not advance the caller's RNG
-stream.
+computed by the package without using R's random number stream, so a
+multiphase fit is reproducible without \code{set.seed()} and neither reads nor
+changes that stream.
 \item \code{start_seed}: Seed selecting the ensemble of multi-start offsets
 (default 3). Any whole number within integer range, negative included.
 Fits are reproducible at any value; vary it to probe a different set of
@@ -362,8 +377,9 @@ bounds; the saturated warning says so where such points exist, rather
 than claiming the likelihood is unchanged (#228). The measured shares are
 kept on the fit as \code{fit$fit$phase_share}. Raise it to catch marginal
 phases, set it to 0 to silence the check.
-\item \code{reltol}: Relative convergence tolerance on the objective, the negative
-log-likelihood (default 1e-5). BFGS stops when an iteration reduces it by
+\item \code{reltol}: Relative convergence tolerance on the objective the optimizer
+minimizes, the negative log-likelihood (default 1e-5). The stored
+\code{fit$fit$objective} has the opposite sign (see Value). BFGS stops when an iteration reduces it by
 less than \verb{reltol * (|objective| + reltol)}, so the stopping gap grows
 with the size of the log-likelihood: about 0.0024 at a log-likelihood of
 -240. On a flat surface plain BFGS can stop that far short of the optimum

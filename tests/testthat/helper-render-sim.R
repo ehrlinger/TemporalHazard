@@ -135,29 +135,29 @@ sas_synth_data <- function(job, n = 24L) {
     rhs <- .sas_strip_assign(job$calls[[k]])
     if (grepl("^status(_[0-9]+)?$", nms[[k]])) {
       # ICENSOR hoists status into its own chunk, derived into the dataset
-      # with transform(<data>, .hzr_status = .) so hazard()'s data mask
-      # cannot shadow it; with no DATA= it is a bare local binding.
+      # with <data>[[".hzr_status"]] <- with(<data>, .) so hazard()'s data
+      # mask cannot shadow it; with no DATA= it is a bare local binding.
       # A DATA= job's status chunk is a block when it first checks that the
-      # dataset has every phase variable (#340 item 9); the transform() is its
-      # last expression.
+      # dataset has every phase variable (#340 item 9), or derives more than
+      # one column; a column assignment is its last expression.
       last <- job$calls[[k]]
       if (is.call(last) && identical(last[[1L]], as.name("{"))) {
         last <- last[[length(last)]]
       }
-      # Only two shapes are legitimate: `<data> <- transform(<data>, ...)`,
+      # Only two shapes are legitimate: `<data>[[<col>]] <- with(<data>, ...)`,
       # or a bare `.hzr_status <- ...` for a job with no DATA=. Anything else
       # used to fall through to "no dataset", and the synthetic columns went
       # nowhere, surfacing two steps later as an unrelated failure. Say so.
       no_data <- is.call(last) && identical(last[[1L]], as.name("<-")) &&
         identical(last[[2L]], as.name(".hzr_status"))
-      if (identical(.sas_head(last), "transform")) {
+      if (identical(.sas_head(last), "with")) {
         d <- as.character(.sas_strip_assign(last)[[2L]])
       } else if (no_data) {
         d <- ""
       } else {
         stop("sas_synth_data(): cannot find the dataset in status chunk '",
-             nms[[k]], "'; its last expression is neither `<data> <- ",
-             "transform(<data>, ...)` nor `.hzr_status <- ...`.",
+             nms[[k]], "'; its last expression is neither `<data>[[<col>]] ",
+             "<- with(<data>, ...)` nor `.hzr_status <- ...`.",
              call. = FALSE)
       }
       add(d, "status", .sas_syms(rhs))

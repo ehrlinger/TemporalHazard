@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # The score criterion refits a candidate it cannot score and tests it by Wald,
 # but only for the reasons in .hzr_score_fallback_reasons. Two reasons were
 # left out as "no refit can make those candidates testable", and that is wrong
@@ -146,8 +150,8 @@ test_that("the information fault itself, at its source, is rescued (#570)", {
   # reason by its own guard.
   orig <- .hzr_score_information_expanded
   local_mocked_bindings(
-    .hzr_score_information_expanded = function(current, exp_) {
-      info <- orig(current, exp_)
+    .hzr_score_information_expanded = function(current, exp_, ...) {
+      info <- orig(current, exp_, ...)
       if (!is.null(info)) info[exp_$beta_idx, exp_$beta_idx] <- -1e-3
       info
     }

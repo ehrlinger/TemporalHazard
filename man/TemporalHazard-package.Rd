@@ -136,5 +136,12 @@ Authors:
   \item John Ehrlinger \email{john.ehrlinger@gmail.com} [copyright holder]
 }
 
+Other contributors:
+\itemize{
+  \item R Core Team (seeding and inversion in .hzr_mt_normal()) [copyright holder]
+  \item Makoto Matsumoto (Mersenne Twister in .hzr_mt_normal()) [copyright holder]
+  \item Takuji Nishimura (Mersenne Twister in .hzr_mt_normal()) [copyright holder]
+}
+
 }
 \keyword{internal}

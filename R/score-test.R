@@ -259,9 +259,20 @@
 #' the score criterion exists to avoid. It fires only where the analytic form
 #' is unavailable, and slower is the correct trade against selecting nothing.
 #'
+#' `positions` limits the differentiation to the parameters a caller reads.
+#' A block of second partials taken with the other parameters held fixed is
+#' that block of the full Hessian, so nothing it returns changes. What
+#' changes is that a parameter the caller never reads can no longer void it:
+#' a shape fixed on its boundary (`nu = 0` in a PROC HAZARD early phase) has
+#' an infinite negative log-likelihood one step below, and that one row made
+#' the whole matrix non-finite. Every candidate then scored `NA` as
+#' `nuisance_singular` and the screen ran on Wald refits instead. Entries
+#' outside `positions` are `NA`.
+#'
 #' @noRd
 .hzr_score_multiphase_hessian <- function(current, theta, phases,
-                                           covariate_counts, x_list) {
+                                           covariate_counts, x_list,
+                                           positions = seq_along(theta)) {
   if (!requireNamespace("numDeriv", quietly = TRUE)) {
     # Returning NULL here would NA every candidate and make stepwise report
     # nothing significant -- a plausible-looking wrong answer.
@@ -283,11 +294,18 @@
       objective = .hzr_fit_objective(current)
     )
   }
-  h <- .hzr_score_try(.hzr_numeric_hessian(nll, theta))
-  if (is.null(h) || !is.matrix(h) || nrow(h) != length(theta) ||
-        !all(is.finite(h))) {
+  sub_nll <- function(p) {
+    par <- theta
+    par[positions] <- p
+    nll(par)
+  }
+  blk <- .hzr_score_try(.hzr_numeric_hessian(sub_nll, theta[positions]))
+  k <- length(positions)
+  if (is.null(blk) || !is.matrix(blk) || nrow(blk) != k || !all(is.finite(blk))) {
     return(NULL)
   }
+  h <- matrix(NA_real_, length(theta), length(theta))
+  h[positions, positions] <- blk
   # Mirror .hzr_hessian_multiphase(), which names from `theta`, so the two are
   # interchangeable to a caller. `theta` is unnamed on an expanded model, and
   # this then yields NULL dimnames there -- as the analytic path also does.
@@ -297,8 +315,12 @@
 
 #' Observed information (Hessian of the negative log-likelihood)
 #'
+#' `positions` is passed to the numeric fallback; the analytic Hessian is
+#' always the full matrix.
+#'
 #' @noRd
-.hzr_score_information <- function(current, theta) {
+.hzr_score_information <- function(current, theta,
+                                   positions = seq_along(theta)) {
   d <- current$data
   if (current$spec$dist != "multiphase") {
     return(.hzr_score_single_hessian(current, d$x, theta))
@@ -318,7 +340,8 @@
     return(h)
   }
   .hzr_score_multiphase_hessian(
-    current, theta, phases, current$fit$covariate_counts, current$fit$x_list
+    current, theta, phases, current$fit$covariate_counts, current$fit$x_list,
+    positions = positions
   )
 }
 
@@ -336,7 +359,9 @@
     # No nuisance parameters exist, so there is nothing to adjust for.
     return(list(inv = NULL, idx = idx, ok = TRUE))
   }
-  info <- .hzr_score_information(current, theta = current$fit$theta)
+  # Only the nuisance block is read, so only it is differentiated (#712).
+  info <- .hzr_score_information(current, theta = current$fit$theta,
+                                 positions = idx)
   if (is.null(info)) {
     return(list(inv = NULL, idx = idx, ok = FALSE))
   }
@@ -617,8 +642,12 @@
 
 #' Observed information of the expanded model at (theta_hat, beta = 0)
 #'
+#' `positions` is passed to the numeric fallback, as in
+#' `.hzr_score_information()`.
+#'
 #' @noRd
-.hzr_score_information_expanded <- function(current, exp_) {
+.hzr_score_information_expanded <- function(current, exp_,
+                                            positions = seq_along(exp_$theta)) {
   d <- current$data
   if (current$spec$dist != "multiphase") {
     return(.hzr_score_single_hessian(current, exp_$x, exp_$theta))
@@ -637,7 +666,8 @@
     return(h)
   }
   .hzr_score_multiphase_hessian(
-    current, exp_$theta, exp_$phases, exp_$covariate_counts, exp_$x_list
+    current, exp_$theta, exp_$phases, exp_$covariate_counts, exp_$x_list,
+    positions = positions
   )
 }
 
@@ -740,7 +770,9 @@
   }
   xl <- current$fit$x_list
   inputs <- c(
-    list(status = input(d$status, .hzr_status_column(call)),
+    list(status = input(d$status, .hzr_status_column(
+      call, .hzr_is_formula_fit(current, is.null(call$status))
+    )),
          `time_lower` = input(d$time_lower, .hzr_call_column(call$time_lower)),
          `time_upper` = input(d$time_upper, .hzr_call_column(call$time_upper)),
          weights = input(d$weights, .hzr_call_column(call$weights))),
@@ -788,10 +820,12 @@
 #' `Surv(time, event)` on the formula interface's left-hand side.
 #'
 #' @param call The fit's stored call.
+#' @param formula_fit Whether the fit took the formula interface; a
+#'   `status =` beside a formula is not the one used (#432).
 #' @return A single string, `NA` when no column is named.
 #' @noRd
-.hzr_status_column <- function(call) {
-  if (!is.null(call$status)) return(.hzr_call_column(call$status))
+.hzr_status_column <- function(call, formula_fit = is.null(call$status)) {
+  if (!formula_fit) return(.hzr_call_column(call$status))
   f <- call$formula
   if (!is.call(f) || !identical(f[[1L]], as.name("~")) || length(f) != 3L) {
     return(NA_character_)
@@ -905,12 +939,13 @@
     # calls it. Every other criterion refits through .hzr_refit_with_scope(),
     # and that pairs `data`, read by position, with per-row vectors stored
     # on the fit: `time`, `status`, `time_lower` and `time_upper` on the
-    # vector interface (which it keys on the same `call$formula`), and
+    # vector interface (which it keys on the same interface test), and
     # `weights` on both. Its other stored inputs, `time_windows`, the phase
     # specs and the objective, are not per row. A formula fit with no stored
     # weights rebuilds every per-row input from `data`, so it alone is
     # consistent with any row order.
-    stored_rows <- is.null(current$call$formula) ||
+    stored_rows <- !.hzr_is_formula_fit(current,
+                                        !is.null(current$call$formula)) ||
       !is.null(current$data$weights)
     if (stored_rows) {
       moved <- .hzr_score_rows_moved(current, data)
@@ -1100,9 +1135,10 @@
   # the score can test; saying `non_numeric` described a column (#449).
   if (is.na(var)) return(na_result("not_single_column"))
   xcand <- .hzr_candidate_numeric(data[[var]])
-  if (is.null(xcand) || anyNA(xcand)) {
-    return(na_result("non_numeric"))
-  }
+  if (is.null(xcand)) return(na_result("non_numeric"))
+  # A numeric column with NA on a fitted row has no score. Reported as
+  # `non_numeric`, it was declined with no warning from a completed run (#686).
+  if (anyNA(xcand)) return(na_result("missing_values"))
   s <- stats::sd(xcand)
   if (!is.finite(s) || s == 0) {
     return(na_result("constant"))
@@ -1117,7 +1153,12 @@
   if (!is.null(exp_$reason)) return(na_result(exp_$reason))
 
   grad <- .hzr_score_gradient(current, exp_)
-  info <- .hzr_score_information_expanded(current, exp_)
+  # The candidate's row is read against itself and the nuisance positions;
+  # nothing else is, so nothing else is differentiated (#712).
+  info <- .hzr_score_information_expanded(
+    current, exp_,
+    positions = c(exp_$theta_idx[nuisance$idx], exp_$beta_idx)
+  )
   if (is.null(grad) || is.null(info)) return(na_result("no_information"))
 
   b <- exp_$beta_idx
@@ -1263,19 +1304,21 @@
 #
 # Still kept narrow. The reasons that describe the candidate's COLUMN, or a
 # design hazard() would refuse -- collinear, constant, non_numeric,
-# not_single_column, duplicate_column, not_expandable -- are NOT here: no
-# refit can make those candidates testable, and paying one per degenerate
-# candidate would give back the whole speed advantage the score criterion
-# exists for. no_information and nonfinite are not here either. They report
-# a gradient or information that could not be computed for the expanded
-# model, and whether a refit rescues them has not been measured (#577).
+# missing_values, not_single_column, duplicate_column, not_expandable -- are
+# NOT here: no refit can make those candidates testable, and paying one per
+# degenerate candidate would give back the whole speed advantage the score
+# criterion exists for. no_information and nonfinite are not here either. They
+# report a gradient or information that could not be computed for the
+# expanded model, and whether a refit rescues them has not been measured
+# (#577).
 #
 # The cost: nuisance_singular refits every candidate at its step that reaches
 # the nuisance check, which is what `criterion = "wald"` pays at every step.
 # .hzr_score_q() returns that reason BEFORE it expands the candidate, so at
 # such a step a collinear, duplicate_column or not_expandable candidate is
 # refitted too, and its refit fails or yields no variance; only constant,
-# non_numeric and not_single_column are screened out ahead of it.
+# non_numeric, missing_values and not_single_column are screened out ahead of
+# it.
 .hzr_score_fallback_reasons <- c("information_indefinite",
                                  "coefficient_diverging",
                                  "nuisance_singular",
@@ -1327,7 +1370,12 @@
     ),
     collinear = "the candidate was collinear with the current model",
     constant  = "the candidate column was constant",
-    non_numeric = "the candidate column was not numeric, or held NA",
+    non_numeric = "the candidate column was not numeric",
+    missing_values = paste(
+      "the candidate column holds a missing value on a row the model was",
+      "fitted on, so its score cannot be computed. Remove or impute those",
+      "rows and fit the base model on the same data"
+    ),
     not_single_column = paste(
       "the candidate is a term, such as an interaction, and not a single",
       "column of `data`, which is all the score criterion can test.",

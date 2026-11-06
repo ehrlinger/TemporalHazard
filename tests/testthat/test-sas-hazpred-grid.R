@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # #494: a PROC HAZPRED grid is the job's DATA steps, not the first DO loop.
 #
 # PROC HAZPRED predicts at every row of its DATA= dataset, reading the time
@@ -501,5 +505,751 @@ test_that("hp.death.AVC.hm1 and hm2 grids match SAS's listing (#494)", {
     expect_equal(g$time, g$MONTHS, info = job_name)
     # The log grid is there too: 101 rows for each design row.
     expect_equal(sum(g$DIGITAL == 0), 202L, info = job_name)
+  }
+})
+
+# Macro scope (1.2.13 release review). A %MACRO ... %MEND body is a
+# definition: its DATA steps run where the macro is called, not where they
+# stand. And a call this cannot read, between the grid's DATA step and the
+# PROC HAZPRED, may rewrite the grid.
+fit_macro_grid <- c(
+  "%HAZARD( PROC HAZARD DATA=AVC OUTHAZ=OUTEST; TIME INT_DEAD; EVENT DEAD;",
+  "PARMS MUE=0.3504743 THALF=0.1905077 NU=1.437416 M=1 FIXM MUC=4.391673E-07;",
+  "EARLY AGE; );",
+  "DATA PRED; AGE=50; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;"
+)
+hazpred_macro_grid <- "%HAZPRED( PROC HAZPRED DATA=PRED INHAZ=OUTEST OUT=OUT; TIME INT_DEAD; );"
+macro_rows <- function(job) job$untranslated[grepl("^%", job$untranslated$construct), ]
+
+test_that("a DATA step inside a macro that is never called is not the grid", {
+  job <- translate_494(c(
+    fit_macro_grid,
+    "%MACRO ALTGRID; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+    "%MEND ALTGRID;",
+    hazpred_macro_grid
+  ))
+  g <- grid_494(job)
+  # SAS never runs ALTGRID, so it predicts at AGE = 50 (main emitted 70).
+  expect_equal(g$AGE, c(50, 50, 50))
+  expect_equal(g$time, c(1, 2, 3))
+  expect_equal(nrow(macro_rows(job)), 0L)
+})
+
+test_that("calling a macro whose body writes the grid refuses the grid", {
+  job <- translate_494(c(
+    fit_macro_grid,
+    "%MACRO ALTGRID; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+    "%MEND ALTGRID;",
+    "%ALTGRID;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "PRED is written by %ALTGRID", fixed = TRUE)
+})
+
+test_that("a call runs the definition completed before it, not the last one (#651)", {
+  # SAS compiles a macro at %MEND, and a second %MACRO SW replaces it from
+  # there on. Main read every call against the last body.
+  writes <- "%MACRO SW; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN; %MEND SW;"
+  reads <- "%MACRO SW; OPTIONS LS=80; %MEND SW;"
+  # The call runs the body that writes PRED: SAS predicts at AGE = 70. Main
+  # emitted the AGE = 50 grid with no row.
+  job <- translate_494(c(fit_macro_grid, writes, "%SW;", reads, hazpred_macro_grid))
+  expect_match(refused_494(job), "PRED is written by %SW", fixed = TRUE)
+  # Reversed, the call runs the body that only sets an option, so the grid
+  # is SAS's AGE = 50. Main refused it over a body defined after the call.
+  job <- translate_494(c(fit_macro_grid, reads, "%SW;", writes, hazpred_macro_grid))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+  expect_equal(nrow(job$untranslated), 0L)
+  # A call before any definition is not resolved by SAS, so it is a macro
+  # this file does not define at that point.
+  job <- translate_494(c(fit_macro_grid, "%SW;", writes, hazpred_macro_grid))
+  expect_match(refused_494(job), "calls a macro this file does not define",
+               fixed = TRUE)
+  # With two definitions before the call, the later one runs.
+  job <- translate_494(c(fit_macro_grid, writes, reads, "%SW;", hazpred_macro_grid))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+  job <- translate_494(c(fit_macro_grid, reads, writes, "%SW;", hazpred_macro_grid))
+  expect_match(refused_494(job), "PRED is written by %SW", fixed = TRUE)
+})
+
+test_that("a macro defined inside another macro refuses the grid (#651 review)", {
+  # SAS compiles an inner definition only when the outer macro runs. Each
+  # job below emitted the AGE = 50 grid with no row; SAS predicts at 70.
+  writes <- "%MACRO SW; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN; %MEND SW;"
+  jobs <- list(
+    # The outer macro is never called, so the first SW still stands.
+    never_run = c(writes, "%MACRO A; %MACRO SW; OPTIONS LS=80; %MEND SW; %MEND A;",
+                  fit_macro_grid, "%SW;", hazpred_macro_grid),
+    # %A redefines SW as the writer before the grid's step.
+    run_first = c("%MACRO A;", writes, "%MEND A;",
+                  "%MACRO SW; OPTIONS LS=80; %MEND SW;", "%A;",
+                  fit_macro_grid, "%SW;", hazpred_macro_grid),
+    # SW writes PRED, then redefines itself.
+    self = c(paste("%MACRO SW; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+                   "%MACRO SW; OPTIONS LS=80; %MEND SW; %MEND SW;"),
+             fit_macro_grid, "%SW;", hazpred_macro_grid)
+  )
+  for (nm in names(jobs)) {
+    job <- translate_494(jobs[[nm]])
+    expect_match(refused_494(job), "defined inside another macro", fixed = TRUE,
+                 info = nm)
+    expect_false(any(grepl("^grid", names(job$calls))), info = nm)
+  }
+})
+
+test_that("a %MACRO inside a call's quoted argument is not a definition (#678, Codex)", {
+  # %NRSTR masks the semicolons and the %MACRO, and %EMPTY consumes the
+  # text, so no SW is defined there and %SW runs the first, PRED-writing
+  # body: SAS predicts at AGE = 70. Read as a definition, the quoted SW was
+  # the one completed before the call, and the AGE = 50 grid was emitted
+  # with no row.
+  writes <- "%MACRO SW; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN; %MEND SW;"
+  job <- translate_494(c(
+    writes, "%MACRO EMPTY(TEXT); %MEND EMPTY;",
+    "%EMPTY(%NRSTR(ignored; %MACRO SW; OPTIONS LS=80; %MEND SW;));",
+    fit_macro_grid, "%SW;", writes, hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "PRED is written by %SW", fixed = TRUE)
+  expect_false(any(grepl("^grid", names(job$calls))))
+})
+
+test_that("a nested macro whose definition sets OBS= refuses, even before the grid (#678 review)", {
+  # A call before the grid's first step keeps the grid with a row, unless
+  # what it runs is unread. SW sets OBS=2 and then redefines itself: SAS
+  # keeps two rows of PRED. Main emitted all three with no row.
+  obs <- list(
+    self = "%MACRO SW; OPTIONS OBS=2; %MACRO SW; OPTIONS LS=80; %MEND SW; %MEND SW;",
+    inner = "%MACRO A; %MACRO SW; OPTIONS OBS=2; %MEND SW; %MEND A;"
+  )
+  for (nm in names(obs)) {
+    job <- translate_494(c(obs[[nm]], "%SW;", fit_macro_grid, hazpred_macro_grid))
+    expect_match(refused_494(job), "whose definition holds `OPTIONS OBS=2`",
+                 fixed = TRUE, info = nm)
+  }
+  # Control: a nested macro whose definitions read cleanly keeps the
+  # call-before-the-grid rule, a grid and a row.
+  job <- translate_494(c("%MACRO A; %MACRO SW; OPTIONS LS=80; %MEND SW; %MEND A;",
+                         "%SW;", fit_macro_grid, hazpred_macro_grid))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+  expect_match(macro_rows(job)$reason, "defined inside another macro", fixed = TRUE)
+})
+
+test_that("a call before the grid's step is recorded; macro statements add no row", {
+  # Approved change (2026-10-09): the calls before the grid's step each get a
+  # row, since they may set session state the grid reads. %LET, %PUT and a
+  # macro whose body writes nothing add none.
+  job <- translate_494(c(
+    "%INCLUDE 'lib.sas'; %MAKEGRID;",
+    fit_macro_grid,
+    "%LET X=1; %PUT &X;",
+    "%MACRO QUIET; %PUT HELLO; %MEND QUIET;",
+    "%QUIET;",
+    hazpred_macro_grid
+  ))
+  expect_equal(macro_rows(job)$construct, c("%INCLUDE 'LIB.SAS'", "%MAKEGRID"))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+})
+
+test_that("a job with no macros records no macro row", {
+  job <- translate_494(c(fit_macro_grid, hazpred_macro_grid))
+  expect_equal(nrow(macro_rows(job)), 0L)
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+})
+
+test_that("a PROC HAZPRED inside a macro definition is refused", {
+  # SAS runs the procedure where the macro is called, so its grid is
+  # whatever PRED holds at the call. Here the call follows a second DATA
+  # PRED with AGE = 70; main read the grid where the text stands and
+  # emitted AGE = 50 with no row. The translation does not follow calls, so
+  # it refuses. Approved change to #621's test, which asserted the grid
+  # built inside the macro, and emitted it for a macro never called.
+  job <- translate_494(c(
+    fit_macro_grid,
+    "%MACRO P;",
+    hazpred_macro_grid,
+    "%MEND P;",
+    "DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+    "%P;"
+  ))
+  expect_match(refused_494(job), "inside a %MACRO definition", fixed = TRUE)
+  expect_false(any(grepl("^grid", names(job$calls))))
+
+  # The same when the definition builds the grid itself, and when the macro
+  # is never called: the refusal does not depend on what the body holds.
+  for (call in c("%ALTPRED;", "")) {
+    job <- translate_494(c(
+      fit_macro_grid,
+      "%MACRO ALTPRED; DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+      hazpred_macro_grid,
+      "%MEND ALTPRED;",
+      call
+    ))
+    expect_match(refused_494(job), "inside a %MACRO definition", fixed = TRUE)
+  }
+})
+
+test_that("a PROC HAZPRED outside a definition still emits the grid (control)", {
+  # The definition above holds no PROC HAZPRED, so nothing is refused for
+  # scope, and the uncalled macro's DATA step is not the grid.
+  job <- translate_494(c(
+    fit_macro_grid,
+    "%MACRO P; %PUT HELLO; %MEND P;",
+    "%P;",
+    hazpred_macro_grid
+  ))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+  expect_false(any(grepl("%MACRO", job$untranslated$reason, fixed = TRUE)))
+})
+
+# A macro that sorts the grid in place rewrites it, as a DATA step in the
+# body does: PROC SORT NODUPKEY drops the duplicate INT_DEAD = 1 row, and SAS
+# predicts on 1, 2, 3. Main counted only DATA names and OUT= in a body, so
+# the grid was emitted with all four rows and no row.
+fit_sort_grid <- c(fit_macro_grid[1:3],
+                   "DATA PRED; AGE=50; DO INT_DEAD=1,1,2,3; OUTPUT; END; RUN;")
+
+test_that("calling a macro that sorts the grid in place refuses the grid", {
+  job <- translate_494(c(
+    fit_sort_grid,
+    "%MACRO S; PROC SORT DATA=PRED NODUPKEY; BY INT_DEAD; RUN; %MEND S;",
+    "%S;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "PRED is written by %S", fixed = TRUE)
+  # A plain sort refuses too: the call is opaque, as a DATA step in it is.
+  job <- translate_494(c(
+    fit_sort_grid,
+    "%MACRO S; PROC SORT DATA=WORK.PRED; BY DESCENDING INT_DEAD; RUN; %MEND S;",
+    "%S;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "PRED is written by %S", fixed = TRUE)
+})
+
+test_that("a macro sort that writes elsewhere, or is never called, leaves the grid", {
+  # OUT= names the dataset written; DATA= is then only read.
+  job <- translate_494(c(
+    fit_sort_grid,
+    "%MACRO S; PROC SORT DATA=PRED OUT=SORTED NODUPKEY; BY INT_DEAD; RUN; %MEND S;",
+    "%S;",
+    hazpred_macro_grid
+  ))
+  expect_equal(grid_494(job)$INT_DEAD, c(1, 1, 2, 3))
+  expect_equal(nrow(macro_rows(job)), 0L)
+  # An uncalled macro sorts nothing.
+  job <- translate_494(c(
+    fit_sort_grid,
+    "%MACRO S; PROC SORT DATA=PRED NODUPKEY; BY INT_DEAD; RUN; %MEND S;",
+    hazpred_macro_grid
+  ))
+  expect_equal(grid_494(job)$INT_DEAD, c(1, 1, 2, 3))
+  expect_equal(nrow(macro_rows(job)), 0L)
+  # A sort of another dataset is no write of the grid.
+  job <- translate_494(c(
+    fit_sort_grid,
+    "%MACRO S; PROC SORT DATA=OTHER NODUPKEY; BY INT_DEAD; RUN; %MEND S;",
+    "%S;",
+    hazpred_macro_grid
+  ))
+  expect_equal(grid_494(job)$INT_DEAD, c(1, 1, 2, 3))
+  expect_equal(nrow(macro_rows(job)), 0L)
+})
+
+test_that("a macro sort with no DATA= refuses the grid", {
+  # PROC SORT without DATA= sorts the most recent dataset, which depends on
+  # where the macro is called. This cannot say which, so the call may rewrite
+  # the grid, as an %INCLUDE may. Approved change to #621's test, which
+  # recorded the call and emitted the grid.
+  job <- translate_494(c(
+    fit_sort_grid,
+    "%MACRO S; PROC SORT NODUPKEY; BY INT_DEAD; RUN; %MEND S;",
+    "%S;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "`%S` calls a macro whose body", fixed = TRUE)
+  expect_match(refused_494(job), "may rewrite PRED", fixed = TRUE)
+})
+
+test_that("an open-code sort of the grid is unchanged by the macro rule (control)", {
+  # Outside a macro, a plain BY sort is translated and NODUPKEY is refused,
+  # as before.
+  job <- translate_494(c(
+    fit_sort_grid,
+    "PROC SORT DATA=PRED; BY AGE INT_DEAD; RUN;",
+    hazpred_macro_grid
+  ))
+  expect_equal(grid_494(job)$INT_DEAD, c(1, 1, 2, 3))
+  job <- translate_494(c(
+    fit_sort_grid,
+    "PROC SORT DATA=PRED NODUPKEY; BY INT_DEAD; RUN;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "PRED is written by PROC SORT", fixed = TRUE)
+})
+
+# The grid allow-list (1.2.13 release review). The grid is emitted only when
+# every statement that can change it is one the translation reads: three
+# reviews each found a construct the old deny-list let through, and every
+# one emitted a wrong grid with no $untranslated row. Each case below did
+# that on main.
+grid_rows_allow <- function(job) {
+  job$untranslated[grepl("^DATA=", job$untranslated$construct), ]
+}
+
+test_that("a macro call with no semicolon refuses the grid it swallowed (T1)", {
+  # `%SETUP` then `DATA PRED;` is one statement, `%SETUP DATA PRED`. SAS runs
+  # the macro and then the DATA step, so it predicts at AGE = 70. Main lost
+  # the DATA statement and emitted the earlier grid, AGE = 50, with no row.
+  job <- translate_494(c(
+    fit_macro_grid,
+    "%MACRO SETUP; OPTIONS LS=80; %MEND SETUP;",
+    "%SETUP",
+    "DATA PRED; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "%SETUP DATA PRED", fixed = TRUE)
+  expect_false(any(grepl("^grid", names(job$calls))))
+  # The same for a sort it swallows: SAS sorts PRED descending.
+  job <- translate_494(c(
+    fit_macro_grid,
+    "%MACRO SETUP; OPTIONS LS=80; %MEND SETUP;",
+    "%SETUP",
+    "PROC SORT DATA=PRED; BY DESCENDING INT_DEAD; RUN;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "%SETUP PROC SORT DATA=PRED", fixed = TRUE)
+})
+
+test_that("a merged statement before the grid's steps refuses it too (T1)", {
+  # The statement the parser could not read stands before PRED is built, but
+  # the parser has lost its place in the job, so nothing after it is trusted.
+  job <- translate_494(c(
+    "%MACRO SETUP; OPTIONS LS=80; %MEND SETUP;",
+    "%SETUP",
+    "DATA OTHER; X=1; RUN;",
+    fit_macro_grid,
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "%SETUP DATA OTHER", fixed = TRUE)
+})
+
+test_that("a WHERE statement in a PROC SORT of the grid refuses it (T2)", {
+  # SAS keeps the rows with INT_DEAD > 1 (2 rows); main read only BY and
+  # emitted all 3.
+  for (sort in c("PROC SORT DATA=PRED0 OUT=PRED; WHERE INT_DEAD > 1; BY INT_DEAD; RUN;",
+                 "PROC SORT DATA=PRED0 OUT=PRED; BY INT_DEAD; WHERE INT_DEAD > 1; RUN;")) {
+    job <- translate_494(c(
+      fit_macro_grid[1:3],
+      "DATA PRED0; AGE=50; DO INT_DEAD=3,1,2; OUTPUT; END; RUN;",
+      sort,
+      hazpred_macro_grid
+    ))
+    expect_match(refused_494(job), "WHERE INT_DEAD > 1", fixed = TRUE, info = sort)
+  }
+})
+
+test_that("a macro body's PROC DATASETS that replaces the grid refuses it (T3)", {
+  # SAS deletes PRED and renames PRED2 to PRED, so it predicts at AGE = 70.
+  # Main saw no name the body writes and emitted AGE = 50 with no row.
+  job <- translate_494(c(
+    fit_macro_grid,
+    "DATA PRED2; AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+    "%MACRO SW; PROC DATASETS LIB=WORK NOLIST; DELETE PRED; CHANGE PRED2=PRED; RUN; QUIT;",
+    "%MEND SW;",
+    "%SW;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "PRED is written by %SW", fixed = TRUE)
+})
+
+test_that("a grid built inside an open-code %IF or %DO is refused (T6)", {
+  # %IF 0 never runs, so SAS predicts at AGE = 50; main applied the step
+  # unconditionally and emitted AGE = 60.
+  # The compact spellings open the same block (#691 review).
+  for (cond in c("%IF 0 %THEN %DO;", "%DO I = 1 %TO 0;", "%IF 0 %THEN%DO;",
+                 "%DO%WHILE(0);")) {
+    job <- translate_494(c(
+      fit_macro_grid,
+      cond,
+      "DATA PRED; AGE=60; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+      "%END;",
+      hazpred_macro_grid
+    ))
+    expect_match(refused_494(job), "PRED is built inside an open-code %IF/%DO block",
+                 fixed = TRUE, info = cond)
+  }
+  # With the PROC HAZPRED inside the block too, no macro statement stands
+  # between the grid's step and the PROC HAZPRED: the step's place in the
+  # block is what refuses it.
+  job <- translate_494(c(
+    fit_macro_grid,
+    "%IF &RUN %THEN %DO;",
+    "DATA PRED; AGE=60; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+    hazpred_macro_grid,
+    "%END;"
+  ))
+  expect_match(refused_494(job), "PRED is built inside an open-code %IF/%DO block",
+               fixed = TRUE)
+  # A %IF block that only stands between the grid's step and the PROC
+  # HAZPRED refuses too: whatever it runs may rewrite the grid.
+  job <- translate_494(c(
+    fit_macro_grid,
+    "%IF 1 %THEN %DO; %PUT HELLO; %END;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "%IF 1 %THEN %DO", fixed = TRUE)
+})
+
+test_that("an %INCLUDE or an unread macro call after the grid refuses it", {
+  # Approved change to #621's test, which recorded each call and still
+  # emitted the grid the job's DATA steps show. Each call below may rewrite
+  # PRED, and the maintainer prefers a loud refusal to a silent wrong grid.
+  for (call in c("%INCLUDE 'makegrid.sas';", "%MAKEGRID;", "%MAKEGRID2(DS=PRED, AGE=70);")) {
+    job <- translate_494(c(fit_macro_grid, call, hazpred_macro_grid))
+    expect_match(refused_494(job), "may rewrite PRED", fixed = TRUE, info = call)
+    expect_false(any(grepl("^grid", names(job$calls))), info = call)
+  }
+})
+
+test_that("a procedure this cannot read, after the grid, refuses it", {
+  # PROC COPY writes the members it copies, which no option names.
+  job <- translate_494(c(
+    fit_macro_grid,
+    "PROC COPY IN=SAVED OUT=WORK; SELECT PRED; RUN;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "PROC COPY", fixed = TRUE)
+})
+
+test_that("a DATA step that runs other code, after the grid, refuses it", {
+  for (stmt in c("CALL EXECUTE('DATA PRED; AGE=70; RUN;')",
+                 "RC = DOSUBL('DATA PRED; AGE=70; RUN;')")) {
+    job <- translate_494(c(
+      fit_macro_grid,
+      paste0("DATA _NULL_; ", stmt, "; RUN;"),
+      hazpred_macro_grid
+    ))
+    expect_match(refused_494(job), "runs other SAS code", fixed = TRUE, info = stmt)
+  }
+})
+
+test_that("an open-code DATA &DS after the grid refuses it (#655)", {
+  # SAS resolves &DS to PRED and predicts at AGE = 70. Before #628 the name
+  # failed the dataset regex, so no write was recorded and the AGE = 50 grid
+  # was emitted with no row.
+  rebuild <- "AGE=70; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;"
+  job <- translate_494(c(fit_macro_grid, "%LET DS=PRED;",
+                         paste("DATA &DS;", rebuild), hazpred_macro_grid))
+  expect_match(refused_494(job), "`DATA &DS` names its dataset through a macro variable",
+               fixed = TRUE)
+  expect_false(any(grepl("^grid", names(job$calls))))
+  # Known positive: the same step naming PRED is read, and is the grid.
+  job <- translate_494(c(fit_macro_grid, paste("DATA PRED;", rebuild),
+                         hazpred_macro_grid))
+  expect_equal(grid_494(job)$AGE, c(70, 70, 70))
+  expect_equal(nrow(grid_rows_allow(job)), 0L)
+})
+
+test_that("a statement outside every step refuses the grid, wherever it stands", {
+  job <- translate_494(c(
+    "AGE=70;",
+    fit_macro_grid,
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "`AGE=70`", fixed = TRUE)
+})
+
+test_that("OPTIONS OBS= or FIRSTOBS= before the PROC HAZPRED refuses the grid", {
+  for (opt in c("OPTIONS OBS=2;", "OPTIONS NODATE FIRSTOBS=2;")) {
+    job <- translate_494(c(opt, fit_macro_grid, hazpred_macro_grid))
+    expect_match(refused_494(job), "OBS", fixed = TRUE, info = opt)
+  }
+  # OBS=MAX is the default, and reads every row.
+  job <- translate_494(c("OPTIONS OBS=MAX;", fit_macro_grid, hazpred_macro_grid))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+})
+
+test_that("a SET that names no dataset refuses the grid", {
+  # `SET;` reads the most recent dataset; main read it as no SET at all.
+  job <- translate_494(c(
+    fit_macro_grid[1:3],
+    "DATA BASE; AGE=60; RUN;",
+    "DATA PRED; SET; DO INT_DEAD=1,2,3; OUTPUT; END; RUN;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "SET", fixed = TRUE)
+})
+
+test_that("statements the allow-list reads leave the grid as it was (control)", {
+  # Global statements, %LET and %PUT, a procedure that writes nothing, a
+  # DATA step that writes another dataset, a macro whose body writes nothing,
+  # and a call before the grid's step: none of them can change PRED.
+  job <- translate_494(c(
+    "%INCLUDE 'lib.sas';",
+    "%PLOT( ID L=\"x\", END; LABELX L=\"y\", END; );",
+    fit_macro_grid,
+    "TITLE1 'A grid'; FOOTNOTE 'n'; OPTIONS LS=132 PS=60 NODATE;",
+    "LIBNAME EX ('!HZEXAMPLES/sasest'); FILENAME F ('x');",
+    "%LET X=1; %PUT &X;",
+    "PROC PRINT DATA=PRED; VAR AGE; RUN;",
+    "DATA OTHER; SET PRED; Y=AGE*2; RUN;",
+    "%MACRO QUIET; %PUT HELLO; TITLE2 'q'; %MEND QUIET;",
+    "%QUIET;",
+    hazpred_macro_grid
+  ))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+  expect_equal(grid_494(job)$time, c(1, 2, 3))
+  expect_equal(nrow(grid_rows_allow(job)), 0L)
+  # Only the two calls before the grid's step are recorded (2026-10-09).
+  expect_equal(macro_rows(job)$construct,
+               c("%INCLUDE 'LIB.SAS'", "%PLOT( ID L=\"X\", END; LABELX L=\"Y\", END; )"))
+})
+
+test_that("a numeric LENGTH below 8 in the grid's step refuses it", {
+  # SAS stores 0.1 in 3 bytes as 0.0999755859375; the grid would hold 0.1.
+  for (len in c("LENGTH INT_DEAD 3;", "LENGTH DEFAULT=4;", "ATTRIB INT_DEAD LENGTH=3;")) {
+    job <- translate_494(c(
+      fit_macro_grid[1:3],
+      paste("DATA PRED;", len, "AGE=50; DO INT_DEAD=0.1,0.2; OUTPUT; END; RUN;"),
+      hazpred_macro_grid
+    ))
+    expect_match(refused_494(job), "numeric length below 8", fixed = TRUE, info = len)
+  }
+  # A character length, or a numeric 8, changes no value.
+  job <- translate_494(c(
+    fit_macro_grid[1:3],
+    "DATA PRED; LENGTH LBL $ 3 INT_DEAD 8; AGE=50; DO INT_DEAD=0.1,0.2; OUTPUT; END; RUN;",
+    hazpred_macro_grid
+  ))
+  expect_equal(grid_494(job)$INT_DEAD, c(0.1, 0.2))
+})
+
+test_that("OPTIONS OBS= set by a macro refuses the grid, wherever it is called", {
+  # The option holds for every later step, so a call before the grid's step
+  # changes the rows PROC HAZPRED reads as surely as one after it.
+  job <- translate_494(c(
+    "%MACRO LIM; OPTIONS OBS=2; %MEND LIM;",
+    "%LIM;",
+    fit_macro_grid,
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "`%LIM` calls a macro whose body holds", fixed = TRUE)
+})
+
+test_that("PROC CONTENTS OUT2= writes the dataset it names", {
+  job <- translate_494(c(
+    fit_macro_grid,
+    "PROC CONTENTS DATA=X OUT2=PRED; RUN;",
+    hazpred_macro_grid
+  ))
+  expect_match(refused_494(job), "PRED is written by PROC CONTENTS", fixed = TRUE)
+})
+
+test_that("option and programming statements in a listed procedure leave the grid", {
+  # PROC IMPORT's GETNAMES= and PROC PHREG's programming statements are
+  # assignments inside a procedure, not a lost DATA step.
+  job <- translate_494(c(
+    "PROC IMPORT DATAFILE='a.csv' OUT=X DBMS=CSV REPLACE; GETNAMES=YES; RUN;",
+    "PROC PHREG DATA=X; MODEL T*D(0)=A2; A2=A*A; RUN;",
+    fit_macro_grid,
+    hazpred_macro_grid
+  ))
+  expect_equal(grid_494(job)$AGE, c(50, 50, 50))
+  expect_equal(nrow(grid_rows_allow(job)), 0L)
+})
+
+test_that("a call before the grid's first step keeps the grid and records a row", {
+  # Maintainer decision (2026-10-09). The call cannot write a dataset the
+  # grid reads, because the grid's steps build them afresh, but it may set
+  # session state they read (OPTIONS OBS=). The grid is emitted, and the row
+  # says it is SAS's grid only if the call leaves that state alone.
+  for (call in c("%INCLUDE 'setup.sas';", "%SETUP;")) {
+    job <- translate_494(c(call, fit_macro_grid, hazpred_macro_grid))
+    expect_equal(grid_494(job)$AGE, c(50, 50, 50), info = call)
+    rows <- macro_rows(job)
+    expect_equal(nrow(rows), 1L, info = call)
+    expect_equal(rows$construct, sub(";$", "", toupper(call)), info = call)
+    expect_match(rows$reason, "session state", fixed = TRUE, info = call)
+    expect_match(rows$reason, "OPTIONS OBS=", fixed = TRUE, info = call)
+    expect_match(rows$reason, "DATA=PRED", fixed = TRUE, info = call)
+  }
+  # Control: no call before the grid, no row.
+  job <- translate_494(c(fit_macro_grid, hazpred_macro_grid))
+  expect_equal(nrow(job$untranslated), 0L)
+})
+
+# 1.2.13 rollup review, N1. PROC SORT with no DATA= sorts SAS's _LAST_
+# dataset, the most recently created one (Base SAS documentation, PROC SORT
+# DATA= option and the _LAST_= system option; not in hazard/src). Several
+# statements make a new _LAST_ without naming it: DATA with no name or
+# DATA _DATA_ (a DATAn dataset), a procedure's OUTPUT statement with no OUT=
+# (also DATAn), OPTIONS _LAST_=, and a macro whose body does one of these.
+# Each probe below gave the grid 1, 6, 12 where SAS keeps 12, 6, 1 (or the
+# reverse for OPTIONS _LAST_=), with no $untranslated row.
+lastsort_grid <- "DATA PRED; DO MONTHS=12,6,1; OUTPUT; END; RUN;"
+
+test_that("a PROC SORT with no DATA= after the grid refuses it (N1)", {
+  probes <- list(
+    data_noname = c("DATA; MONTHS=5; RUN;", "PROC SORT; BY MONTHS; RUN;"),
+    data_data = c("DATA _DATA_; MONTHS=5; RUN;", "PROC SORT; BY MONTHS; RUN;"),
+    means = c("PROC MEANS DATA=PRED NOPRINT; VAR MONTHS; OUTPUT MEAN=MONTHS; RUN;",
+              "PROC SORT; BY MONTHS; RUN;"),
+    summary = c("PROC SUMMARY DATA=PRED; VAR MONTHS; OUTPUT MEAN=MONTHS; RUN;",
+                "PROC SORT; BY MONTHS; RUN;"),
+    reg = c("PROC REG DATA=PRED; MODEL MONTHS=MONTHS; OUTPUT P=MONTHS; RUN;",
+            "PROC SORT; BY MONTHS; RUN;"),
+    macro = c("%MACRO MK; DATA; MONTHS=2; RUN; %MEND MK;", "%MK;",
+              "PROC SORT; BY MONTHS; RUN;"),
+    # The sort is of PRED itself, which the parser names: still refused.
+    direct = "PROC SORT; BY MONTHS; RUN;",
+    last_kw = "PROC SORT DATA=_LAST_; BY MONTHS; RUN;",
+    named_other = c("DATA OTHER; MONTHS=5; RUN;", "PROC SORT; BY MONTHS; RUN;")
+  )
+  for (nm in names(probes)) {
+    job <- translate_494(c(lastsort_grid, probes[[nm]], hazpred_494("PRED")))
+    why <- refused_494(job)
+    expect_length(why, 1L)
+    expect_match(why, "PROC SORT", fixed = TRUE, info = nm)
+  }
+})
+
+test_that("OPTIONS _LAST_= refuses the grid wherever it stands (N1)", {
+  # SAS then sorts PRED (1, 6, 12) where the parser took OTHER to be sorted.
+  for (at in c("before", "after")) {
+    opt <- "OPTIONS _LAST_=PRED;"
+    job <- translate_494(c(
+      if (at == "before") opt,
+      lastsort_grid,
+      "DATA OTHER; MONTHS=5; RUN;",
+      if (at == "after") opt,
+      hazpred_494("PRED")
+    ))
+    expect_match(refused_494(job), "OPTIONS _LAST_=PRED", fixed = TRUE, info = at)
+  }
+})
+
+test_that("a statement that makes an unnamed dataset is _LAST_ to the parser (N1)", {
+  # DATA with no name, DATA _DATA_, and an OUTPUT with no OUT= in a listed
+  # procedure each write a DATAn dataset, which then becomes _LAST_.
+  ev_of <- function(lines) {
+    txt <- .hzr_sas_normalise(lines)
+    .hzr_sas_dataset_events(txt, .hzr_sas_blocks(txt))
+  }
+  for (mk in c("DATA; MONTHS=5; RUN;", "DATA _DATA_; MONTHS=5; RUN;",
+               "PROC MEANS DATA=PRED; OUTPUT MEAN=M; RUN;",
+               "PROC UNIVARIATE DATA=PRED; VAR MONTHS; OUTPUT MEAN=M; RUN;",
+               "PROC PHREG DATA=PRED; MODEL T*D(0)=A; OUTPUT XBETA=XB; RUN;",
+               "PROC LOGISTIC DATA=PRED; MODEL D=A; OUTPUT P=PP; RUN;",
+               "PROC GLM DATA=PRED; MODEL Y=A; OUTPUT P=PP; RUN;")) {
+    ev <- ev_of(c(lastsort_grid, mk, "PROC SORT; BY MONTHS; RUN;"))
+    named <- Filter(function(e) !is.na(e$name), ev)
+    expect_equal(vapply(named, function(e) e$name, ""), c("PRED", "_DATA_", "_DATA_"),
+                 info = mk)
+  }
+  # Control: an OUTPUT with OUT= names its dataset.
+  ev <- ev_of(c(lastsort_grid, "PROC MEANS DATA=PRED; OUTPUT OUT=M MEAN=X; RUN;"))
+  expect_equal(vapply(Filter(function(e) !is.na(e$name), ev), function(e) e$name, ""),
+               c("PRED", "M"))
+})
+
+test_that("a PROC SORT with no DATA= before the grid's first step leaves it (N1)", {
+  # It cannot touch a dataset the grid reads, which the grid's steps build
+  # afresh, so the grid is emitted with no row.
+  job <- translate_494(c("DATA OTHER; X=1; RUN;", "PROC SORT; BY X; RUN;",
+                         lastsort_grid, hazpred_494("PRED")))
+  expect_equal(grid_494(job)$time, c(12, 6, 1))
+  expect_equal(nrow(job$untranslated), 0L)
+})
+
+# N2. SAS sorts character values in ASCII order (Base SAS documentation,
+# PROC SORT, "Sorting Orders for Character Variables") and compares them at
+# the column's fixed length, which the first assignment sets: after G='B',
+# 'AB' and 'AA' are both stored as 'A', so SAS keeps them in input order.
+# R sorts the full strings, in the session locale unless method = "radix".
+# Neither the lengths nor OPTIONS SORTSEQ= are followed, so a character BY
+# variable stops the emitted code rather than give an order SAS does not.
+test_that("a sort by a character variable stops the emitted grid (N2)", {
+  probes <- list(
+    ascii = c("DATA A; G='B'; MONTHS=1; OUTPUT;", "DATA B; G='_'; MONTHS=2; OUTPUT;",
+              "DATA C; G='A'; MONTHS=3; OUTPUT;", "DATA PRED; SET A B C;"),
+    # SAS: 2, 3, 1 (B, then A, A in input order). R by full string: 3, 2, 1.
+    length = c("DATA PRED; G='B'; MONTHS=1; OUTPUT; G='AB'; MONTHS=2; OUTPUT;",
+               "G='AA'; MONTHS=3; OUTPUT;")
+  )
+  for (nm in names(probes)) {
+    job <- translate_494(c(probes[[nm]], "PROC SORT DATA=PRED; BY G;", hazpred_494("PRED")))
+    expect_error(grid_494(job), "PROC SORT of PRED is by a character variable", fixed = TRUE)
+  }
+  # Second key character, first numeric: still stops.
+  job <- translate_494(c("DATA PRED; G='B'; MONTHS=1; OUTPUT; G='A'; MONTHS=1; OUTPUT;",
+                         "PROC SORT DATA=PRED; BY MONTHS G;", hazpred_494("PRED")))
+  expect_error(grid_494(job), "by a character variable", fixed = TRUE)
+})
+
+test_that("a numeric sort with DATA= still emits the same code (N2 control)", {
+  job <- translate_494(c(
+    "DATA PRED; DO MONTHS=3,1,2; OUTPUT; END;",
+    "PROC SORT DATA=PRED; BY MONTHS;",
+    hazpred_494("PRED")
+  ))
+  expect_equal(grid_494(job)$time, c(1, 2, 3))
+  txt <- paste(deparse(job$calls$grid), collapse = " ")
+  expect_match(txt, "order(PRED$MONTHS, na.last = FALSE, method = \"radix\")", fixed = TRUE)
+})
+
+# L1. A DATA step can rename, delete or rewrite datasets through functions
+# and CALL routines (Base SAS documentation: RENAME, FDELETE, SYSTEM, OPEN,
+# CALL EXECUTE, ...). One between a step the grid uses and the PROC HAZPRED
+# may change what SAS reads.
+test_that("a DATA step calling a dataset or file function refuses the grid (L1)", {
+  stmts <- c(
+    rename = "RC=RENAME('WORK.PRED','OLD','DATA'); RC=RENAME('WORK.OTHER','PRED','DATA');",
+    delete = "RC=DELETE('PRED');",
+    fdelete = "RC=FDELETE('F');",
+    system = "RC=SYSTEM('rm x');",
+    call = "CALL SYMPUT('A', 1);",
+    open = "DSID=OPEN('PRED'); RC=FETCH(DSID); RC=CLOSE(DSID);",
+    sysfunc = "RC=%SYSFUNC(RENAME(PRED, OLD));"
+  )
+  for (nm in names(stmts)) {
+    job <- translate_494(c(lastsort_grid, "DATA OTHER; MONTHS=5; RUN;",
+                           paste("DATA _NULL_;", stmts[[nm]], "RUN;"),
+                           hazpred_494("PRED")))
+    expect_match(refused_494(job), "may rewrite PRED", fixed = TRUE, info = nm)
+  }
+  # Control: a quoted word is not a call, and the DELETE statement is not
+  # the function.
+  job <- translate_494(c(lastsort_grid,
+                         "DATA OTHER; SET PRED; LABEL X='CALL ME OPEN(1)'; IF X THEN DELETE; RUN;",
+                         hazpred_494("PRED")))
+  expect_equal(grid_494(job)$time, c(12, 6, 1))
+})
+
+# The rest of the 1.2.13 targeted review of N1/N2/L1: statements that change
+# the order a later PROC SORT gives, or run a stored program.
+test_that("OPTIONS SORTSEQ= or NOSORTEQUALS refuses the grid wherever it stands", {
+  for (opt in c("OPTIONS SORTSEQ=EBCDIC;", "OPTIONS NOSORTEQUALS;",
+                "OPTIONS NOCENTER NOSORTEQUALS;")) {
+    for (at in c("before", "after")) {
+      job <- translate_494(c(
+        if (at == "before") opt,
+        "DATA PRED; DO MONTHS=3,1,2; OUTPUT; END;",
+        if (at == "after") opt,
+        "PROC SORT DATA=PRED; BY MONTHS;",
+        hazpred_494("PRED")
+      ))
+      expect_match(refused_494(job), sub(";$", "", opt), fixed = TRUE, info = paste(opt, at))
+    }
+  }
+  # Control: SORTEQUALS is SAS's default and leaves the grid.
+  job <- translate_494(c("OPTIONS SORTEQUALS;", "DATA PRED; DO MONTHS=3,1,2; OUTPUT; END;",
+                         "PROC SORT DATA=PRED; BY MONTHS;", hazpred_494("PRED")))
+  expect_equal(grid_494(job)$time, c(1, 2, 3))
+})
+
+test_that("DATA PGM= between the grid and the PROC HAZPRED refuses it", {
+  for (stmt in c("DATA PGM=WORK.P; EXECUTE; RUN;", "DATA PGM = WORK.P; RUN;")) {
+    job <- translate_494(c(lastsort_grid, stmt, hazpred_494("PRED")))
+    expect_match(refused_494(job), "may rewrite PRED", fixed = TRUE, info = stmt)
   }
 })

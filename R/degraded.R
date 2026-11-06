@@ -128,7 +128,8 @@
     }
   }
 
-  # A failed recompute leaves the conserved log_mu fixed in fixed_mask, but
+  # A failed recompute reports no vcov at all (#652); objects saved before
+  # that left the conserved log_mu fixed in fixed_mask instead. Either way
   # the object does not store which position is conserved, so this one entry
   # is keyed on its reason. The producer always sets one on a failed
   # recompute, falling back to "cause not recorded", so the entry cannot

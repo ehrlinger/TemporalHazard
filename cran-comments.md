@@ -1,247 +1,133 @@
-# CRAN submission comments -- TemporalHazard 1.2.2
+# CRAN submission comments -- TemporalHazard 1.3.0
 
 ## Summary
 
-This is an update to TemporalHazard 1.1.0 (accepted 2026-06-12). There is no
-reviewer feedback to address.
+This is an update to TemporalHazard 1.1.0, accepted 2026-06-12.
 
-The work accumulated under two development version numbers, 1.2.0 and 1.2.1,
-neither of which was submitted. `NEWS.md` records it under its 1.2.2 and 1.2.1
-headings, the 1.2.0 work having been folded into the 1.2.1 section rather than
-kept separate. All of it is new to CRAN, and the changes below cover it.
+This is a resubmission. The first 1.3.0 submission, on 2026-11-05, failed the
+incoming checks on one NOTE, `Overall checktime 11 min > 10 min` on
+r-devel-windows-x86_64. Its Windows and Debian pre-tests were otherwise
+`Status: OK`. "Check time" below says what changed.
 
-This is a minor-version release that nonetheless contains one breaking change:
-`hzr_stepwise()` now defaults to a different selection criterion, so re-running
-an existing stepwise analysis can select a different set of variables. It is
-numbered as a minor rather than a major deliberately. The previous default
-deviated from the C/SAS HAZARD reference this package exists to reproduce, so
-the change restores intended behaviour rather than redesigning the interface;
-the signature is unchanged and the old behaviour remains available exactly,
-through a documented argument. The `1.x` line is the run-up to a first
-production release, and the major digit is reserved for that milestone.
+The versions between them, 1.2.1 to 1.2.19, were released internally and never
+submitted, so everything since 1.1.0 is new to CRAN. `NEWS.md` opens with a
+summary of the net change from 1.1.0, written for a user upgrading from it,
+followed by the detailed record for each internal version. Several later
+entries in that record reverse earlier ones; the summary nets them out.
 
-Everything else in this release is additive or a bug fix. Several of the fixes
-correct results that were silently wrong rather than errors that were visible;
-they are grouped and described below. The breaking change
-is flagged under a "Breaking changes" heading in `NEWS.md` and in
-`?hzr_stepwise`, so users encounter the warning regardless of the version
-number.
+## License change
 
-## Changes since 1.1.0
+The license is now GPL (>= 2). 1.1.0 was MIT.
 
-### Breaking
+The reason is one internal function, `.hzr_mt_normal()`. It reproduces the
+numbers `set.seed()` and `rnorm()` give under R's default generators without
+using R's random number stream, and its seeding, zero-word substitution and
+normal inversion are derived from R's `src/main/RNG.c` and
+`src/nmath/snorm.c`, which are GPL (>= 2). The package therefore carries that
+license. `inst/COPYRIGHTS` lists the derived code and its copyright holders,
+and `Authors@R` credits the R Core Team and the authors of the Mersenne
+Twister, Makoto Matsumoto and Takuji Nishimura, as copyright holders. 1.1.0
+had a single author and copyright holder, the maintainer, who made the change.
 
-* **`hzr_stepwise()` now defaults to `criterion = "score"`.** This reproduces
-  the `SELECTION` statistic of the original C/SAS HAZARD program, which this
-  package exists to reproduce. The previous default, `"wald"`, refit the model
-  once per candidate variable and tested the refit's Wald chi-square -- a
-  deviation from the reference implementation. Because the score and Wald paths
-  take different step sequences, re-running an existing analysis can now select
-  a different variable set. `criterion = "wald"` restores the old behaviour
-  exactly. Both the change and the escape hatch are documented in
-  `?hzr_stepwise` and in the "Breaking changes" section of `NEWS.md`.
+## Changes that can alter results
 
-  Removing the per-candidate refit also removed the dominant runtime cost: a
-  92-variable two-phase screen fell from roughly 25 minutes per bootstrap
-  replicate to seconds.
+This is numbered as a minor release, but some of its changes can change the
+result of a script written for 1.1.0. The "Upgrading from 1.1.0" section of
+`NEWS.md` lists them. The ones a user is most likely to meet:
 
-### New features
+* **`hzr_stepwise()` now defaults to `criterion = "score"`,** the selection
+  statistic of the SAS HAZARD program this package reproduces. A stepwise
+  analysis re-run under 1.3.0 can select a different set of variables.
+* **Several fixes move fitted values.** Among them: multiphase fits under
+  Conservation of Events now reach maxima that 1.1.0 stopped short of;
+  exponential, log-logistic and log-normal fits now honour left truncation;
+  and left- and interval-censored `Surv()` responses on the formula interface
+  were mistranslated in 1.1.0.
+* **Some input 1.1.0 accepted is now refused or warned about,** such as
+  `control` elements that 1.1.0 accepted and never applied.
 
-* `hazard()` now evaluates its vector interface in `data`'s scope.
-  `hazard(data = df, time = tt)` previously failed with `object 'tt' not
-  found`, because `data` was consulted only by the formula path. The rule is
-  `subset()`'s -- a column of `data` wins, while `df$col`, a local vector or a
-  literal falls through to the calling frame unchanged -- so `data = NULL`
-  behaves exactly as before and the formula path is untouched. Because a column
-  winning can silently redirect a wrapper that forwards its own argument by
-  name, `hazard()` now warns once per call when a symbol is both a column of
-  `data` and visible from the calling frame. `data` must now be a data frame or
-  a list; a matrix, previously accepted and then silently ignored, is an error.
-* `hzr_translate_sas()` translates a SAS `PROC HAZARD` / `PROC HAZPRED` job
-  into a Quarto document of equivalent R calls. The model state is held as
-  unevaluated calls, so rendering is `deparse()` rather than string templating.
-  It is **marked experimental** in its own documentation: measured on the
-  public `hazard` corpus of 110 `.sas` files, 57 translate into 22 distinct
-  documents, of which 11 evaluate end to end against synthetic data. It is a
-  translation aid rather than a turnkey reproduction, and its API and emitted
-  document format may still change.
-* `hzr_bootstrap()` gains a `scope` argument for embedded stepwise variable
-  selection within each bootstrap replicate -- the R equivalent of SAS's
-  `%HAZBOOT` procedure. `scope = NULL` (the default) preserves the original
-  fixed-formula bootstrap unchanged. The argument is marked experimental in
-  its documentation: it ships to CRAN for the first time here, and its
-  interface is still being read off production runs.
-* `hzr_read_outhaz()` reads a `PROC HAZARD` `outhaz=` estimate dataset, which
-  holds the converged estimates and the variance-covariance matrix at full
-  double precision where the printed listing carries about seven figures.
-* The SAS `.lst` parsers now ship with the installed package, under
-  `sas-parity/`. They previously lived under `tests/`, which `R CMD INSTALL`
-  skips unless `--install-tests` is passed, so an installed package could not
-  reach them.
-* `hzr_bootstrap(verbose = TRUE)` shows a text progress bar via
-  `utils::txtProgressBar()` instead of an every-50-replicates message.
+The major digit is reserved for the first production release. These changes
+correct behaviour that departed from the reference implementation, rather than
+redesigning the interface, and each is documented in `NEWS.md` and on the
+affected help page.
 
-### Bug fixes
+## Random number streams
 
-Most of this release is bug fixes, and they are grouped below because several
-share one shape: a computation that returned a result-shaped object which meant
-nothing, with no error and no warning. They were found by putting the package
-through its first production analysis. `NEWS.md` carries the full detail.
-
-**Wrong results, silently.**
-
-* The formula interface mistranslated left- and interval-censored `Surv()`
-  objects. `survival::Surv()` and this package use different integer codings
-  for censoring status, and the parser passed `Surv()`'s through unchanged.
-  Under `type = "left"` a left-censored row was read as right-censored -- a
-  wrong answer with no outward sign. Two related faults in the same code path
-  made an interval-censored formula fit return the optimizer's failure
-  sentinel instead of a fit. Status codes are now translated, and a regression
-  test asserts that a `Surv(type = "interval")` fit reproduces the equivalent
-  vector-interface fit to 1e-8 in log-likelihood.
-* `hzr_bootstrap()` did not resample fits built with the vector interface. A
-  vector-interface call stores `time = d$col` as an expression, so every
-  replicate re-evaluated it against the original data: the run reported
-  `n_success = n_boot`, `n_failed = 0`, no warning, and `n_boot` **identical**
-  replicates, with `sd` exactly 0 on every parameter. Both interfaces now
-  produce identical replicates for the same model, data and seed.
-
-**Multiphase fitting.**
-
-* `hzr_decompos()` returned a wrong value for large `|m|`, with no warning. All
-  three branches with a nonzero `m` formed `2^m` directly. For `m > 0` that
-  overflows, driving `G` to `0`: `hzr_decompos(0.5, t_half = 1, nu = 3/1000,
-  m = 1000)` reported `G = 0` where the answer is `0.3969`, with `g` and `h`
-  `NaN`. For `m < 0` cancellation in `1 - 2^m` did the same from `m = -53`,
-  which an optimizer reaches easily. `G = 0` is a perfectly ordinary
-  probability, so nothing about the result looked wrong. All three branches now
-  work on the log scale; checked against a reference computed at 100 or more
-  decimal digits, `G` and `g` are accurate to machine precision from
-  `m = -1000` to `m = 5000`. The multiphase log-likelihood, which returned
-  `-Inf` from about `m = 450` for the same reason, is evaluable across that
-  range again.
-* A multiphase fit is now reproducible. `hazard(dist = "multiphase")` drew the
-  starting-value offsets for every optimization start after the first from the
-  ambient RNG stream, so the identical call run twice returned a different
-  answer -- on a 150-row two-phase fit, estimates moving about 0.3 on the log
-  scale -- and fitting advanced the caller's stream. The offsets now come from
-  an internally seeded stream and `.Random.seed` is restored afterwards; the
-  new `control$start_seed` selects a different ensemble of starts.
-* A multiphase optimization start no longer dies on an infeasible shape. The
-  cumulative hazard short-circuits to an infinite hazard when a phase's `m` and
-  `nu` are both negative, but returned that short-circuit in the wrong shape
-  for a per-phase decomposition, so the Conservation-of-Events adjustment
-  raised `$ operator is invalid for atomic vectors` from inside the objective.
-  BFGS steps into that region routinely, so the multi-start loop discarded the
-  start and reported the crash as a failure to converge.
-* `fit$fit$starts` now reports one row per optimization start -- its status,
-  objective, `optim()` convergence code, whether it was the best, and the
-  message of any error it raised. A start that stopped at `maxit` reads as
-  `"nonconverged"` rather than `"ok"`, so starts that disagree identify a
-  barely-identified shape instead of looking mysterious.
-* `$se` on a fitted object is now one standard error per parameter, computed
-  element by element. A multiphase fit legitimately carries NA variance rows
-  for the parameters it holds fixed, and a single NA collapsed the whole vector
-  to a length-1 `NA`, so naming the standard errors against the parameters
-  failed. Sizing the vector to the matrix was not sufficient on its own: a
-  parameter whose variance was computed now keeps its own standard error, so
-  `$se` no longer disagrees with `summary()`, which reads the same matrix.
-
-**Selection that could not run, and did not say so.**
-
-* `hzr_stepwise()` can no longer return a zero-step result that is silently
-  empty. Every accepted move goes through a refit, and a refit that failed was
-  downgraded to a warning and then dropped, so a screen that could not fit a
-  single candidate looked exactly like one that tested them all and liked none.
-  `$criteria` now carries `refit_failures`, `n_refit_failures` and
-  `stopped_refit_failed`. A base fit built with the vector interface stores no
-  formula for the refit to mutate, so every candidate would fail; that is now
-  rejected up front with one message naming the remedy.
-* Under the new score criterion, an interval- or left-censored multiphase fit
-  could not score a single candidate. The analytic observed information is not
-  defined for those rows, and the score path had no numeric fallback on that
-  branch, so every candidate scored `NA` and the screen stopped having tested
-  nothing. The fallback now agrees with the analytic form to 1e-4 on the
-  equivalent right-censored fit.
-* `hzr_stepwise()` and `hzr_bootstrap(scope = ...)` failed on a formula passed
-  by symbol -- `f <- Surv(t, d) ~ 1; hazard(f, ...)` -- because the stored call
-  was recovered by deparsing. Every post-entry refit threw, nothing entered,
-  and a bootstrap reported full success. Four sites resolved the stored formula
-  independently; they now share one helper.
-* A screen that could not test its candidates is now distinguishable from one
-  that tested them and found nothing. `hzr_stepwise()` reports how many
-  candidate scores were unavailable and **why**, and `hzr_bootstrap()`
-  aggregates the same across replicates. The distinction matters in both
-  directions: a collinear candidate should be dropped, while a candidate whose
-  observed information is indefinite at zero is typically a strong one that
-  was passed over rather than tested.
-* A select-mode `hzr_bootstrap()` that selects no covariate at all now warns
-  rather than returning an empty summary that reads like a completed screen.
-
-**Diagnostics that were silent.**
-
-* A fit that cannot compute a Hessian now says so. The analytic Hessian
-  declines for left- and interval-censored rows by design, the optimizer falls
-  back to `numDeriv::hessian()`, and `numDeriv` is a `Suggests` -- so on a
-  machine installed without Suggests, an interval-censored multiphase fit
-  produced no standard errors and nothing named the cause. Behaviour is
-  unchanged; the reason is now stated.
-* `hzr_bootstrap()` no longer fails silently (returning `n_success = 0` with no
-  error and no warning) when the model was fitted inside a function. `hazard()`
-  now records the environment its call was written in, so each replicate's refit
-  resolves arguments passed by symbol against the caller's locals rather than
-  against the package namespace.
-* Multiphase models whose shape sits exactly at the `m = 0` or `nu = 0`
-  limiting-case boundary no longer lose their analytic Hessian and fall back
-  silently to a numerical one, or to `NA` standard errors.
-* Multiphase fits with a single free parameter now use the analytic Hessian for
-  standard errors, instead of falling back to a numerical one because a 1x1
-  matrix had been dropped to a scalar.
-* `hzr_bootstrap(scope = ..., trace = ...)` no longer errors with "formal
-  argument matched by multiple actual arguments".
-* `hzr_bootstrap()` no longer floods the console with per-replicate numerical
-  warnings. Structural problems still surface once, up front.
-
-`NEWS.md` carries the full detail for each item.
+* A multiphase fit with `n_starts > 1` draws its start offsets from
+  `.hzr_mt_normal()` under `control$start_seed` (default 3). It neither reads
+  nor writes `.Random.seed`, so fitting does not depend on or advance the
+  user's stream.
+* `hzr_bootstrap(seed =)` calls `set.seed(seed)` on a seed the user supplies
+  and does not restore the stream afterwards, as its documentation says. It
+  does not write `.Random.seed` into the global environment.
 
 ## Test environments
 
-* **Local:** R 4.6.1 on macOS (aarch64-apple-darwin23).
-  `R CMD check --as-cran` on the built tarball, **with the PDF manual**,
-  returns `Status: OK` -- 0 errors, 0 warnings, 0 notes. Overall check time is
-  200 seconds, well inside the reference budget; the two dominant steps are the
-  test suite at 79 seconds and the vignette rebuild at 41 seconds. The source
-  tarball is 2.8 MB.
-* **GitHub Actions matrix:** ubuntu-latest (R-devel / R-release / R-oldrel-1),
-  macos-latest (R-release), windows-latest (R-release).
-* **Reverse-dependency check:** `tools::package_dependencies(reverse = TRUE)`
-  returns 0 reverse dependencies.
-* **`urlchecker::url_check()`:** all 19 URLs correct.
+* **Local:** R 4.6.1 on macOS (aarch64-apple-darwin23). `R CMD check
+  --as-cran` on a tarball built from a clean `git archive` export, with the
+  PDF manual: `Status: OK`, 0 errors, 0 warnings, 0 notes. The source tarball
+  is 4.07 MB.
+* **win-builder,** 2026-11-05, on a tarball that differs from this one only
+  in `tests/testthat/test-vignette-fit-step.R`, which skips on CRAN: R-devel (2026-11-04 r90836), R-release (4.6.2) and
+  R-oldrelease (4.5.3), each `Status: OK` with 0 errors, 0 warnings and
+  0 notes.
+* **GitHub Actions, `R CMD check --as-cran` with the manual,** on the commit
+  before the test skips: windows-latest
+  (R-devel, R-release, R-oldrel-1), macos-latest (R-release) and
+  ubuntu-latest (R-devel, R-release), all `Status: OK`, with
+  `urlchecker::url_check()` clean.
+* **GitHub Actions, on every merge:** ubuntu-latest (R-devel, R-release,
+  R-oldrel-1 and R 4.1.0, the declared minimum), macos-latest (R-release) and
+  windows-latest (R-release).
 
-## NOTE disposition
+## Check time
 
-`R CMD check --as-cran` on the release tarball is clean (0/0/0) locally. The
-CRAN incoming-feasibility aspell check is expected to report:
+1.1.0 took 528 to 623 s to check on CRAN's Windows flavors. The tests that run
+under `R CMD check` had grown about fourfold since September 2026, and the
+first 1.3.0 submission's r-devel-windows incoming check took 11 minutes:
+228 s in the tests and 249 s rebuilding the vignettes.
 
-* **Possibly misspelled words in DESCRIPTION:** `Naftel`, `Rajeswaran`
-  (cited authors, each with an accompanying `<doi:...>` reference), `UAB`
-  (an acronym), `et`, `al` (from the "et al." citation), and `multiphase`
-  (the core domain term, standard in the literature this package
-  implements). None are misspellings.
+For this resubmission:
 
-  `inst/WORDLIST` records these for `devtools::spell_check()`. It has no
-  effect on the CRAN aspell check, which offers no package-level suppression
-  mechanism, so this NOTE recurs by design on every submission.
+* **Tests:** the 100 test files that took longest under the check carry a
+  file-level `skip_on_cran()`, against 50 in the first submission. They still
+  run on every GitHub Actions job and in the local suite. On macOS the tests
+  under the check now take 23 s, against 42 s for the first submission's
+  tarball.
+* **Vignettes:** the most expensive vignette chunk, a stepwise selection in
+  `clinical-analysis-walkthrough`, now shows its code and loads its stored
+  result from `inst/extdata/vignette-fit-step.rds` (72 KB). A test that runs
+  on GitHub Actions refits the vignette's code and compares it with the
+  stored result.
+
+On win-builder this tarball's tests took 34 s (R-devel), 33 s (R-release) and
+39 s (R-oldrelease), against 113 s to 123 s for the first submission's; the
+vignette rebuild took 131 s to 135 s, against 243 s to 252 s. The whole check
+took 5 min 3 s on R-devel and 5 min 11 s on R-release, against 8 min 30 s and
+8 min 24 s for the first submission's, which then took 11 minutes in the
+incoming r-devel-windows check.
+
+## Reverse dependencies
+
+`tools::package_dependencies(reverse = TRUE, which = "all")` against CRAN
+returns none.
+
+## NOTEs
+
+None. All three win-builder checks gave 0 errors, 0 warnings and 0 notes,
+incoming feasibility included.
 
 ## Background
 
-* The package contains five clinical reference datasets (~120 KB compressed)
-  used in vignettes and in parity tests against the original C/SAS HAZARD
-  program.
+* The package ships six datasets, about 58 KB compressed in total. Five are
+  clinical reference datasets used in the vignettes and in parity tests
+  against the original C/SAS HAZARD program; the sixth, `uslife2023`, is the
+  2023 United States life table from the National Center for Health
+  Statistics.
 * Vignettes use Quarto (`VignetteBuilder: quarto`).
-* A subset of tests -- SAS parity, multi-start multiphase fits, OMC raw-file
-  derivation -- is guarded with `skip_on_cran()` to stay within CRAN runtime
-  budgets. The full suite, including the SAS parity gate, runs on GitHub
-  Actions.
-* DOI URLs in vignettes (doi.org) may return HTTP 403 to automated checkers
-  but resolve correctly in browsers.
+* Slow tests, including the SAS parity tests and multi-start multiphase fits,
+  carry `skip_on_cran()` to stay within CRAN's time budget. They run on every
+  GitHub Actions job, and the SAS parity tests, which need the reference
+  outputs, run on the ubuntu-latest R-release job.
+* DOI URLs in the vignettes (doi.org) may return HTTP 403 to automated
+  checkers but resolve in a browser.

@@ -364,16 +364,25 @@ NULL
 #'   inputs are refused because they cannot follow the rows: a response
 #'   whose values change once the rows are dropped, such as
 #'   `Surv(time - min(time), status)`, and a formula that reads a per-row
-#'   value from outside `data`. That check reads the formula's own
-#'   variables, so it cannot see inside a function: a helper that indexes a
-#'   vector from outside `data` by position, such as
-#'   `function(a) a + g[seq_along(a)]`, sees only the retained rows and pairs
-#'   them with the first elements of `g`, so every row after the first
-#'   dropped one is paired with the wrong value. Only the drop itself is
-#'   warned about; the mis-pairing is not.
-#'   `stats::lm(subset = )` is not a guide here: it evaluates the terms on
-#'   every row and subsets afterwards, so the same helper pairs correctly
-#'   there. Put such a vector in `data`, where it is dropped with its rows.
+#'   value from outside `data`. The second is read two ways. A variable
+#'   named in the formula is refused when it is not a column of `data`. A
+#'   helper that reads an outside vector inside its body, such as
+#'   `function(a) a + g[seq_along(a)]`, names no such variable, and on the
+#'   retained rows would pair them with the first elements of `g`. So the
+#'   formula's variables are evaluated on every row in order, and again with
+#'   the retained rows first, in their order, as the fit sees them; a
+#'   variable that then gives a retained row a different value is refused
+#'   (#590). Both times every row is present, so `scale()`, `poly()`,
+#'   `ns()` and factors pass, including a factor whose levels are taken in
+#'   order of appearance. A term that cannot be evaluated on the dropped
+#'   rows, such as `poly()` over an NA only they carry, is evaluated with
+#'   those rows replaced by a copy of a retained one. A term that depends on
+#'   the order of the rows, such as `cumsum(age)`, or is random, such as
+#'   `jitter(age)`, is refused unless the dropped rows are the last ones. A
+#'   helper that depends on how many rows it is given, such as
+#'   `tail(g, length(a))` or `a * mean(g[seq_along(a)])`, is not caught,
+#'   because both evaluations see every row. Put such a vector in `data`, where it is
+#'   dropped with its rows.
 #'   A caller-supplied row-aligned input whose row count differs from
 #'   `time`'s is refused before any row is dropped: `x` and `weights` on the
 #'   `time =`/`status =` interface, and `data` wherever a formula reads it row
@@ -540,9 +549,9 @@ NULL
 #'   evaluate a model at parameters you supply, use [hzr_evaluate()].
 #' - `n_starts`: Number of optimization starts for multiphase fits (default 5).
 #'   Each start after the first offsets the initial values. The offsets are
-#'   drawn from an internally seeded stream, so a multiphase fit is
-#'   reproducible without `set.seed()` and does not advance the caller's RNG
-#'   stream.
+#'   computed by the package without using R's random number stream, so a
+#'   multiphase fit is reproducible without `set.seed()` and neither reads nor
+#'   changes that stream.
 #' - `start_seed`: Seed selecting the ensemble of multi-start offsets
 #'   (default 3). Any whole number within integer range, negative included.
 #'   Fits are reproducible at any value; vary it to probe a different set of
@@ -576,8 +585,9 @@ NULL
 #'   than claiming the likelihood is unchanged (#228). The measured shares are
 #'   kept on the fit as `fit$fit$phase_share`. Raise it to catch marginal
 #'   phases, set it to 0 to silence the check.
-#' - `reltol`: Relative convergence tolerance on the objective, the negative
-#'   log-likelihood (default 1e-5). BFGS stops when an iteration reduces it by
+#' - `reltol`: Relative convergence tolerance on the objective the optimizer
+#'   minimizes, the negative log-likelihood (default 1e-5). The stored
+#'   `fit$fit$objective` has the opposite sign (see Value). BFGS stops when an iteration reduces it by
 #'   less than `reltol * (|objective| + reltol)`, so the stopping gap grows
 #'   with the size of the log-likelihood: about 0.0024 at a log-likelihood of
 #'   -240. On a flat surface plain BFGS can stop that far short of the optimum
@@ -802,15 +812,18 @@ NULL
 #'   \code{time_windows}, \code{phases}),
 #'   \code{data} (input data: \code{time}, \code{status}, \code{x},
 #'   \code{weights}, etc.),
-#'   \code{fit} (optimisation results: \code{theta}, \code{objective},
-#'   \code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message},
+#'   \code{fit} (optimisation results: \code{theta}, \code{objective}, the
+#'   maximized log-likelihood, so larger is better, or PROC HAZARD's objective
+#'   under \code{objective = "sas"} (\code{summary()} reports which, as its
+#'   \code{objective}); \code{converged}, \code{se}, \code{vcov}, \code{counts}, \code{message},
 #'   and \code{rel_gradient}, \code{rel_gradient_reason} and
 #'   \code{polish_code}, the SAS/C acceptance
 #'   test described under "Convergence";
 #'   all \code{NULL} when \code{fit = FALSE}; multiphase fits add
 #'   \code{starts}, one row per optimisation start with its \code{status}
 #'   (\code{"ok"}, \code{"nonconverged"}, \code{"infeasible"},
-#'   \code{"nonfinite"} or \code{"error"}), \code{objective} (\code{NA}
+#'   \code{"nonfinite"} or \code{"error"}), \code{objective} (on the same
+#'   scale as the fit's, so the best start has the largest; \code{NA}
 #'   unless the start reached a point where the likelihood is defined, and
 #'   recorded as the optimizer returned it, before any Conservation of Events
 #'   adjustment to the conserved phase's scale), \code{convergence} (the
@@ -828,11 +841,14 @@ NULL
 #'   \code{params} entry, \code{single = TRUE}, its \code{estimate}, and
 #'   \code{correlation = NA}, and \code{se_metric}, its standard error on
 #'   the log scale; only a g3 shape, \code{gamma}, \code{alpha} or
-#'   \code{eta}, is named this way);
+#'   \code{eta}, or a multiphase phase's \code{log_mu}, \code{log_t_half}
+#'   or \code{log_tau}, is named this way, the last three when their
+#'   standard error exceeds 10 log units, and with \code{weights = NA});
 #'   \code{NULL} when the fit was examined and is well identified; and
 #'   \code{NA} when the check could not run because no usable Hessian was
 #'   available, which includes an unfitted object, an install without
-#'   the suggested \pkg{numDeriv}, and an ill-conditioned fit in which an
+#'   the suggested \pkg{numDeriv}, a Hessian that is not positive-definite
+#'   (unless a ridge was found, which is reported), and an ill-conditioned fit in which an
 #'   estimated parameter has no finite variance and no ridge was found among
 #'   the others, since that parameter was not examined. Test with \code{is.list(fit$fit$weak)},
 #'   not \code{!is.null()}: the \code{NA} case has not been examined and
@@ -986,6 +1002,10 @@ hazard <- function(formula = NULL,
   # model.matrix() take a classed numeric's stored doubles too (#231).
   data <- .hzr_numeric_frame_values(data)
 
+  # Recorded here because it cannot be recovered from the stored call: a
+  # wrapper writes `formula = fml` whether `fml` held a formula or NULL, and
+  # a formula given beside `time =` is the one used (#432).
+  interface <- if (is.null(formula)) "vector" else "formula"
   if (!is.null(formula)) {
     if (is.null(data)) {
       stop("'data' is required when 'formula' is provided.", call. = FALSE)
@@ -1265,6 +1285,28 @@ hazard <- function(formula = NULL,
              "outside `data`, which cannot follow the rows. Put ",
              if (length(outside) > 1L) "them" else "it", " in `data`, or ",
              "drop the rows at time 0 yourself.", call. = FALSE)
+      }
+      # (1b) The same, read by behaviour (#590): a helper that indexes an
+      #      outside vector by position, `function(a) a + g[seq_along(a)]`,
+      #      names no outside variable for (1) to see, and pairs the kept
+      #      rows with the first values of `g`. Evaluated on every row with
+      #      the kept rows first, as the fit sees them, such a variable gives
+      #      a kept row a value other than its own. scale(), poly(), ns() and
+      #      factor coding do not. See .hzr_position_bound_columns() for
+      #      what it cannot see.
+      position_bound <- .hzr_position_bound_columns(forms, data_full, keep)
+      if (length(position_bound)) {
+        stop(n_dropped_time_zero, " row(s) are at time 0 and are dropped ",
+             "before fitting, as PROC HAZARD drops them, but the formula's ",
+             paste0("'", position_bound, "'", collapse = ", "), " depend",
+             if (length(position_bound) == 1L) "s", " on the order of the ",
+             "rows: evaluated with the kept rows first, as the fit sees ",
+             "them, ", if (length(position_bound) > 1L) "they do" else
+               "it does",
+             " not give each kept row its own value. A term that reads a value from outside ",
+             "`data` by position does this, and would be paired with the ",
+             "wrong rows. Put that value in `data`, or drop the rows at time 0 ",
+             "yourself.", call. = FALSE)
       }
       # (2) Rebuild the response and design on the retained rows. A
       #     response whose values then CHANGE depended on the dropped rows --
@@ -1889,10 +1931,29 @@ hazard <- function(formula = NULL,
       }
     }))
   }
+  # And each phase's log-scale scale parameters (#673). A covariate can share
+  # one of their names (a column called `log_mu` makes a second
+  # `constant.log_mu`), and a name that appears twice cannot say which
+  # parameter it is, so it is never named.
+  weak_logs <- if (dist == "multiphase" && length(phases)) {
+    unlist(lapply(seq_along(phases), function(k) {
+      scale <- switch(phases[[k]]$type, g3 = "log_tau", constant = NULL,
+                      "log_t_half")
+      paste0(names(phases)[[k]], ".", c("log_mu", scale))
+    }))
+  }
+  weak_logs <- setdiff(weak_logs, weak_names[duplicated(weak_names)])
   weak_check <- .hzr_weak_direction_impl(weak_vcov, fit_state$rcond,
                                          weak_names, theta = fit_state$par,
                                          shape_names = weak_shapes,
-                                         fixed_mask = masked)
+                                         fixed_mask = masked,
+                                         log_names = weak_logs)
+  # A Hessian that is not positive-definite is not at a maximum, so "nothing
+  # near-flat" says nothing about identification. A ridge it did find stands.
+  if (is.null(weak_check$weak) && isFALSE(fit_state$pd)) {
+    weak_check <- list(weak = NA,
+                       reason = "Hessian not positive-definite at the optimum")
+  }
   fit_state$weak <- weak_check$weak
   degraded_reasons$weak <- weak_check$reason
   if (is.list(fit_state$weak)) {
@@ -1973,7 +2034,8 @@ hazard <- function(formula = NULL,
   #                re-evaluates the stored call; it must do so here, otherwise
   #                arguments passed by symbol (theta, phases, control) cannot
   #                be resolved.
-  # $spec       -- model specification (dist, control)
+  # $spec       -- model specification (dist, control); $spec$interface
+  #                is "formula" or "vector", the route this call took
   # $data       -- raw data stored for default predict() / refit
   # $fit        -- optimisation results (see fit_state fields above)
   # $legacy_args -- pass-through ... args for SAS-migration parity
@@ -1982,7 +2044,7 @@ hazard <- function(formula = NULL,
     call = captured_call,
     call_env = captured_env,
     spec = list(dist = dist, control = control, time_windows = time_windows,
-                phases = phases, objective = objective),
+                phases = phases, objective = objective, interface = interface),
     data = list(
       time = time,
       time_lower = time_lower,
@@ -3312,10 +3374,11 @@ coef.hazard <- function(object, ...) {
 #'   is still usable. For Conservation-of-Events fits the conserved phase
 #'   \code{log_mu} \emph{normally} carries a variance: it is removed from the
 #'   optimizer search but the vcov is the full-information matrix at the optimum
-#'   (the CoE solution is the unconstrained MLE). That recomputation requires
-#'   \pkg{numDeriv} and an invertible Hessian; if either is unavailable the fit
-#'   emits a warning and the conserved \code{log_mu} stays \code{NA} (the rest
-#'   of the matrix is unaffected). For a Weibull fit whose scale \code{mu}, or
+#'   (the CoE solution is the unconstrained MLE). That recomputation needs a
+#'   Hessian (analytic, or from \pkg{numDeriv} for left- or interval-censored
+#'   rows) that can be inverted; if it fails the fit warns, records why in
+#'   \code{degraded_causes}, and has no covariance matrix, so \code{vcov()}
+#'   returns \code{NA}. For a Weibull fit whose scale \code{mu}, or
 #'   its variance, cannot be represented, \code{mu}'s row and column are
 #'   \code{NA}, the reason is recorded in the fit's \code{degraded_causes},
 #'   and \code{summary()} shows the variance of \code{log(mu)} instead.
@@ -3334,8 +3397,8 @@ vcov.hazard <- function(object, ...) {
   # rather than collapsing the whole matrix to a scalar NA -- a multiphase fit
   # legitimately has NA rows for parameters held fixed (e.g. early shapes),
   # which carry no Hessian-based variance. (The CoE-conserved log_mu is
-  # normally NOT NA -- it gets the full-information variance -- but stays NA if
-  # that recomputation was unavailable; the fit warns in that case.)
+  # NOT NA -- it gets the full-information variance; when that recomputation
+  # fails the fit has no matrix at all and returns NA above.)
   # The finite free-parameter block is still usable.
   theta <- object$fit$theta
   nm <- names(theta)

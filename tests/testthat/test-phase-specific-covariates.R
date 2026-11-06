@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # tests/testthat/test-phase-specific-covariates.R
 #
 # Phase 7d: correctness tests for phase-specific covariates (hzr_phase(formula=)).
@@ -372,6 +376,11 @@ test_that("`.` in a phase formula over response-only data", {
   age <- avc_275$age
   expect_error(suppressWarnings(fit_277(~ . + age, data = d0)),
                "stands for no column")
+})
+
+test_that("`.` inside a function call in a phase formula is refused", {
+  # It used to become ~ 1: a phase with no covariates and no warning.
+  expect_error(fit_277(~ log(abs(.))), "inside a function call")
 })
 
 test_that("`.` in a phase formula is refused on the vector interface", {

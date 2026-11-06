@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # tests/testthat/test-gof-per-subject.R
 # hzr_gof() expected events are per subject (issue #254): each subject
 # contributes its own cumulative hazard at exit, minus the cumulative hazard

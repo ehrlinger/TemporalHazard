@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # `.fit_driver_base()` lives in helper-stepwise.R (auto-sourced by
 # testthat) so it can be shared with the integration tests.
 
@@ -336,14 +340,101 @@ test_that("criterion = 'score' rejects a non-converged base up front", {
     "did not converge"
   )
 
-  # wald refits each candidate from the call and tolerates the bad base.
-  # Assert the screen tested something: a screen whose refits all failed
-  # also returns without error.
+  # A candidate refits under the base's control (#688), so its maxit = 1
+  # stops the candidate short too, and the screen records the failure.
+  stuck <- suppressWarnings(
+    hzr_stepwise(base_bad, scope = ~ age + mal, data = avc,
+                 criterion = "wald", direction = "forward", trace = FALSE)
+  )
+  expect_length(stuck$criteria$refit_failures, 1L)
+  expect_length(stuck$steps$variable[stuck$steps$action == "enter"], 0L)
+
+  # wald refits each candidate from the call and tolerates the bad base once
+  # the refits may converge. Assert the screen tested something: a screen
+  # whose refits all failed also returns without error.
   res <- hzr_stepwise(base_bad, scope = ~ age + mal, data = avc,
                       criterion = "wald", direction = "forward",
-                      trace = FALSE)
+                      trace = FALSE, control = list(maxit = 100))
   expect_length(res$criteria$refit_failures, 0L)
   expect_identical(res$steps$variable[res$steps$action == "enter"], "mal")
+})
+
+# delta AIC is the candidate's AIC minus the base's, so a base that stopped
+# short of its maximum hands every candidate the shortfall: pure noise
+# entered at delta AIC -16.5 from this base (-249 from maxit = 1).
+.sw_noise_data <- function() {
+  set.seed(5)
+  n <- 300
+  noise <- stats::rnorm(n)
+  noise2 <- stats::rnorm(n)
+  t <- stats::rweibull(n, shape = 1.5, scale = 2)
+  data.frame(time = pmin(t, 3), dead = as.integer(t <= 3),
+             noise = noise, noise2 = noise2)
+}
+
+test_that("criterion = 'aic' rejects a non-converged base up front", {
+  d <- .sw_noise_data()
+  base_bad <- suppressWarnings(
+    hazard(survival::Surv(time, dead) ~ 1, data = d, dist = "weibull",
+           theta = c(5, 0.5), control = list(maxit = 5), fit = TRUE)
+  )
+  # Premise: the optimizer ran and stopped short.
+  expect_identical(base_bad$fit$converged, FALSE)
+  expect_length(base_bad$fit$theta, 2L)
+  for (dir in c("forward", "both")) {
+    expect_error(
+      hzr_stepwise(base_bad, scope = ~ noise + noise2, data = d,
+                   criterion = "aic", direction = dir, trace = FALSE),
+      "criterion = 'aic' requires a converged base model"
+    )
+  }
+  # A backward screen takes no scope; it drops from the base's own terms.
+  full_bad <- suppressWarnings(
+    hazard(survival::Surv(time, dead) ~ noise + noise2, data = d,
+           dist = "weibull", theta = c(5, 0.5, 0, 0),
+           control = list(maxit = 5), fit = TRUE)
+  )
+  expect_identical(full_bad$fit$converged, FALSE)
+  expect_error(
+    hzr_stepwise(full_bad, data = d, criterion = "aic",
+                 direction = "backward", trace = FALSE),
+    "criterion = 'aic' requires a converged base model"
+  )
+
+  # Control: the same base run to convergence screens, and enters no noise.
+  base_ok <- suppressWarnings(
+    hazard(survival::Surv(time, dead) ~ 1, data = d, dist = "weibull",
+           theta = c(5, 0.5), fit = TRUE)
+  )
+  expect_identical(base_ok$fit$converged, TRUE)
+  res <- suppressWarnings(
+    hzr_stepwise(base_ok, scope = ~ noise + noise2, data = d,
+                 criterion = "aic", direction = "forward", trace = FALSE)
+  )
+  expect_length(res$criteria$refit_failures, 0L)
+  expect_identical(sum(res$steps$action == "enter"), 0L)
+})
+
+test_that("criterion = 'wald' rejects a non-converged base it would drop from", {
+  # A Wald entry is tested at the candidate's own converged refit, so a
+  # forward screen tolerates the bad base (see above). A removal is tested on
+  # the current model's own estimates and variance, which for the first step
+  # are the base's, at a point the optimizer had not finished with.
+  data(avc)
+  avc <- na.omit(avc)
+  base_bad <- suppressWarnings(
+    hazard(survival::Surv(int_dead, dead) ~ age + mal, data = avc,
+           dist = "weibull", fit = TRUE, theta = c(0.5, 1, 0, 0),
+           control = list(maxit = 1))
+  )
+  expect_identical(base_bad$fit$converged, FALSE)
+  for (dir in c("backward", "both")) {
+    expect_error(
+      hzr_stepwise(base_bad, data = avc, criterion = "wald",
+                   direction = dir, trace = FALSE),
+      "direction = '.*' requires a converged base model"
+    )
+  }
 })
 
 test_that("a two-level factor candidate is tested by wald and refused by score", {

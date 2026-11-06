@@ -16,7 +16,7 @@ adds a native R implementation so they can be, which is TemporalHazard's remit: 
 reproduction.
 
 The immediate parity target is
-`/Volumes/qhsstudies/cardiac/rhythm/maze/permanent/distributions/hz.ce_cardioversion_repeated.ehb.sas`
+`/Volumes/qhsstudies/<study>/distributions/hz.ce_cardioversion_repeated.ehb.sas`
 — early CDF plus late G3, `LCENSOR IV_START`, `CONSERVE`, 9 free parameters, log
 likelihood -267.885 — whose fit input `events` is built by `%repeat(...)` into SAS WORK.
 
@@ -340,14 +340,14 @@ Assertions state exact expected vectors. Never
 `expect_true(all(x %in% <every possible value>))` — see `AGENTS.md`.
 
 **Volume-gated parity test** (`tests/testthat/test-repeated-events-parity.R`): skips
-unless the maze study datasets are mounted (overridable with `HAZARD_MAZE_DATASETS`) and
+unless `HAZARD_MAZE_DATASETS` names the mounted maze study datasets and
 `haven` is installed. It rebuilds `bd_card`, asserts every shape in the table under
 Acceptance **before** comparing any value, then the tallies and ranges, then that the
 result does not depend on input row order.
 
 **Volume-gated `renewal` parity test** (`tests/testthat/test-repeated-events-renewal-parity.R`):
-it skips unless the achalasia datasets are mounted (overridable with
-`HAZARD_ACHALASIA_DIR`). It rebuilds `bdmult1`, asserts every shape, then the `.lst`
+it skips unless `HAZARD_ACHALASIA_DIR` names the mounted achalasia
+datasets. It rebuilds `bdmult1`, asserts every shape, then the `.lst`
 crosstab, then `library.bdrein` row by row. Its failure output is counts only: no row and no
 `ccfid`.
 

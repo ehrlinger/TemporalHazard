@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # Under criterion = "aic" an entry compares the candidate's AIC with the base
 # model's. A multiphase refit drops every row where the candidate is missing,
 # so a candidate with NAs was scored on fewer rows than the base, its

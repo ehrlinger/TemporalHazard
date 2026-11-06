@@ -97,6 +97,10 @@ jobs:
           - {os: ubuntu-latest, r: 'devel', per_pr: true}
           - {os: ubuntu-latest, r: 'release', per_pr: true, sas_corpus: true}
           - {os: ubuntu-latest, r: 'oldrel-1', per_pr: true}
+          # The declared floor, DESCRIPTION's Depends: R (>= 4.1.0). Nothing else
+          # runs it: oldrel-1 is the previous release, not the floor. Not a
+          # required check, so a dependency that drops 4.1 cannot block merges.
+          - {os: ubuntu-latest, r: '4.1', per_pr: true}
           - {os: macos-latest,  r: 'release'}
           - {os: windows-latest, r: 'release'}
 

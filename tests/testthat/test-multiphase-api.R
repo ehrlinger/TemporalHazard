@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # test-multiphase-api.R — End-to-end tests for multiphase hazard via hazard()
 #
 # Tests construction, fitting, predict, summary, and print for dist="multiphase".

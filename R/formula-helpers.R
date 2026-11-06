@@ -152,6 +152,17 @@
 #' @keywords internal
 #' @noRd
 .hzr_expand_rhs <- function(formula, data) {
+  # `.` is written out only where it is a term of its own. Inside a call,
+  # terms() leaves it alone -- or, beside a bare `.`, substitutes the SUM of
+  # the columns -- and lm() stops with "object '.' not found".
+  inside <- .hzr_dot_in_calls(formula[[length(formula)]])
+  if (length(inside) > 0L) {
+    stop("`.` can stand only as a term of its own, as in `~ .` or ",
+         "`~ . - age`; it is inside a function call in ",
+         paste0("`", inside, "`", collapse = ", "),
+         ", where it is not written out column by column. Write those ",
+         "terms out with the column names.", call. = FALSE)
+  }
   rhs_formula <- stats::formula(
     stats::delete.response(stats::terms(formula, data = data))
   )
@@ -169,6 +180,32 @@
     rhs_formula <- stats::reformulate("1", env = environment(rhs_formula))
   }
   rhs_formula
+}
+
+#' Find the terms of a formula that use `.` inside a function call
+#'
+#' Walks the formula operators (`+ - * / : ^ ( %in%`), where `.` is a term
+#' of its own, and returns each other call that reaches a `.` symbol. This
+#' uses `all.vars()`, not `.hzr_mask_symbols()`: `terms()` substitutes the
+#' columns for the `.` in `cfg$.` too, so that is reported.
+#'
+#' @param e A formula right-hand side (a call or symbol).
+#' @return Character vector of deparsed offending terms, possibly empty.
+#' @keywords internal
+#' @noRd
+.hzr_dot_in_calls <- function(e) {
+  if (!is.call(e)) return(character(0))
+  head <- e[[1L]]
+  ops <- c("+", "-", "*", "/", ":", "(", "%in%")
+  if (is.symbol(head) && as.character(head) %in% ops) {
+    return(unlist(lapply(as.list(e)[-1L], .hzr_dot_in_calls)))
+  }
+  # The exponent of `^` is a number, never a term.
+  if (identical(head, as.symbol("^"))) return(.hzr_dot_in_calls(e[[2L]]))
+  if ("." %in% all.vars(e)) {
+    return(paste(deparse(e), collapse = " "))
+  }
+  character(0)
 }
 
 #' Drop the columns of `data` named ""
@@ -1057,12 +1094,16 @@
 #' The fit's record, `attr(fit$x_list, "from_formula")`, decides when it is
 #' there. A fit saved before that record (no tag through v1.2.9 has it)
 #' falls back to its columns: a phase with no formula inherits, and a phase
-#' with one inherits only if its stored columns are exactly the inherited
-#' ones -- the window-expanded names under `time_windows`, otherwise
-#' `colnames(data$x)`. That keeps a 1.0.3-era fit, which kept neither the
-#' record nor its data, on the phase formula it was fitted with. Known
-#' limit: a pre-record phase formula whose columns are literally the
-#' inherited names; without windows both routes then build the same design.
+#' with one inherits only if its stored design IS the inherited one -- the
+#' same column names and the same values as `data$x`, expanded at the stored
+#' times under `time_windows`. That keeps a 1.0.3-era fit, which kept neither
+#' the record nor its data, on the phase formula it was fitted with. Names
+#' alone are not enough under `time_windows`: a phase formula can use
+#' columns named like the expanded ones (`x1_w1`, `x1_w2`) that hold other
+#' covariates, and reading it as inherited swapped them for the global ones
+#' (#658). A phase formula whose design equals the inherited one in names
+#' and values is read as inheriting; both routes then build the same design
+#' at the fitted times.
 #'
 #' @param object A fitted multiphase `hazard` object.
 #' @param nm Phase name.
@@ -1081,14 +1122,20 @@
   }
   time_windows <- object$spec$time_windows
   inherited <- if (!is.null(time_windows) && !is.null(object$data$x)) {
-    colnames(.hzr_expand_time_varying_design(
-      x = object$data$x[1, , drop = FALSE], time = 0,
+    .hzr_expand_time_varying_design(
+      x = object$data$x, time = object$data$time,
       time_windows = time_windows
-    ))
+    )
   } else {
-    colnames(object$data$x)
+    object$data$x
   }
-  identical(colnames(object$fit$x_list[[nm]]), inherited)
+  m <- object$fit$x_list[[nm]]
+  if (!identical(colnames(m), colnames(inherited))) {
+    return(FALSE)
+  }
+  is.null(inherited) ||
+    (identical(dim(m), dim(inherited)) &&
+       isTRUE(all(unname(m) == unname(inherited))))
 }
 
 
@@ -1137,6 +1184,7 @@
   # the rebuild, but predict() selects columns by name, so both would read
   # the first; it is not rebuilt.
   if (!is.null(object$data$x_design) || is.null(x_fit) || is.null(f) ||
+        !.hzr_is_formula_fit(object, TRUE) ||
         !is.environment(env) || !is.data.frame(frame) ||
         anyDuplicated(colnames(x_fit)) > 0L) {
     return(object)
@@ -1311,7 +1359,8 @@
     # would be a silent wrong answer, so it is refused -- as it was before,
     # when such a column made the positional match fail.
     extra <- setdiff(names(newdata), c(cols, "time"))
-    if (!is.null(object$call$formula) && length(extra) > 0L) {
+    if (.hzr_is_formula_fit(object, !is.null(object$call$formula)) &&
+          length(extra) > 0L) {
       stop("This fit was saved by an earlier version of TemporalHazard, ",
            "without a stored formula design, so 'newdata' may hold only its ",
            "design columns (", paste0("'", cols, "'", collapse = ", "),

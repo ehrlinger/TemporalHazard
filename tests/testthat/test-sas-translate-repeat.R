@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # test-sas-translate-repeat.R -- hzr_translate_sas() on jobs that call the
 # SAS macro %repeat. Every test evaluates the emitted chunks; expected values
 # are derived by hand from ~/Documents/macro.library/repeat.sas (see

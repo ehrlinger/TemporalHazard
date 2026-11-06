@@ -255,7 +255,7 @@
   rhs <- if (length(new_terms) == 0L) "1" else paste(new_terms, collapse = " + ")
 
   is_two_sided <- length(formula) == 3L
-  lhs <- if (is_two_sided) deparse(formula[[2L]]) else NULL
+  lhs <- if (is_two_sided) deparse1(formula[[2L]]) else NULL
   env <- environment(formula)
 
   new_text <- if (is_two_sided) {
@@ -464,6 +464,28 @@
   .walk(rhs)
 }
 
+#' Whether a fit was built through the formula interface
+#'
+#' `hazard()` records the route it took in `spec$interface` (#432). The
+#' stored call cannot say: a wrapper writes `formula = fml` whether `fml`
+#' held a formula or NULL, and a formula given beside `time =` is the one
+#' used. A fit saved before the field existed is answered by `legacy`, the
+#' rule each call site used before it; being an argument, it is evaluated
+#' only for such a fit.
+#'
+#' @param fit A fitted `hazard` object.
+#' @param legacy Logical scalar, the answer for a fit with no recorded
+#'   interface.
+#' @return `TRUE` for a formula-interface fit, `FALSE` for a vector one.
+#' @keywords internal
+#' @noRd
+.hzr_is_formula_fit <- function(fit, legacy) {
+  interface <- fit$spec$interface
+  if (identical(interface, "formula")) return(TRUE)
+  if (identical(interface, "vector")) return(FALSE)
+  legacy
+}
+
 #' Resolve the model formula stored in a fit's call
 #'
 #' `match.call()` stores the `formula` argument unevaluated, so it arrives as
@@ -489,7 +511,7 @@
 .hzr_stored_formula <- function(fit, what = "`fit`",
                                 envir = parent.frame()) {
   raw <- fit$call$formula
-  if (is.null(raw)) {
+  if (is.null(raw) || !.hzr_is_formula_fit(fit, TRUE)) {
     return(NULL)
   }
   if (inherits(raw, "formula")) {

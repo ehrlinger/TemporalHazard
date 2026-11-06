@@ -94,7 +94,8 @@
 #' }
 #'
 #' @param fit A fitted `hazard` object built via the
-#'   `formula = Surv(...) ~ predictors, data = df` interface.
+#'   `formula = Surv(...) ~ predictors, data = df` interface, or a multiphase
+#'   fit from either interface.
 #' @param scope Candidate set.  `NULL` (default) uses every data-frame
 #'   column not already in the model for every phase.  A candidate enters
 #'   as the column it names, whatever its name: a column literally named
@@ -157,22 +158,30 @@
 #'   `"wald"`, or `"aic"`.  `"score"` and `"wald"` both apply SAS-style
 #'   p-value thresholds (`slentry` / `slstay`) but score entry candidates
 #'   differently, and can therefore select different variable sets; `"score"`
-#'   reproduces C/SAS HAZARD and needs no per-candidate refit.  `"aic"` adds or
-#'   drops whenever it lowers the AIC.  See the **Selection direction and
+#'   reproduces C/SAS HAZARD and needs no per-candidate refit, except at a
+#'   step whose information cannot be formed, where it falls back to
+#'   refitting and Wald-testing each candidate.  `"aic"` adds or
+#'   drops whenever it lowers the AIC.  `"score"` and `"aic"` refuse a base
+#'   fit that did not converge, since both measure candidates against it, and
+#'   so does `"wald"` unless `direction = "forward"`, since a removal is
+#'   tested on the base's own estimates.  See the **Selection direction and
 #'   criterion** section.
 #' @param slentry Entry p-value threshold for the score / Wald criteria.
 #'   Default `0.30` matches SAS `SLENTRY`.
 #' @param slstay Retention p-value threshold for the score / Wald criteria.
 #'   Default `0.20` matches SAS `SLSTAY`.
-#' @param max_steps Hard cap on total accepted actions.  Emits a
-#'   `warning()` if hit.  Default `50`.
+#' @param max_steps Limit on the rows of `$steps`: accepted actions and the
+#'   `"frozen"` rows `max_move` writes.  It is checked before each iteration,
+#'   so the iteration that reaches it can write several rows and pass it.
+#'   Emits a `warning()` if hit.  Default `50`.
 #' @param max_move Per-variable oscillation cap.  When a variable has
 #'   entered + exited more than `max_move` times it is frozen for the
 #'   remainder of the run, in the state it ends that iteration in.  Default
 #'   `4`.  See the **The frozen set** section.
 #' @param force_in Character vector of variables that must remain in
 #'   the model.  Such variables are still scored and reported in the
-#'   selection trace, but are never dropped.  Each name is looked up, not
+#'   selection trace, but are never dropped.  A factor with several
+#'   coefficients has no one score, so its row reads `NA`.  Each name is looked up, not
 #'   parsed, once, when the screen starts: a name that is exactly a column
 #'   of `data` is that column, so the bare `"_X1"` pins the column `_X1`
 #'   although `terms()` labels it `` `_X1` ``, and `"TRUE"` pins a column
@@ -198,7 +207,13 @@
 #'   other `hazard()` argument (the response, `weights`, `time_windows`,
 #'   `dist`, `theta`, `phases`, `fit` and so on) is set by the refit itself,
 #'   from the base model and `data`, so that each candidate is compared with
-#'   the model it extends.
+#'   the model it extends. Every candidate refit, and the selected model,
+#'   runs under the elements of the base fit's `control` that a fit reads
+#'   (`maxit`, `reltol` and, for a multiphase fit, `n_starts`, `conserve`,
+#'   `phase_share_tol` and `start_seed`), as every step of a SAS
+#'   `SELECTION` runs under one `PROC HAZARD`'s options. A `control` given
+#'   here overrides it entry by entry: `control = list(maxit = 500)` changes
+#'   `maxit` and keeps the rest.
 #'   The `print()`, `summary()` and `as.data.frame()` methods ignore `...`.
 #'
 #' @return An object of class `c("hzr_stepwise", "hazard")`, the
@@ -392,8 +407,7 @@
 #'                theta = c(mu = 0.01, nu = 0.5, 0))
 #' \donttest{
 #' sw <- hzr_stepwise(base, scope = ~ age + mal,
-#'                    data = avc, direction = "forward",
-#'                    control = list(n_starts = 1))
+#'                    data = avc, direction = "forward")
 #' print(sw)
 #' }
 #'
@@ -447,6 +461,7 @@ hzr_stepwise <- function(fit,
   extra_args <- .hzr_check_forwarded_dots(list(...), "hzr_stepwise",
                                           own = names(formals(hzr_stepwise)),
                                           fit = fit)
+  extra_args <- .hzr_inherit_control(extra_args, fit)
   extra_args <- .hzr_validate_control_once(extra_args, fit)
   if (missing(data) || !is.data.frame(data)) {
     stop("`data` must be a data frame (typically the frame used for the base fit).",
@@ -560,13 +575,37 @@ hzr_stepwise <- function(fit,
   # base that did not converge (or was never fitted, leaving an empty theta)
   # has nothing to score.  Catch that here with an actionable message rather
   # than letting the internal `.hzr_score_free_idx()` guard fire deep in the
-  # candidate loop.  `wald` and `aic` refit each candidate from the call and
-  # legitimately tolerate a non-converged base, so they are left alone.
-  if (criterion == "score" &&
-        (!isTRUE(fit$fit$converged) || length(fit$fit$theta) == 0L)) {
+  # candidate loop.
+  base_unfitted <- !isTRUE(fit$fit$converged) || length(fit$fit$theta) == 0L
+  if (criterion == "score" && base_unfitted) {
     stop("criterion = 'score' requires a converged base model with fitted ",
          "coefficients; this fit did not converge. Supply theta starting ",
-         "values to hazard(), or use criterion = 'wald'.",
+         "values to hazard(), or use criterion = 'wald' with ",
+         "direction = 'forward'.",
+         call. = FALSE)
+  }
+  # An AIC entry is the candidate's AIC minus the base's, so a base that
+  # stopped short of its maximum credits every candidate with the shortfall:
+  # each warm-starts from the base's point and finishes the climb the base
+  # did not. Pure noise entered that way, with no warning.
+  if (criterion == "aic" && base_unfitted) {
+    stop("criterion = 'aic' requires a converged base model with fitted ",
+         "coefficients; this fit did not converge, and each candidate's ",
+         "delta AIC is measured against its log-likelihood. Supply theta ",
+         "starting values to hazard(), or use criterion = 'wald' with ",
+         "direction = 'forward'.",
+         call. = FALSE)
+  }
+  # A Wald entry is tested at the candidate's own converged refit, so a
+  # forward Wald screen does not read the base's estimates and tolerates a
+  # base that stopped short. A removal is tested on the current model's own
+  # estimates and variance, which at the first step are the base's.
+  if (criterion == "wald" && direction != "forward" && base_unfitted) {
+    stop("criterion = 'wald' with direction = '", direction, "' requires a ",
+         "converged base model with fitted coefficients; this fit did not ",
+         "converge, and a removal is tested on its estimates and variance. ",
+         "Supply theta starting values to hazard(), or use ",
+         "direction = 'forward'.",
          call. = FALSE)
   }
 
@@ -1257,6 +1296,16 @@ hzr_stepwise <- function(fit,
             .hzr_score_reason_text("duplicate_column"), ". See ",
             "`$criteria$uncomputable_reasons`.", call. = FALSE)
   }
+  # A candidate with NA was passed over untested, often in favour of a weaker
+  # one, and a completed run said nothing (#686).
+  n_missing <- sum(uncomputable_reasons[names(uncomputable_reasons) ==
+                                          "missing_values"])
+  if (!stopped_uncomputable && n_missing > 0L) {
+    warning("Stepwise selection declined ", n_missing, " candidate ",
+            "score(s) without testing them: ",
+            .hzr_score_reason_text("missing_values"), ". See ",
+            "`$criteria$uncomputable_reasons`.", call. = FALSE)
+  }
   # A refused AIC entry reads like a candidate that did not lower the AIC, and
   # it is not one: it was never compared (#488).
   n_rows_differ <- sum(uncomputable_reasons[names(uncomputable_reasons) ==
@@ -1295,6 +1344,32 @@ hzr_stepwise <- function(fit,
 
   class(result) <- unique(c("hzr_stepwise", class(result)))
   result
+}
+
+# Every candidate refit runs under the base fit's `control`, as every step of
+# a SAS SELECTION runs under one PROC HAZARD's options (#688). Without it, a
+# base fit run with conserve = FALSE or a raised maxit was stepped, and its
+# selected model fitted, at hazard()'s defaults. A `control` given to
+# hzr_stepwise() overrides the base entry by entry. Only the names a fit
+# reads are taken: spec$control also records the state the fit applied
+# (conserve_applied), which a refit would warn it does not read, and
+# shape_param_count, which the refit counts for itself (#489).
+.hzr_inherit_control <- function(extra_args, fit) {
+  base <- fit$spec$control
+  base <- base[intersect(names(base), c(.hzr_control_names$all,
+                                        .hzr_control_names$multiphase))]
+  if (!length(base)) return(extra_args)
+  # The given list is validated before the merge: modifyList() would drop an
+  # unnamed element unwarned, and read `maxit = NULL` as "remove the base's
+  # maxit" where hazard() refuses it. Validation is idempotent, so the
+  # merged list draws no second warning.
+  given <- if (is.list(extra_args$control)) {
+    .hzr_validate_control(extra_args$control, fit$spec$dist)
+  } else {
+    list()
+  }
+  extra_args$control <- utils::modifyList(base, given)
+  extra_args
 }
 
 # Validate a forwarded `control` ONCE, here, and forward what survives (#410).
@@ -1485,8 +1560,7 @@ as.data.frame.hzr_stepwise <- function(x, ...) {
 #'                theta = c(mu = 0.01, nu = 0.5, 0))
 #' \donttest{
 #' sw <- hzr_stepwise(base, scope = ~ age + mal,
-#'                    data = avc, direction = "forward",
-#'                    control = list(n_starts = 1))
+#'                    data = avc, direction = "forward")
 #' cat(stepwise_trace(sw), sep = "\n")
 #' }
 #' @export

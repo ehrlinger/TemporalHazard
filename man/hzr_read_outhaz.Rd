@@ -14,8 +14,9 @@ holding the same data frame.}
 An \code{hzr_outhaz} object: a list with \code{estimates} (named numeric),
 \code{status} (named integer, 1 free / 0 fixed), \code{vcov} (matrix over free
 parameters, dimnames set) and \code{flags} (named numeric of model-structure
-flags). When no parameter is free, \code{vcov} is a 0x0 matrix rather than
-\code{NULL}, so check its dimensions rather than \code{is.null()}.
+flags). When no parameter is free, or the dataset was written with
+\code{NOCOV}, \code{vcov} is a 0x0 matrix rather than \code{NULL}, so check its dimensions
+rather than \code{is.null()}.
 }
 \description{
 \verb{PROC HAZARD}'s \verb{outhaz=} dataset stores the converged estimates and the

@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # A multiphase refit drops every row where a variable in the model is missing.
 # So entering a variable with NAs shrinks the sample every later step is tested
 # on, and dropping it grows the sample back. Nothing said so (#519). Each step

@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # `time_lower` as a counting-process entry time -------------------------------
 #
 # For status 0/1 rows the log-likelihood subtracts H(time_lower) from every

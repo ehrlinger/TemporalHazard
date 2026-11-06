@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # tests/testthat/test-decompos-boundary.R
 #
 # Phase 7d: boundary and limiting-case behavior of hzr_decompos().
@@ -80,6 +84,25 @@ test_that("g equals the numerical derivative of G across the used branches", {
   check_deriv(3,  2,  0)   # Case 1L
   check_deriv(3,  2, -1)   # Case 2
   check_deriv(3,  0, -1)   # Case 2L
+})
+
+test_that("Case 3L keeps G nonzero, and g its derivative, far below 1e-16 (#600)", {
+  # The point a multiphase start ran away to on avc. There btnu is ~1e-18,
+  # 1 - exp(-btnu) rounded G to exactly 0, and g, formed directly, stayed
+  # ~1e-17: the cumulative hazard was 0 at every event while the hazard was
+  # not, and the optimizer climbed log mu to 130 for a log-likelihood of
+  # +6380.86.
+  t_half <- exp(288.923)
+  nu     <- -7.65665
+  t      <- c(0.0014, 0.016, 0.053, 0.33, 0.38)
+  d      <- hzr_decompos(t, t_half = t_half, nu = nu, m = 0)
+  expect_true(all(d$G > 0))
+  h     <- 1e-6 * t
+  num_g <- (hzr_decompos(t + h, t_half = t_half, nu = nu, m = 0)$G -
+              hzr_decompos(t - h, t_half = t_half, nu = nu, m = 0)$G) / (2 * h)
+  # A ratio, not expect_equal(d$g, num_g): both are ~1e-17, below any
+  # tolerance, so waldo would compare them absolutely and pass on G = 0.
+  expect_equal(d$g / num_g, rep(1, length(t)), tolerance = 1e-5)
 })
 
 test_that("G is a valid CDF (monotone, within [0, 1]) for the early-phase cases", {

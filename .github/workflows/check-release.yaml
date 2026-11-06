@@ -7,6 +7,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+  # Weekly, Sundays 06:00 UTC, so R-devel changes, Windows breaks and creep
+  # toward CRAN's 10-minute check budget surface between releases, not on
+  # submission day.
+  schedule:
+    - cron: '0 6 * * 0'
 
 name: CRAN release check
 
@@ -35,6 +40,7 @@ jobs:
           # Mirror the platforms CRAN actually checks
           - {os: windows-latest,  r: 'release'}
           - {os: windows-latest,  r: 'devel'}
+          - {os: windows-latest,  r: 'oldrel-1'}
           - {os: macos-latest,    r: 'release'}
           - {os: ubuntu-latest,   r: 'release'}
           - {os: ubuntu-latest,   r: 'devel', http-user-agent: 'release'}
@@ -58,15 +64,23 @@ jobs:
           http-user-agent: ${{ matrix.config.http-user-agent }}
           use-public-rspm: true
 
-      - uses: r-lib/actions/setup-tinytex@v2
-
-      # TinyTeX's minimal scheme lacks the Courier metrics (pcrr8t) that the
+      # TinyTeX-1, the default bundle, lacks the Courier metrics (pcrr8t) that the
       # R-devel manual needs; without them the PDF manual fails to build on
       # ubuntu devel (run 36194130301). makeindex is missing too: with Courier
       # in place the indexed build still failed with "No file Rd2.ind" (run
-      # 36198449094). Install both explicitly.
-      - name: Install LaTeX packages the manual needs
-        run: tlmgr install courier makeindex
+      # 36198449094). The TinyTeX bundle carries both, so no leg needs tlmgr,
+      # whose install broke on "tlmgr itself needs to be updated" (run
+      # 40693033459).
+      - uses: r-lib/actions/setup-tinytex@v2
+        env:
+          TINYTEX_INSTALLER: TinyTeX
+
+      # A missing file would otherwise surface only as a manual failure much later.
+      - name: Check the LaTeX files the manual needs
+        shell: pwsh
+        run: |
+          if (-not (kpsewhich pcrr8t.tfm)) { throw "Courier metrics (pcrr8t.tfm) not found" }
+          if (-not (Get-Command makeindex -ErrorAction SilentlyContinue)) { throw "makeindex not found" }
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
@@ -84,3 +98,53 @@ jobs:
           # is actually exercised, so the PDF manual is genuinely built.
           args: 'c("--as-cran")'
           build_args: 'c("--compact-vignettes=gs+qpdf")'
+
+  # The release gate runs urlchecker::url_check(); this runs it weekly too, so
+  # a dead link turns up between releases rather than in CRAN's incoming check.
+  url-check:
+    runs-on: ubuntu-latest
+    name: urlchecker
+    steps:
+      - uses: actions/checkout@v4
+
+      # url_check() renders README.md and the vignettes through pandoc to
+      # find their links; without it the job aborts before checking any.
+      - uses: r-lib/actions/setup-pandoc@v2
+
+      # The vignettes are .qmd, and url_check() reads their links through the
+      # quarto CLI, not only the quarto R package.
+      - uses: quarto-dev/quarto-actions/setup@v2
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Check URLs
+        shell: Rscript {0}
+        run: |
+          # url_check() refuses to scan vignettes unless the package's
+          # VignetteBuilder is installed, so install it from DESCRIPTION.
+          vb <- read.dcf("DESCRIPTION", fields = "VignetteBuilder")[1, 1]
+          vb <- if (is.na(vb)) character() else trimws(strsplit(vb, ",")[[1]])
+          install.packages(c("urlchecker", vb))
+          # fail = FALSE, or url_check() aborts before a retry can run.
+          for (attempt in 1:3) {
+            res <- urlchecker::url_check(fail = FALSE)
+            if (NROW(res) == 0L) break
+            if (attempt < 3L) Sys.sleep(120)
+          }
+          print(res)
+          # CRAN's host times out from the runners while answering elsewhere
+          # (run 41080514783, twice in 90 minutes), and CRAN's incoming check
+          # tests those URLs itself. That one case is reported as unchecked, in
+          # a warning that names them. Any other problem, including a timeout
+          # from any other host, fails the job.
+          unchecked <- grepl("Timeout was reached [CRAN.R-project.org]",
+                             res$Message, fixed = TRUE)
+          if (any(unchecked)) {
+            cat(sprintf("::warning::NOT CHECKED, CRAN timed out: %s\n",
+                        paste(unique(res$URL[unchecked]), collapse = ", ")))
+          }
+          if (any(!unchecked)) {
+            stop(sum(!unchecked), " URL problem(s); see above.", call. = FALSE)
+          }

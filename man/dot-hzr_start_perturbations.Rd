@@ -21,11 +21,9 @@ empty for a single start, which is never perturbed.
 }
 \description{
 Draws the offsets that shift the starting values for every multiphase start
-after the first.  The draw is taken from an internally seeded stream and the
-ambient \code{.Random.seed} is restored on exit, so a fit is reproducible without
-\code{set.seed()} and never advances the caller's stream.  Both halves matter:
-seeding alone would still let an intervening draw change the fit, and
-restoring alone would leave the fit dependent on whatever the stream
-happened to hold when it was called.
+after the first.  They are the numbers \verb{set.seed(seed); rnorm()} gives under
+R's default generators, computed by \code{\link[=.hzr_mt_normal]{.hzr_mt_normal()}} without R's stream, so
+a fit is reproducible without \code{set.seed()}, does not depend on \code{RNGkind()},
+and neither reads nor writes \code{.Random.seed}.
 }
 \keyword{internal}

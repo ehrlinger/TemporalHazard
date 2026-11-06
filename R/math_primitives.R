@@ -32,7 +32,22 @@
 #' hzr_log1pexp(c(-50, 0, 50))
 #' @export
 hzr_log1pexp <- function(x) {
-  ifelse(x > 0, x + log1p(exp(-x)), log1p(exp(x)))
+  # Anything but a plain numeric vector, matrix or array takes ifelse()
+  # itself: a class's own `[` or `>` (a Matrix, a data frame) can make the
+  # form below differ from it.
+  if (is.object(x) || !is.numeric(x)) {
+    return(ifelse(x > 0, x + log1p(exp(-x)), log1p(exp(x))))
+  }
+  # For the rest, ifelse() written out as it runs, but forming each branch
+  # only where it is taken: ifelse() formed both over every element, and
+  # this is among the most called functions of a multiphase fit (#631). The
+  # result is ifelse()'s: the attributes of x > 0, and NA where x is NA.
+  ans <- x > 0
+  pos <- which(ans)
+  neg <- which(!ans)
+  if (length(pos)) ans[pos] <- x[pos] + log1p(exp(-x[pos]))
+  if (length(neg)) ans[neg] <- log1p(exp(x[neg]))
+  ans
 }
 
 #' Numerically stable log(1 - exp(-x)) for x > 0

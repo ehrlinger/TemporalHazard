@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # hzr_bootstrap() must resample a fit built with the vector interface.
 #
 # hazard() accepts either a formula plus `data`, or bare time/status vectors.
@@ -327,13 +331,20 @@ test_that("stepping-only refusals do not reach the bootstrap: a 3-level factor s
   # must take only the ignored-formula check, not the whole blocker.
   d <- avc_fixture_mal()
   d$ageg <- cut(d$age, 3, labels = c("lo", "mid", "hi"))
+  # Only the early phase inherits the factor. avc has 8 deaths after six
+  # months, and the oldest group's one death is early, so in the constant
+  # phase its coefficient is at -Inf and every replicate is dropped as
+  # monotone (#654).
+  phases <- mp_phases()
+  phases$constant <- hzr_phase("constant", formula = ~ 1)
   fit <- suppressWarnings(hazard(
     survival::Surv(int_dead, dead) ~ ageg, data = d, dist = "multiphase",
-    phases = mp_phases(), fit = TRUE,
+    phases = phases, fit = TRUE,
     control = list(n_starts = 1L, conserve = FALSE)))
   # The known positive: the whole blocker would refuse this fit.
   expect_match(.hzr_inherit_blocker(fit),
                "a term that expands to more than one column", fixed = TRUE)
+  expect_false(.hzr_monotone_likelihood(fit))
 
   b <- suppressWarnings(hzr_bootstrap(fit, n_boot = 3L, seed = 1L))
   expect_equal(b$n_success, 3L)
@@ -549,10 +560,19 @@ test_that("a fit whose call names a NULL formula and no data says why it cannot 
   vf <- no_data_weibull(d)
   fml <- NULL
   vf$call$formula <- quote(fml)
-  msg <- tryCatch(hzr_bootstrap(vf, n_boot = 2L, seed = 1L),
+  # Saved before hazard() recorded its interface (#432), so read off the call.
+  legacy <- vf
+  legacy$spec$interface <- NULL
+  msg <- tryCatch(hzr_bootstrap(legacy, n_boot = 2L, seed = 1L),
                   error = conditionMessage)
   expect_match(msg, "cannot count the rows to resample", fixed = TRUE)
   expect_no_match(msg, "length(n)", fixed = TRUE)
+
+  # With the interface recorded it resamples as the plain vector fit does.
+  want <- hzr_bootstrap(no_data_weibull(d), n_boot = 2L, seed = 1L)
+  expect_true(all(want$summary$sd > 0))
+  expect_identical(hzr_bootstrap(vf, n_boot = 2L, seed = 1L)$replicates,
+                   want$replicates)
 })
 
 test_that("a not-a-fit reason agrees its article with a vowel-initial class", {

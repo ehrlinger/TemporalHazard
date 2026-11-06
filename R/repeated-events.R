@@ -180,6 +180,21 @@
   # silently -- the appended censored row lands before the event it should
   # follow, and segments stop tiling [0, followup].
   is_event <- !is.na(indicator_col) & indicator_col == 1
+  # Both are intervals from time zero, and the macro leaves that to the calling
+  # program, so a negative one on a retained row builds a frame with no warning
+  # anywhere. A non-event row's `time` is not one of them: stage 3 overwrites
+  # or deletes it, so a negative value there never reaches the output.
+  negative <- c(
+    time = any(!.hzr_re_nonevent(indicator_col) & data[[time]] < 0, na.rm = TRUE),
+    followup = any(data[[followup]] < 0)
+  )
+  for (arg in names(negative)[negative]) {
+    stop(
+      sprintf("Column \"%s\" (argument `%s`) has negative values; it must be an interval from time zero.",
+              cols[[arg]], arg),
+      call. = FALSE
+    )
+  }
   too_late <- is_event & !is.na(data[[time]]) & data[[time]] > data[[followup]]
   if (any(too_late)) {
     warning(
@@ -349,7 +364,9 @@
   # SAS numeric missing is an ordered value that compares equal to itself, so
   # `if . = . then` is TRUE: a row with both &iv_event and &iv_end missing is
   # at end of follow-up. Only the one-side-missing case is false (`. = 9` is
-  # false), so that case, and only that case, is excluded below.
+  # false), so that case, and only that case, is excluded below. Kept to mirror
+  # the macro; through hzr_repeated_events() .hzr_re_validate() refuses a
+  # missing &iv_end first, so only a direct call to this stage reaches it.
   both_missing <- is.na(event_time) & is.na(data[[followup]])
   at_end <- both_missing |
     (!is.na(event_time) & !is.na(data[[followup]]) & event_time == data[[followup]])
@@ -485,9 +502,10 @@ hzr_repeated_events <- function(data, id, time, followup, indicator) {
   data <- .hzr_re_stage6(data, id, time, followup)
   data <- .hzr_re_stage7(data, id, time, indicator)
 
-  # A missing `time` on a retained row (a solo non-event, padded at stage 3)
-  # is normal input, but it leaks NA into iv_start/iv_seg for that row and,
-  # via the lag in stage 6, into the row that follows it within subject.
+  # An event row with a missing `time` is retained, and it leaks NA into
+  # iv_start/iv_seg for that row and, via the lag in stage 6, into the row
+  # that follows it within subject. (A solo non-event cannot: stage 3 pads its
+  # time from `followup`.)
   # Check the output rather than refusing the input up front.
   na_rows <- is.na(data$iv_start) | is.na(data$iv_seg)
   if (any(na_rows)) {

@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # Why a candidate could not be scored, not just how many ----------------------
 #
 # .hzr_score_q() returned a bare NA for every failure, and hzr_stepwise()
@@ -180,8 +184,8 @@ test_that("a candidate whose own information is not positive says so", {
   # load_all() or against the installed package.
   orig <- .hzr_score_information_expanded
   local_mocked_bindings(
-    .hzr_score_information_expanded = function(current, exp_) {
-      info <- orig(current, exp_)
+    .hzr_score_information_expanded = function(current, exp_, ...) {
+      info <- orig(current, exp_, ...)
       if (!is.null(info)) {
         b <- exp_$beta_idx
         info[b, b] <- -1e-3

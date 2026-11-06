@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # test-decomposition.R — Tests for hzr_decompos() and phase helpers
 #
 # Validates all 6 parameter cases, mathematical identities, and golden

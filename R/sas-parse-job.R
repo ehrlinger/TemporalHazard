@@ -1462,39 +1462,17 @@
   # ambiguity warning. Derived as a column, the mask resolves to the value
   # this chunk just wrote, so it cannot be shadowed at all. `.hzr_` is this
   # package's reserved prefix, so overwriting a column of that name is the
-  # intended consequence, not collateral damage. transform() masks exactly
-  # as with() did, so the expression's column names still resolve against
-  # the dataset. A job with no DATA= was refused above (#497), so there is
-  # always a dataset here.
-  derive <- as.call(list(quote(transform), as.name(data_name),
-                         cens$status_expr))
-  names(derive) <- c("", "", as.character(cens$status_name))
-  # Degenerate ICENSOR bounds (readct.c, see .hzr_censor_spec()): the fit
-  # reads only the rows PROC HAZARD keeps (`args$data` below), and this
-  # column says how many rows each rule touched. The count is raised inside
-  # the transform(), so the chunk keeps its `<data> <- transform(<data>,
-  # ...)` shape, and local() binds nothing in the reader's session. The
-  # caller's data frame keeps every row.
-  if (!is.null(cens$keep_expr)) {
-    derive$.hzr_keep <- bquote(local({
-      .keep <- .(cens$keep_expr)
-      .n_event <- sum(.(cens$degenerate_expr))
-      .n_drop <- sum(!.keep)
-      if (.n_event > 0 || .n_drop > 0) {
-        warning("Degenerate ICENSOR intervals, resolved as PROC HAZARD ",
-                "does (readct.c): ", .n_event,
-                if (.n_event == 1) " row" else " rows",
-                " with CTIME equal to TIME fitted as exact events ",
-                "(readct.c:18-23), and ", .n_drop,
-                if (.n_drop == 1) " row" else " rows",
-                " with CTIME missing, negative or after TIME dropped from ",
-                "the fit (readct.c:9-17).", call. = FALSE)
-      }
-      .keep
-    }))
-    derive$.hzr_icensor_event <- cens$degenerate_expr
-  }
-  status_call <- call("<-", as.name(data_name), derive)
+  # intended consequence, not collateral damage. Each column is assigned
+  # directly, `<data>[["<col>"]] <- with(<data>, <expr>)`: with() masks
+  # exactly as the earlier transform() did, so the expression's
+  # column names still resolve against the dataset. Not transform(): before
+  # R 4.4.0 it ran data.frame(<data>) with check.names = TRUE whenever a
+  # column it was given already existed, as these do the second time the
+  # chunk runs on the same data, renaming `_X1` to `X_X1` (#609 follow-up).
+  # `[[<-` never checks names on any R version. A job with no DATA= was
+  # refused above (#497), so there is always a dataset here.
+  dsym <- as.name(data_name)
+  set_col <- function(col, expr) call("<-", call("[[", dsym, col), call("with", dsym, expr))
   # Variables in some fitted phase formula: hazard() drops their missing rows
   # itself. Read by the listwise guard and the column check below.
   modelled <- unique(unlist(lapply(as.list(parms$phases)[-1L], function(ph) {
@@ -1504,6 +1482,7 @@
   # rows in PROC HAZARD (see .hzr_parse_parms()), and hazard() cannot see
   # them. Stop in the status chunk, ahead of the fit, rather than fit more
   # rows than SAS did.
+  status_expr <- cens$status_expr
   if (length(parms$listwise_only)) {
     lw <- lapply(parms$listwise_only, as.name)
     any_na <- Reduce(function(a, b) call("|", a, b),
@@ -1528,11 +1507,36 @@
       "model it fits does not contain the variable. Drop the rows before",
       "fitting, subsetting to complete values of those variables."
     )
-    guarded <- bquote({
+    status_expr <- bquote({
       if (any(.(any_na))) stop(.(msg), call. = FALSE)
-      .(cens$status_expr)
+      .(status_expr)
     })
-    status_call[[3L]][[3L]] <- guarded
+  }
+  derive <- list(set_col(as.character(cens$status_name), status_expr))
+  # Degenerate ICENSOR bounds (readct.c, see .hzr_censor_spec()): the fit
+  # reads only the rows PROC HAZARD keeps (`args$data` below), and this
+  # column says how many rows each rule touched. The count is raised inside
+  # the column's with(), and local() binds nothing in the reader's session.
+  # The caller's data frame keeps every row.
+  if (!is.null(cens$keep_expr)) {
+    keep <- bquote(local({
+      .keep <- .(cens$keep_expr)
+      .n_event <- sum(.(cens$degenerate_expr))
+      .n_drop <- sum(!.keep)
+      if (.n_event > 0 || .n_drop > 0) {
+        warning("Degenerate ICENSOR intervals, resolved as PROC HAZARD ",
+                "does (readct.c): ", .n_event,
+                if (.n_event == 1) " row" else " rows",
+                " with CTIME equal to TIME fitted as exact events ",
+                "(readct.c:18-23), and ", .n_drop,
+                if (.n_drop == 1) " row" else " rows",
+                " with CTIME missing, negative or after TIME dropped from ",
+                "the fit (readct.c:9-17).", call. = FALSE)
+      }
+      .keep
+    }))
+    derive <- c(derive, list(set_col(".hzr_keep", keep),
+                             set_col(".hzr_icensor_event", cens$degenerate_expr)))
   }
   # A phase variable the dataset does not contain failed deep inside the
   # chunk as "object 'ZZ' not found", naming neither the statement nor the
@@ -1563,12 +1567,12 @@
              call. = FALSE)
       }
     })
-    # Ahead of transform(), not inside it: inside, a column named like the
+    # Ahead of with(), not inside it: inside, a column named like the
     # dataset masks it, names() of that column is NULL, and the check refused
     # a job whose variables were all present (#396 review).
-    status_call <- as.call(c(as.name("{"), as.list(present)[-1L],
-                             list(status_call)))
+    derive <- c(as.list(present)[-1L], derive)
   }
+  status_call <- if (length(derive) == 1L) derive[[1L]] else as.call(c(as.name("{"), derive))
   # Degenerate ICENSOR bounds (readct.c, see .hzr_censor_spec()): the fit
   # reads only the rows PROC HAZARD keeps, and the status chunk says how
   # many rows each rule touched. The caller's data frame keeps every row.
@@ -1657,10 +1661,10 @@
       })))
     }
     sw_args$data <- args$data
-    # hzr_stepwise() forwards `...` to every refit. Without the job's control
-    # there, the selected model is refitted at hazard()'s defaults: a
-    # NOCONSERVE job's base ran without Conservation of Events and its
-    # selected model with it.
+    # hzr_stepwise() refits under the base fit's control (#688), which is
+    # this job's control already. It is written out as well so the emitted
+    # call shows the reader the settings every step runs under: a NOCONSERVE
+    # job's selected model is fitted without Conservation of Events too.
     if (!is.null(args$control)) sw_args$control <- args$control
     sw_args$direction <- sel$direction
     # SAS enters on the score statistic and removes on Wald, which is what
@@ -2225,8 +2229,9 @@
 #' Every dataset a non-DATA statement writes.
 #'
 #' `OUT=` and its relatives (`OUTEST=`, `OUTSTAT=`, ...), `BASE=` (PROC
-#' APPEND), and in PROC SQL `CREATE TABLE`, `CREATE VIEW`, `INSERT INTO`,
-#' `DELETE FROM`, `UPDATE` and `ALTER TABLE`. In a PROC DATASETS
+#' APPEND), `CNTLOUT=` (PROC FORMAT), and in PROC SQL `CREATE TABLE`,
+#' `CREATE VIEW`, `INSERT INTO`, `DELETE FROM`, `UPDATE`, `ALTER TABLE` and
+#' `DROP TABLE` or `DROP VIEW`. In a PROC DATASETS
 #' step every name counts, because `CHANGE`, `DELETE` and `MODIFY` all take
 #' dataset names.
 #' @noRd
@@ -2238,29 +2243,450 @@
                           "LIBRARY", "LIB", "NOLIST", "KILL", "MEMTYPE")))
   }
   m <- regmatches(stmt, gregexpr(
-    paste0("(^|[^A-Z0-9_])(OUT[A-Z]*|BASE) *= *[A-Z_][A-Z0-9_.]*|",
-           "(CREATE +(TABLE|VIEW)|INSERT +INTO|DELETE +FROM|ALTER +TABLE|^UPDATE) +[A-Z_][A-Z0-9_.]*"),
+    paste0("(^|[^A-Z0-9_])(OUT[A-Z0-9]*|BASE|CNTLOUT) *= *[A-Z_][A-Z0-9_.]*|",
+           "(CREATE +(TABLE|VIEW)|INSERT +INTO|DELETE +FROM|ALTER +TABLE|",
+           "DROP +(TABLE|VIEW)|^UPDATE) +[A-Z_][A-Z0-9_.]*"),
     stmt))[[1L]]
   unique(sub("^.*[= ]", "", m))
 }
 
-#' Every point in a job where a dataset is (re)defined, in file order.
+#' The macro a statement calls, or `NULL`.
 #'
-#' Four kinds. `data`: a `DATA <name>;` step, carrying its statements.
+#' `%INCLUDE` (and `%INC`) counts as a call: it runs code this cannot see.
+#' The macro language's own statements and functions do not.
+#' @noRd
+.hzr_sas_macro_call <- function(stmt) {
+  m <- regmatches(stmt, regexec("^%([A-Z_][A-Z0-9_]*)", stmt))[[1L]]
+  if (!length(m)) return(NULL)
+  nm <- m[[2L]]
+  if (nm == "INC") nm <- "INCLUDE"
+  lang <- c("LET", "PUT", "IF", "THEN", "ELSE", "DO", "END", "TO", "BY",
+            "WHILE", "UNTIL", "GLOBAL", "LOCAL", "MACRO", "MEND", "GOTO",
+            "RETURN", "ABORT", "SYMDEL", "SYSCALL", "SYSEXEC", "SYSLPUT",
+            "SYSRPUT", "SYSMACDELETE", "WINDOW", "DISPLAY", "INPUT", "COPY",
+            "STR", "NRSTR", "QUOTE", "NRQUOTE", "BQUOTE", "NRBQUOTE", "SUPERQ",
+            "UNQUOTE", "EVAL", "SYSEVALF", "SYSFUNC", "QSYSFUNC")
+  if (nm %in% lang) NULL else nm
+}
+
+#' Blank the arguments of `%STR()` and `%NRSTR()` in a statement.
+#'
+#' Both quote their argument while a macro definition is compiled, so a
+#' `%MEND` inside one is text, not the end of the definition (Codex, #710).
+#' The execution-time functions (`%QUOTE()`, `%BQUOTE()` and the rest) do not
+#' mask it, and are left alone. Inside the argument a `%` escapes the next
+#' character, so `%(` and `%)` do not count as parentheses. An argument that
+#' never closes quotes the rest of the statement.
+#' @noRd
+.hzr_sas_mask_compile_quoting <- function(t) {
+  repeat {
+    m <- regexpr("%(NR)?STR *\\(", t, ignore.case = TRUE)
+    if (m < 0L) return(t)
+    n <- nchar(t)
+    j <- m + attr(m, "match.length")
+    depth <- 1L
+    while (j <= n && depth > 0L) {
+      ch <- substr(t, j, j)
+      if (ch == "%") {
+        j <- j + 2L
+        next
+      }
+      if (ch == "(") depth <- depth + 1L
+      if (ch == ")") depth <- depth - 1L
+      j <- j + 1L
+    }
+    t <- paste0(substr(t, 1L, m - 1L), "''", substr(t, j, n))
+  }
+}
+
+#' The `%MACRO ... %MEND` definitions among a job's statements.
+#' @return `list(scope, ends, versions, nested, nested_in)`: `scope[i]` numbers the
+#'   outermost definition statement `i` belongs to, `%MACRO` and `%MEND`
+#'   included, and is 0 outside every definition; `ends` holds, per name, the
+#'   `%MEND` index of each definition and `versions` the body each one
+#'   compiled, in file order, for `.hzr_sas_macro_body_at()`; `nested` names
+#'   every macro with a definition inside another definition, and
+#'   `nested_in` holds, per such name, the `scope` numbers of the outermost
+#'   definitions that enclose one. `open[[i]]` names the definitions statement
+#'   `i` stands inside, outermost first, and `closed` is `FALSE` when the file
+#'   ends inside a definition or a call's argument list, so `open` cannot be
+#'   trusted (#708).
+#' @noRd
+.hzr_sas_macro_defs <- function(stmts) {
+  scope <- integer(length(stmts))
+  enclosing <- vector("list", length(stmts))
+  bodies <- list()
+  ends <- list()
+  versions <- list()
+  nested <- character(0)
+  nested_in <- list()
+  arg_bal <- 0L
+  depth <- 0L
+  n_def <- 0L
+  open <- character(0)
+  for (i in seq_along(stmts)) {
+    t <- stmts[[i]]
+    # A macro call's argument list runs to the parenthesis that closes it and
+    # can hold semicolons, so it spans statements, as at the call site. A
+    # `%MACRO` in it is argument text, often quoted (`%NRSTR(...)`), not a
+    # definition (#678, Codex): read as one, it became the definition a later
+    # call ran. A list that never closes keeps everything after it out of
+    # every definition, so a later call finds none and refuses.
+    if (arg_bal > 0L) {
+      arg_bal <- arg_bal + .hzr_sas_paren_balance(t)
+      if (depth > 0L) {
+        scope[[i]] <- n_def
+        enclosing[[i]] <- open
+        for (nm in open) bodies[[nm]] <- c(bodies[[nm]], t)
+      }
+      next
+    }
+    if (!is.null(.hzr_sas_macro_call(t))) {
+      arg_bal <- max(0L, .hzr_sas_paren_balance(t))
+    }
+    if (grepl("^%MACRO ", t)) {
+      if (depth == 0L) n_def <- n_def + 1L
+      depth <- depth + 1L
+      open <- c(open, sub("^%MACRO +([A-Z_][A-Z0-9_]*).*$", "\\1", t))
+      bodies[[open[[depth]]]] <- character(0)
+      scope[[i]] <- n_def
+      enclosing[[i]] <- open
+      next
+    }
+    if (depth == 0L) next
+    scope[[i]] <- n_def
+    enclosing[[i]] <- open
+    # SAS reads %MEND as a token wherever it stands, so text with no semicolon
+    # before it (the JCL lines of a `%macro skip;` header) ends with it; read
+    # only at the start of a statement, that definition never closed (#708).
+    # A %MEND in a quoted string is text, and so is one in a %STR() or
+    # %NRSTR() argument, which quote while the macro is compiled.
+    unquoted <- gsub("'[^']*'|\"[^\"]*\"", "''", .hzr_sas_mask_compile_quoting(t))
+    if (grepl("(^|[^A-Z0-9_&%])%MEND( |$)", unquoted)) {
+      nm <- open[[depth]]
+      if (depth > 1L) {
+        nested <- c(nested, nm)
+        nested_in[[nm]] <- c(nested_in[[nm]], n_def)
+      }
+      ends[[nm]] <- c(ends[[nm]], i)
+      versions[[nm]] <- c(versions[[nm]], list(bodies[[nm]]))
+      open <- open[-depth]
+      depth <- depth - 1L
+      next
+    }
+    for (nm in open) bodies[[nm]] <- c(bodies[[nm]], t)
+  }
+  list(scope = scope, ends = ends, versions = versions, nested = nested,
+       nested_in = nested_in, open = enclosing,
+       closed = depth == 0L && arg_bal == 0L)
+}
+
+#' The body a call of `mac` at statement `i` runs (#651).
+#'
+#' SAS compiles a macro at its `%MEND` and a later `%MACRO` of the same name
+#' replaces it, so a call runs the definition most recently completed before
+#' it. A call with none before it is not resolved (SAS warns "Apparent
+#' invocation of macro ... not resolved" and runs nothing this file shows).
+#'
+#' A definition inside another macro is compiled only when that macro runs,
+#' which the file's order does not show, and a macro that redefines itself
+#' loses its outer body in the reading above. Either makes the macro one this
+#' cannot read, so every call of it is `NULL` (#651 review).
+#' @return The body's statements, or `NULL` when no definition precedes `i`
+#'   or any definition of `mac` is nested.
+#' @noRd
+.hzr_sas_macro_body_at <- function(defs, mac, i) {
+  if (mac %in% defs$nested) return(NULL)
+  k <- which(defs$ends[[mac]] < i)
+  if (!length(k)) return(NULL)
+  defs$versions[[mac]][[max(k)]]
+}
+
+#' The definition the statement holding offset `pos` stands in, or 0.
+#' @noRd
+.hzr_sas_scope_at <- function(st, defs, pos) {
+  i <- which(st$start <= pos)
+  if (length(i)) defs$scope[[max(i)]] else 0L
+}
+
+#' The macro a block stands in that this file never calls, or `NULL` (#708).
+#'
+#' SAS runs a `%MACRO` body only where the macro is called, so a block in a
+#' definition nothing calls never runs. A block in a nested definition runs
+#' only when every definition around it is called, so each is checked, outermost
+#' first. A call counts wherever it stands in a statement outside the macro's
+#' own body (`%IF &X %THEN %RUNIT;`, `CALL EXECUTE('%RUNIT')`), and in a `*`
+#' comment, where SAS's macro processor runs it too (#687). A call from the
+#' macro's own body does not count: it runs only once the macro is running.
+#'
+#' The check reads this file only. A call from an `%INCLUDE`d file, or one
+#' built at run time from macro variables, is not seen, which the reason
+#' text says. When the reading of definitions does not close (a `%MEND` after
+#' a call with no semicolon, an argument list that never closes), every later
+#' statement would read as inside the macro, its call included, so nothing is
+#' called uncalled (#708 review).
+#'
+#' It errs toward running a block: text that only looks like a call (a
+#' quoted string, `%NRSTR()`) counts, as does a call from a macro that is
+#' itself never called, or a call before a later redefinition.
+#' @param star The job's `*` comments, upper case, as `.hzr_sas_star_comments()`
+#'   returns them.
+#' @noRd
+.hzr_sas_uncalled_macro_at <- function(st, defs, pos, star = character(0)) {
+  if (!isTRUE(defs$closed)) return(NULL)
+  i <- which(st$start <= pos)
+  if (!length(i)) return(NULL)
+  around <- defs$open[[max(i)]]
+  for (nm in around) {
+    pat <- paste0("%", nm, "([^A-Z0-9_]|$)")
+    outside <- !vapply(defs$open, function(o) nm %in% o, logical(1L))
+    called <- any(grepl(pat, st$text[outside])) || any(grepl(pat, star))
+    if (!called) return(nm)
+  }
+  NULL
+}
+
+#' The job text with every never-called macro's statements blanked (#709
+#' review).
+#'
+#' A scan that reads the text between two blocks, such as the `%repeat`
+#' rewrite scan, would otherwise see a never-called macro's DATA steps and
+#' stop a live fit for changes SAS never made. Blanking keeps every offset.
+#' @noRd
+.hzr_sas_blank_uncalled <- function(txt, st, defs, star = character(0)) {
+  key <- vapply(defs$open, function(o) paste(o, collapse = ">"), "")
+  ends <- c(st$start[-1L] - 1L, nchar(txt))
+  never <- list()
+  for (i in which(nzchar(key))) {
+    k <- key[[i]]
+    if (is.null(never[[k]])) {
+      never[[k]] <- !is.null(.hzr_sas_uncalled_macro_at(st, defs, st$start[[i]], star))
+    }
+    if (never[[k]] && ends[[i]] >= st$start[[i]]) {
+      substr(txt, st$start[[i]], ends[[i]]) <- strrep(" ", ends[[i]] - st$start[[i]] + 1L)
+    }
+  }
+  txt
+}
+
+#' Whether a statement opens a `%DO` block.
+#'
+#' SAS's macro tokenizer ends a name at any character a name cannot hold, so
+#' `%THEN%DO` and `%DO%WHILE(...)` open a block, and `%DOIT` is a macro call.
+#' @noRd
+.hzr_sas_opens_do <- function(t) {
+  grepl("(^|%THEN *|%ELSE *)%DO([^A-Z0-9_]|$)", t)
+}
+
+#' The macro control the statement holding offset `pos` runs under (#687).
+#'
+#' A step inside a `%MACRO` definition runs once per call of the macro, and
+#' one under an open-code `%IF` or `%DO` only when its condition holds, or
+#' once per iteration. Neither runs once where the text stands, which is how
+#' the translation reads it.
+#' @return `"%MACRO"`, `"%IF"`, or `NULL` when the statement runs once in
+#'   open code.
+#' @noRd
+.hzr_sas_macro_control_at <- function(st, defs, pos) {
+  i <- which(st$start <= pos)
+  if (!length(i)) return(NULL)
+  i <- max(i)
+  if (defs$scope[[i]] != 0L) return("%MACRO")
+  # Open-code %DO depth, counted as the dataset scan counts it.
+  depth <- 0L
+  for (j in seq_len(i - 1L)) {
+    if (defs$scope[[j]] != 0L) next
+    t <- st$text[[j]]
+    if (.hzr_sas_opens_do(t)) depth <- depth + 1L
+    if (grepl("^%END([^A-Z0-9_]|$)", t)) depth <- max(0L, depth - 1L)
+  }
+  # `%IF ... %THEN %HAZARD(...)` is one statement with no %DO.
+  if (depth > 0L || grepl("^%(IF|ELSE)([^A-Z0-9_]|$)", st$text[[i]])) return("%IF")
+  NULL
+}
+
+#' The grid allow-list: what a job may hold before a PROC HAZPRED whose grid
+#' is translated.
+#'
+#' A grid is emitted only when every statement that can write a dataset it
+#' reads is one this translation reads. Until the 1.2.13 release review the rule ran the other
+#' way: a short list of constructs that rewrite a dataset was refused and
+#' everything else was assumed harmless, and three reviews in a row each found
+#' a construct that emitted a wrong grid with no `$untranslated` row. Each
+#' statement before the PROC HAZPRED is now one of:
+#'
+#' * **read**: a `DATA` statement, a `PROC SORT` (see below), `RUN`, `QUIT`,
+#'   `%MACRO`, `%MEND`, the `%HAZARD`, `%HAZPRED` and `%REPEAT` blocks, and the
+#'   global statements `.hzr_sas_global_ok` lists, which write no dataset.
+#'   `%LET`, `%PUT`, `%GLOBAL`, `%LOCAL` and `%SYMDEL` are read too, unless
+#'   their text calls a macro or a function that can run code
+#'   (`.hzr_sas_macro_text_ok()`). A procedure on `.hzr_sas_known_procs` is read:
+#'   every dataset it writes is either named by an `OUT=`-style option or, in
+#'   PROC SQL, PROC APPEND and PROC DATASETS, by a statement this reads
+#'   (`.hzr_sas_written_names()`), or is a new `DATAn` dataset no step can name
+#'   (see `.hzr_sas_known_procs`), recorded as `_DATA_`. Each one is an event
+#'   and the grid refuses if it depends on it. A call of a macro the file
+#'   defines is read when every statement of its body is, and stands for the
+#'   datasets the body writes. Statements inside a DATA step are the step's:
+#'   the grid's own steps are checked by `.hzr_sas_translate_step()`, which
+#'   translates exactly what it lists and refuses the rest. Any other step
+#'   writes the datasets its `DATA` statement names (`_DATA_` for `DATA;`),
+#'   unless it calls a function or CALL routine that can rename, delete or
+#'   write a dataset or file, or run other code (`RENAME()`, `FDELETE()`,
+#'   `OPEN()`, `SYSTEM()`, any `CALL`, ...); such a statement is a `call`.
+#' * **call**: it may write a dataset this cannot name. An `%INCLUDE`, a call
+#'   of a macro the file does not define or whose body is not all read, a
+#'   macro control statement (`%IF`, `%DO`, `%END`, ...), a procedure not on
+#'   the list, a dataset named through a macro variable, `X`, `DM`, `ENDSAS`,
+#'   `ODS OUTPUT`, a `DATA PGM=` statement, which runs or stores a compiled
+#'   program, a `PROC SORT` with no `DATA=` whose input this cannot
+#'   name, and a DATA step statement that runs other SAS code or can touch a
+#'   dataset or file (any `CALL` routine, `DOSUBL()`, `RESOLVE()`,
+#'   `SYSTEM()`, `RENAME()`, `FDELETE()`, `OPEN()`, a hash `OUTPUT()`, ...).
+#'   `.hzr_parse_grid()` refuses the grid when one stands between a step the
+#'   grid uses and the point that reads it. Before that step it cannot write
+#'   a dataset the grid reads, because the step builds its dataset afresh.
+#'   It may still set session state the grid reads (an `OPTIONS OBS=` in an
+#'   `%INCLUDE`d file), so there the grid is emitted and the call recorded in
+#'   `$untranslated`, saying so.
+#' * **unread**: the parser has lost its place, or the statement changes how
+#'   every later step reads: a statement outside every step that is none of
+#'   the above (as when a macro call with no semicolon swallows the `DATA`
+#'   statement after it, `%SETUP DATA PRED`), a macro call with text after
+#'   it, and `OPTIONS OBS=`, `FIRSTOBS=`, `_LAST_=`, `SORTSEQ=` or
+#'   `NOSORTEQUALS`. Any of these before the
+#'   PROC HAZPRED refuses the grid, wherever it stands.
+#'
+#' A `PROC SORT` with no `DATA=` (or `DATA=_LAST_`) sorts SAS's `_LAST_`
+#' dataset, the one most recently created (Base SAS documentation, PROC SORT
+#' and the `_LAST_=` system option; not in `hazard/src`). Which dataset that
+#' is depends on statements this reads only partly, so such a sort refuses
+#' the grid wherever it could touch it: when the dataset it is taken to sort
+#' is one the grid reads, and when it stands between a step the grid uses and
+#' the point that reads it, whatever dataset it is taken to sort. Before the
+#' grid's first step it changes nothing the grid reads.
+#'
+#' Inside a `PROC SORT` only `DATA=`, `OUT=` and an ascending `BY` of plain
+#' names are read; any other option or statement (`NODUPKEY`, `WHERE`,
+#' `DESCENDING`) makes the sort an `opaque` write of its output. The
+#' emitted sort stops when a `BY` variable is character: SAS compares
+#' character values at the column's fixed length, which its first assignment
+#' sets, and in the session's collating sequence, and the translation
+#' reproduces neither. Column types are known only when the code runs, so
+#' the check is in the emitted code, not here.
+#'
+#' A step inside an open-code `%IF ... %DO` or `%DO` block carries `cond`,
+#' and a grid that uses it is refused: SAS may run the block once, many times
+#' or not at all.
+#' @noRd
+.hzr_sas_global_ok <- paste0(
+  "^(TITLE[0-9]*|FOOTNOTE[0-9]*|OPTIONS?|GOPTIONS|LIBNAME|FILENAME|ODS|",
+  "SYMBOL[0-9]*|AXIS[0-9]*|LEGEND[0-9]*|PATTERN[0-9]*|NOTE[0-9]*|PAGE|SKIP|",
+  "MISSING)( |$)")
+
+#' Procedures whose output datasets this reads. Each is named by an
+#' `OUT=`-style, `BASE=` or `CNTLOUT=` option, or a PROC SQL or PROC DATASETS
+#' statement (`.hzr_sas_written_names()`), except two kinds that write a new
+#' `DATAn` dataset no step of the job can name, and so are recorded as
+#' `_DATA_`: `STANDARD`, `RANK` and `TRANSPOSE` with no `OUT=`, and an
+#' `OUTPUT` statement with no `OUT=` (`MEANS`, `SUMMARY`, `UNIVARIATE`,
+#' `REG`, `PHREG`, `LOGISTIC`, `GLM`, ...). Either one becomes SAS's `_LAST_`
+#' dataset (Base SAS documentation, the DATAn naming convention).
+#' @noRd
+.hzr_sas_known_procs <- c(
+  "PRINT", "PLOT", "GPLOT", "CHART", "GCHART", "G3D", "CONTENTS", "MEANS",
+  "SUMMARY", "FREQ", "UNIVARIATE", "CORR", "TABULATE", "STANDARD", "RANK",
+  "TRANSPOSE", "LIFETEST", "PHREG", "LOGISTIC", "REG", "GLM", "NPAR1WAY",
+  "TTEST", "FORMAT", "DATASETS", "APPEND", "SQL", "PRINTTO", "GREPLAY",
+  "IMPORT", "EXPORT", "SORT")
+
+#' Whether the text of a `%LET`, `%PUT`, `%GLOBAL`, `%LOCAL` or `%SYMDEL` can
+#' only set or show macro variables: every `%` reference in it is a quoting
+#' or text function. Any other (`%SYSFUNC(DOSUBL(...))`, a user macro) can
+#' run code.
+#' @noRd
+.hzr_sas_macro_text_ok <- function(t) {
+  refs <- regmatches(t, gregexpr("%[A-Z_][A-Z0-9_]*", t))[[1L]][-1L]
+  inert <- c("STR", "NRSTR", "QUOTE", "NRQUOTE", "BQUOTE", "NRBQUOTE", "SUPERQ",
+             "UNQUOTE", "EVAL", "SYSEVALF", "UPCASE", "QUPCASE", "LOWCASE",
+             "QLOWCASE", "SUBSTR", "QSUBSTR", "SCAN", "QSCAN", "LENGTH", "INDEX",
+             "LEFT", "QLEFT", "TRIM", "QTRIM", "CMPRES", "QCMPRES", "SYMEXIST",
+             "SYMGLOBL", "SYMLOCAL", "DATATYP")
+  all(sub("^%", "", refs) %in% inert)
+}
+
+#' Whether a macro call is the whole statement: `%NAME`, or `%NAME(...)`
+#' with nothing after the parenthesis that closes it.
+#' @noRd
+.hzr_sas_call_is_clean <- function(t) {
+  if (grepl("^%[A-Z_][A-Z0-9_]* *$", t)) return(TRUE)
+  if (!grepl("^%[A-Z_][A-Z0-9_]* *[(]", t)) return(FALSE)
+  chars <- strsplit(t, "", fixed = TRUE)[[1L]]
+  depth <- 0L
+  quote <- ""
+  for (i in seq_along(chars)) {
+    ch <- chars[[i]]
+    if (nzchar(quote)) {
+      if (ch == quote) quote <- ""
+    } else if (ch %in% c("'", "\"")) {
+      quote <- ch
+    } else if (ch == "(") {
+      depth <- depth + 1L
+    } else if (ch == ")") {
+      depth <- depth - 1L
+      if (depth == 0L) return(!nzchar(trimws(substring(t, i + 1L))))
+    }
+  }
+  FALSE
+}
+
+#' The change in parenthesis depth across a statement, quoted text ignored.
+#' @noRd
+.hzr_sas_paren_balance <- function(t) {
+  s <- gsub("'[^']*'|\"[^\"]*\"", "", t)
+  nchar(gsub("[^(]", "", s)) - nchar(gsub("[^)]", "", s))
+}
+
+#' Every point in a job where a dataset is (re)defined, in file order, and
+#' every statement the grid allow-list does not read.
+#'
+#' Eight kinds. `data`: a `DATA <name>;` step, carrying its statements.
 #' `hazpred`: a `PROC HAZPRED ... OUT=`, whose output has one row per row of
 #' its `DATA=` dataset (`hazpred/obsloop.c:17-26`, `:67`). `sort`: a
 #' `PROC SORT ... ; BY ...;`, which reorders its input. `opaque`: anything
-#' else that writes a dataset (another procedure's or a macro's `OUT=`, a
-#' multi-dataset or optioned `DATA` statement), which this cannot read and so
-#' refuses if a grid depends on it.
+#' else that writes a named dataset (another procedure's or a macro's `OUT=`, a
+#' multi-dataset or optioned `DATA` statement, a `DATA;` or an `OUTPUT` with
+#' no `OUT=`, both recorded as `_DATA_`), which this cannot read and so
+#' refuses if a grid depends on it. `call` and `unread` have no dataset: they
+#' are the allow-list's verdicts (see `.hzr_sas_global_ok` above), each with
+#' `what` (the statement) and `why`. `lastsort` has none either: it marks a
+#' `PROC SORT` with no `DATA=`, which refuses a grid it stands inside, as a
+#' `call` does, but records nothing before the grid's first step.
+#'
+#' A `%MACRO ... %MEND` body is a definition: SAS runs its statements where
+#' the macro is called, not where they stand. Each event carries `scope`,
+#' the definition it stands in (0 outside every one), and
+#' `.hzr_parse_grid()` reads only the events outside every definition, and
+#' refuses a PROC HAZPRED that stands inside one. A call of a macro defined in
+#' the file is read by classifying its body with this same function: every
+#' dataset the body names as written is an `opaque` event at the call, and a
+#' body with any statement that is not read makes the call a `call`.
+#' @param macros Whether to read the file's own macro definitions. A body is
+#'   classified with `FALSE`, so a call inside it is a `call`.
 #' @noRd
-.hzr_sas_dataset_events <- function(txt, blocks) {
+.hzr_sas_dataset_events <- function(txt, blocks, macros = TRUE) {
+  st <- .hzr_sas_statements(txt)
+  defs <- .hzr_sas_macro_defs(st$text)
+  scope_at <- function(pos) .hzr_sas_scope_at(st, defs, pos)
   ev <- list()
+  depth <- 0L
   add <- function(pos, name, kind, ...) {
     extra <- list(...)
     if (!is.null(extra$from)) extra$from <- .hzr_sas_ds(extra$from)
-    ev[[length(ev) + 1L]] <<- c(list(pos = pos, name = .hzr_sas_ds(name), kind = kind), extra)
+    ev[[length(ev) + 1L]] <<- c(list(pos = pos, name = .hzr_sas_ds(name), kind = kind,
+                                     scope = scope_at(pos), cond = depth > 0L), extra)
   }
+  flag <- function(pos, kind, what, why) add(pos, NA_character_, kind, what = what, why = why)
   for (b in blocks) {
     head <- sub(";.*$", "", b$text)
     if (identical(b$proc, "HAZPRED")) {
@@ -2273,6 +2699,8 @@
           add(b$start, out, "hazpred", from = from)
         }
       }
+    } else if (identical(b$proc, "HAZARD")) {
+      for (out in .hzr_sas_written_names(head)) add(b$start, out, "opaque", what = "PROC HAZARD")
     } else {
       out <- .hzr_sas_opt_name(b$text, "OUT")
       if (identical(b$proc, "REPEAT") && is.null(out)) out <- "EVENTS"
@@ -2280,16 +2708,26 @@
     }
   }
 
-  st <- .hzr_sas_statements(txt)
   in_block <- function(s, e) {
     any(vapply(blocks, function(b) e >= b$start && s <= b$end, logical(1L)))
   }
+  block_starts <- vapply(blocks, function(b) as.numeric(b$start), numeric(1L))
   cur <- NULL
   proc <- NULL
+  # The dataset a PROC SORT with no DATA= sorts: SAS's most recent one, the
+  # last event before it, when that is a single named dataset and no block,
+  # call or unread statement has run since. A sort with no DATA= leaves
+  # _LAST_ where it was, so its own mark does not count.
   last_name <- function(p) {
-    before <- Filter(function(x) x$pos < p, ev)
+    before <- Filter(function(x) {
+      x$pos < p && x$scope == scope_at(p) && !identical(x$kind, "lastsort")
+    }, ev)
     if (!length(before)) return(NULL)
-    before[[which.max(vapply(before, function(x) x$pos, numeric(1L)))]]$name
+    at <- max(vapply(before, function(x) x$pos, numeric(1L)))
+    if (any(block_starts > at & block_starts < p)) return(NULL)
+    top <- Filter(function(x) x$pos == at, before)
+    if (length(top) != 1L || is.na(top[[1L]]$name)) return(NULL)
+    top[[1L]]$name
   }
   close_all <- function() {
     if (!is.null(cur) && !is.na(cur$name)) {
@@ -2297,20 +2735,47 @@
     }
     cur <<- NULL
     if (!is.null(proc) && identical(proc$kind, "SORT")) {
-      from <- if (is.null(proc$data)) last_name(proc$pos) else proc$data
+      no_data <- is.null(proc$data) || identical(proc$data, "_LAST_")
+      from <- if (no_data) last_name(proc$pos) else proc$data
       to <- if (is.null(proc$out)) from else proc$out
-      if (!is.null(to)) {
-        if (is.null(from) || proc$bad || !length(proc$by)) {
-          add(proc$pos, to, "opaque", what = "PROC SORT")
-        } else {
-          add(proc$pos, to, "sort", from = from, by = proc$by)
-        }
+      if (is.null(to)) {
+        flag(proc$pos, "call", proc$text, paste(
+          "sorts the most recent dataset, which this translation cannot name"))
+      } else if (no_data) {
+        # SAS sorts its _LAST_ dataset, which the parser can mistake: a
+        # statement it does not follow may have reset it. The dataset taken to
+        # be sorted is recorded as written by a step this does not read, and the
+        # mark refuses any grid the sort stands inside, whatever it sorts.
+        add(proc$pos, to, "opaque", what = "PROC SORT with no DATA=")
+        flag(proc$pos, "lastsort", proc$text, paste(
+          "has no DATA=, so it sorts SAS's most recent dataset (_LAST_), which",
+          "this translation cannot be sure to name"))
+      } else if (is.null(from) || length(proc$bad) || !length(proc$by)) {
+        what <- if (length(proc$bad)) paste0("PROC SORT (", paste(proc$bad, collapse = "; "), ")")
+        add(proc$pos, to, "opaque", what = if (is.null(what)) "PROC SORT" else what)
+      } else {
+        add(proc$pos, to, "sort", from = from, by = proc$by)
       }
     }
     proc <<- NULL
   }
 
+  ctrl <- c("IF", "ELSE", "DO", "END", "GOTO", "RETURN", "ABORT")
+  lang_ok <- c("LET", "PUT", "GLOBAL", "LOCAL", "SYMDEL")
+  # A DATA step statement that runs other code, or can rename, delete, open
+  # or write a dataset or file (Base SAS documentation, DATA step functions
+  # and CALL routines). Broad on purpose: any CALL routine, and every
+  # function of the dataset, external file and directory families that can
+  # change or reach one. Read on the text outside quotes.
+  runs_code <- paste0(
+    "(^|[^A-Z0-9_])CALL +[A-Z_]|[.]OUTPUT *[(]|",
+    "(^|[^A-Z0-9_.])(DOSUBL|DOSUB|RESOLVE|SYSTEM|SYSEXEC|RENAME|DELETE|FDELETE|",
+    "FCOPY|FAPPEND|FWRITE|FPUT|FOPEN|FCLOSE|FILENAME|FILEREF|LIBNAME|DCREATE|",
+    "DOPEN|DCLOSE|DREAD|MOPEN|OPEN|CLOSE|FETCH|FETCHOBS|EXIST|ATTRN|ATTRC|",
+    "GETVARC|GETVARN|VARNUM|CUROBS|POINT|REWIND|NOTE|DROPNOTE|DSNAME) *[(]")
+  skip_to <- 0L
   for (i in seq_len(nrow(st))) {
+    if (i <= skip_to) next
     t <- st$text[[i]]
     p <- st$start[[i]]
     if (!nzchar(t)) next
@@ -2318,12 +2783,152 @@
       close_all()
       next
     }
+    if (grepl("^%(MACRO |MEND( |$))", t)) {
+      close_all()
+      next
+    }
+    # Statements that act wherever they stand, inside a step or not.
+    if (grepl("^OPTIONS? ", t) &&
+          grepl("(^|[ ])(OBS *= *(?!MAX( |$))|FIRSTOBS *= *(?!1( |$)))", t, perl = TRUE)) {
+      flag(p, "unread", t, paste(
+        "sets which rows every later step reads, which this translation",
+        "does not follow"))
+      next
+    }
+    if (grepl("^OPTIONS? ", t) && grepl("(^|[ ])(SORTSEQ *=|NOSORTEQUALS( |$))", t)) {
+      flag(p, "unread", t, paste(
+        "sets the order every later PROC SORT gives, which this translation",
+        "does not follow"))
+      next
+    }
+    if (grepl("^OPTIONS? ", t) && grepl("(^|[ ])_LAST_ *=", t)) {
+      flag(p, "unread", t, paste(
+        "sets which dataset every later step with no DATA= reads, which this",
+        "translation does not follow"))
+      next
+    }
+    if (grepl("^(X|DM|ENDSAS|SYSTASK|WAITFOR)( |'|\"|$)", t)) {
+      flag(p, "call", t, "runs a command or ends the session, which this translation cannot read")
+      next
+    }
+    if (grepl("^ODS +OUTPUT( |$)", t)) {
+      flag(p, "call", t, "writes datasets from procedure output, which this translation cannot name")
+      next
+    }
+    if (startsWith(t, "%")) {
+      word <- sub("^%([A-Z_][A-Z0-9_]*).*$", "\\1", t)
+      if (word %in% ctrl) {
+        # Open-code macro control (SAS 9.4M5 and later). The steps inside
+        # carry `cond`; the statement itself may run anything.
+        if (scope_at(p) == 0L) {
+          if (.hzr_sas_opens_do(t)) depth <- depth + 1L
+          if (identical(word, "END")) depth <- max(0L, depth - 1L)
+        }
+        flag(p, "call", t, "is a %IF/%DO macro control statement, which this translation does not evaluate")
+        if (!is.null(cur)) cur$stmts <- c(cur$stmts, t)
+        next
+      }
+      if (word %in% lang_ok) {
+        if (!.hzr_sas_macro_text_ok(t)) {
+          flag(p, "call", t, "calls a macro or a function that can run SAS code")
+        }
+        if (!is.null(cur)) cur$stmts <- c(cur$stmts, t)
+        next
+      }
+      mac <- .hzr_sas_macro_call(t)
+      if (is.null(mac)) {
+        flag(p, "call", t, "is a macro statement this translation does not read")
+        if (!is.null(cur)) cur$stmts <- c(cur$stmts, t)
+        next
+      }
+      # A call's argument list can hold semicolons (`%PLOT( ID ...; ...);`):
+      # the call runs to the parenthesis that closes it.
+      call_text <- t
+      j <- i
+      bal <- .hzr_sas_paren_balance(t)
+      while (bal > 0L && j < nrow(st)) {
+        j <- j + 1L
+        call_text <- paste0(call_text, "; ", st$text[[j]])
+        bal <- bal + .hzr_sas_paren_balance(st$text[[j]])
+      }
+      skip_to <- j
+      if (!identical(mac, "INCLUDE") && !.hzr_sas_call_is_clean(call_text)) {
+        flag(p, "unread", call_text, paste(
+          "is a macro call followed by more text in one statement, as when the",
+          "call has no semicolon after it. SAS runs the call and then reads the",
+          "rest as a statement of its own, which this translation cannot follow"))
+        next
+      }
+      # A dataset the arguments name as written is an event at the call.
+      for (nm in .hzr_sas_written_names(call_text)) add(p, nm, "opaque", what = paste0("%", mac))
+      body <- if (macros) .hzr_sas_macro_body_at(defs, mac, i)
+      # A nested macro's body is not known, but the definition enclosing it
+      # is text this file shows. An unread statement anywhere in it (OPTIONS
+      # OBS= in the outer body, or in any version of the inner one) may be
+      # what the call runs, so it is unread at the call, wherever it stands.
+      enclosing_unread <- if (macros && mac %in% defs$nested) {
+        k <- which(defs$scope %in% defs$nested_in[[mac]] &
+                     !grepl("^%(MACRO|MEND)( |$)", st$text))
+        enc_txt <- paste0(paste(st$text[k], collapse = "; "), ";")
+        Filter(function(e) identical(e$kind, "unread"),
+               .hzr_sas_dataset_events(enc_txt, .hzr_sas_blocks(enc_txt),
+                                       macros = FALSE))
+      }
+      if (length(enclosing_unread)) {
+        flag(p, "unread", call_text, paste0(
+          "calls a macro defined inside another macro whose definition holds `",
+          enclosing_unread[[1L]]$what %||% enclosing_unread[[1L]]$name,
+          "`, which hzr_translate_sas() cannot read"))
+      } else if (is.null(body)) {
+        flag(p, "call", call_text, if (identical(mac, "INCLUDE")) {
+          "runs code from another file, which hzr_translate_sas() cannot read"
+        } else if (macros && mac %in% defs$nested) {
+          paste("calls a macro defined inside another macro, whose body depends",
+                "on when that macro runs, which hzr_translate_sas() cannot follow")
+        } else {
+          "calls a macro this file does not define, which hzr_translate_sas() cannot read"
+        })
+      } else {
+        body_txt <- paste0(paste(body, collapse = "; "), ";")
+        bev <- .hzr_sas_dataset_events(body_txt, .hzr_sas_blocks(body_txt), macros = FALSE)
+        for (nm in unique(stats::na.omit(vapply(bev, function(e) e$name, "")))) {
+          add(p, nm, "opaque", what = paste0("%", mac))
+        }
+        bad <- Filter(function(e) {
+          e$kind %in% c("call", "unread", "lastsort") || isTRUE(e$cond)
+        }, bev)
+        # An unread statement in the body is unread at the call: OPTIONS
+        # OBS= set by a macro changes every later step, wherever it is called.
+        kind <- if (any(vapply(bad, function(e) identical(e$kind, "unread"), TRUE))) "unread" else "call"
+        if (length(bad)) {
+          flag(p, kind, call_text, paste0(
+            "calls a macro whose body holds `", bad[[1L]]$what %||% bad[[1L]]$name,
+            "`, which hzr_translate_sas() cannot read"))
+        }
+      }
+      if (!is.null(cur)) cur$stmts <- c(cur$stmts, call_text)
+      next
+    }
     if (grepl("^DATA( |$)", t) && !grepl("^DATA *=", t)) {
       close_all()
       rest <- .hzr_sas_ds(trimws(sub("^DATA", "", t)))
-      if (grepl("^[A-Z_][A-Z0-9_]*$", rest) && !identical(rest, "_NULL_")) {
+      if (grepl("(^|[ /])PGM *=", rest)) {
+        flag(p, "call", t, paste(
+          "runs or stores a compiled DATA step program, which this translation",
+          "cannot read"))
+      }
+      if (grepl("&", rest)) {
+        flag(p, "call", t, "names its dataset through a macro variable, which this translation cannot resolve")
+      }
+      if (grepl("^[A-Z_][A-Z0-9_]*$", rest) && !rest %in% c("_NULL_", "_DATA_")) {
         cur <- list(pos = p, name = rest, stmts = character(0))
       } else {
+        # `DATA;` and `DATA _DATA_;` write a new DATAn dataset, which becomes
+        # _LAST_ and which no step of the job can name.
+        if (!nzchar(rest) || grepl("^_DATA_( |[(]|$)", rest)) {
+          add(p, "_DATA_", "opaque", what = paste0("DATA ", rest))
+          rest <- sub("^_DATA_", "", rest)
+        }
         # `DATA A B;`, `DATA A(KEEP=...)`, `DATA LIB.A;`: every name it writes
         # is recorded as unreadable, and the step's statements are swallowed.
         nms <- strsplit(gsub("[(][^)]*[)]", " ", rest), " +")[[1L]]
@@ -2336,15 +2941,27 @@
     }
     if (grepl("^PROC ", t)) {
       close_all()
-      if (grepl("^PROC SORT( |$)", t)) {
+      pname <- sub("^PROC +([A-Z0-9_]+).*$", "\\1", t)
+      if (grepl("&", t)) {
+        flag(p, "call", t, "names a dataset through a macro variable, which this translation cannot resolve")
+      }
+      if (identical(pname, "SORT")) {
         opts <- trimws(sub("^PROC SORT", "", t))
-        opts <- gsub("(DATA|OUT) *= *[A-Z_][A-Z0-9_.]*", "", opts)
-        proc <- list(kind = "SORT", pos = p, data = .hzr_sas_opt_name(t, "DATA"),
+        opts <- trimws(gsub("(DATA|OUT) *= *[A-Z_][A-Z0-9_.]*", "", opts))
+        proc <- list(kind = "SORT", pos = p, text = t, data = .hzr_sas_opt_name(t, "DATA"),
                      out = .hzr_sas_opt_name(t, "OUT"), by = character(0),
-                     bad = nzchar(trimws(opts)))
-      } else {
-        proc <- list(kind = "OTHER", pos = p, what = sub("^(PROC [A-Z0-9_]+).*$", "\\1", t))
+                     bad = if (nzchar(opts)) opts else character(0))
+      } else if (pname %in% .hzr_sas_known_procs) {
+        proc <- list(kind = "OTHER", pos = p, what = paste("PROC", pname))
         for (out in .hzr_sas_written_names(t)) add(p, out, "opaque", what = proc$what)
+        if (pname %in% c("STANDARD", "RANK", "TRANSPOSE") && is.null(.hzr_sas_opt_name(t, "OUT"))) {
+          add(p, "_DATA_", "opaque", what = proc$what)
+        }
+      } else {
+        proc <- list(kind = "UNKNOWN", pos = p, what = paste("PROC", pname))
+        flag(p, "call", paste("PROC", pname), paste(
+          "is a procedure this translation does not read, so it cannot",
+          "name every dataset it writes"))
       }
       next
     }
@@ -2352,24 +2969,53 @@
       close_all()
       next
     }
-    # A macro call or a procedure statement (OUTPUT OUT=, CREATE TABLE)
-    # writes a dataset this cannot read. Inside a DATA step only a macro call
-    # can: `OUT=X` there is an assignment.
-    if (is.null(cur) || startsWith(t, "%")) {
-      in_datasets <- !is.null(proc) && identical(proc$what, "PROC DATASETS")
-      what <- if (is.null(proc) || startsWith(t, "%")) sub("[ (].*$", "", t) else proc$what
-      for (out in .hzr_sas_written_names(t, in_datasets && !startsWith(t, "%"))) {
-        add(p, out, "opaque", what = what)
-      }
+    if (grepl("^(RUN|QUIT) ", t) && !grepl("^RUN +CANCEL$", t)) {
+      flag(p, "unread", t, paste(
+        "is a RUN or QUIT followed by more text in one statement, as when the",
+        "RUN has no semicolon after it, which this translation cannot follow"))
+      next
     }
     if (!is.null(cur)) {
+      if (grepl(runs_code, gsub("'[^']*'|\"[^\"]*\"", "", t))) {
+        flag(p, "call", t, paste(
+          "runs other SAS code, or can rename, delete or write a dataset or file,",
+          "which this translation cannot read"))
+      }
       cur$stmts <- c(cur$stmts, t)
       next
     }
-    if (!is.null(proc) && identical(proc$kind, "SORT") && grepl("^BY ", t)) {
-      by <- strsplit(trimws(sub("^BY", "", t)), " +")[[1L]]
-      if (!all(grepl("^[A-Z_][A-Z0-9_]*$", by)) || "DESCENDING" %in% by) proc$bad <- TRUE
-      proc$by <- by
+    if (!is.null(proc)) {
+      if (identical(proc$kind, "SORT")) {
+        if (grepl("^BY ", t)) {
+          by <- strsplit(trimws(sub("^BY", "", t)), " +")[[1L]]
+          if (!all(grepl("^[A-Z_][A-Z0-9_]*$", by)) || "DESCENDING" %in% by) {
+            proc$bad <- c(proc$bad, t)
+          }
+          proc$by <- by
+        } else if (!grepl(.hzr_sas_global_ok, t)) {
+          proc$bad <- c(proc$bad, t)
+        }
+        next
+      }
+      if (identical(proc$kind, "UNKNOWN")) next
+      if (grepl("&", t) && !grepl(.hzr_sas_global_ok, t)) {
+        flag(p, "call", t, "names a dataset through a macro variable, which this translation cannot resolve")
+      }
+      in_datasets <- identical(proc$what, "PROC DATASETS")
+      for (out in .hzr_sas_written_names(t, in_datasets)) {
+        add(p, out, "opaque", what = proc$what)
+      }
+      # An OUTPUT statement with no OUT= writes a new DATAn dataset.
+      if (grepl("^OUTPUT( |$)", t) && is.null(.hzr_sas_opt_name(t, "OUT"))) {
+        add(p, "_DATA_", "opaque", what = paste(proc$what, "OUTPUT with no OUT="))
+      }
+      next
+    }
+    if (!grepl(.hzr_sas_global_ok, t)) {
+      flag(p, "unread", t, paste(
+        "stands outside every DATA or PROC step, so this translation has lost",
+        "its place in the job (as when a macro call with no semicolon swallows",
+        "the DATA statement before it)"))
     }
   }
   close_all()
@@ -2675,6 +3321,17 @@
   refuse <- function(why) list(refuse = paste0("its DATA ", ev$name, " step has ", why))
   parsed <- .hzr_sas_step_items(ev$stmts)
   if (!is.null(parsed$error)) return(refuse(parsed$error))
+  # The ignored statements change nothing the grid holds, except a numeric
+  # LENGTH below 8 bytes, which stores fewer digits of every value.
+  for (it in Filter(function(it) identical(it$kind, "ignore"), parsed$items)) {
+    if (!grepl("^(LENGTH|ATTRIB)( |$)", it$text)) next
+    num <- gsub("[$] *[0-9]+[.]?", " ", it$text)
+    lens <- as.numeric(regmatches(num, gregexpr("(?<![A-Z0-9_.])[0-9]+(?=[.]?( |$))", num, perl = TRUE))[[1L]])
+    if (any(lens < 8)) {
+      return(refuse(paste0("`", it$text, "`, a numeric length below 8 bytes, which ",
+                           "stores fewer digits than this translation keeps")))
+    }
+  }
   items <- Filter(function(it) !identical(it$kind, "ignore"), parsed$items)
 
   W <- as.name(ev$name)
@@ -2692,7 +3349,14 @@
   set_names <- character(0)
   if (length(items) && identical(items[[1L]]$kind, "set")) {
     spec <- trimws(sub("^SET", "", items[[1L]]$text))
-    set_names <- .hzr_sas_ds(strsplit(spec, " ", fixed = TRUE)[[1L]])
+    set_names <- .hzr_sas_ds(strsplit(spec, " +")[[1L]])
+    # SET reads the datasets it names, and only plain names are read here:
+    # `SET;` reads the most recent dataset, and an option (`END=`, `POINT=`,
+    # a `(WHERE=...)`) changes which rows it reads.
+    if (!length(set_names) || !all(grepl("^[A-Z_][A-Z0-9_.]*$", set_names))) {
+      return(refuse(paste0("`", items[[1L]]$text, "`, a SET that does not name ",
+                           "only plain datasets, which this translation does not read")))
+    }
     items <- items[-1L]
   }
 
@@ -2912,6 +3576,12 @@
 #' in file order, inside one `local()`, and ends by copying the column the
 #' HAZPRED `TIME` statement names into the `time` column `predict()` reads.
 #'
+#' The grid is emitted only when the allow-list passes (see
+#' `.hzr_sas_global_ok` for the list): no `unread` statement stands before
+#' the PROC HAZPRED, no step the grid uses stands in an open-code `%IF` or
+#' `%DO` block, and no `call` stands between a step the grid uses and the
+#' point that reads it.
+#'
 #' @param txt The whole normalised source.
 #' @param name The HAZPRED `DATA=` dataset.
 #' @param time_var The variable the HAZPRED `TIME` statement names.
@@ -2933,9 +3603,31 @@
       "the block has no TIME statement, which PROC HAZPRED requires",
       "(hazpred/timeprc.c:10-14), so there is no time to predict at")))
   }
+  # A PROC HAZPRED inside a %MACRO definition runs where the macro is
+  # called, and its grid is whatever the dataset holds at that call. This
+  # translation does not follow calls, so it refuses rather than read the
+  # grid where the text stands.
+  st <- .hzr_sas_statements(txt)
+  if (.hzr_sas_scope_at(st, .hzr_sas_macro_defs(st$text), before) != 0L) {
+    return(refuse(paste0(
+      "this PROC HAZPRED stands inside a %MACRO definition, so SAS runs it ",
+      "where the macro is called and its grid is whatever ", name,
+      " holds at that call, which this translation cannot follow")))
+  }
   events <- .hzr_sas_dataset_events(txt, blocks)
+  # A step inside a %MACRO definition runs where the macro is called, so it
+  # builds nothing where it stands.
+  events <- Filter(function(e) e$scope == 0L, events)
+  # A statement the allow-list does not read, anywhere before the PROC
+  # HAZPRED: the parser has lost its place, or every later step reads
+  # differently, so no dataset after it is known to be what SAS builds.
+  unread <- Filter(function(e) identical(e$kind, "unread") && e$pos < before, events)
+  if (length(unread)) return(refuse(paste0("`", unread[[1L]]$what, "` ", unread[[1L]]$why)))
   memo <- list()
   built <- integer(0)
+  # The offset at which each definition is last read: a call after the
+  # definition and before that offset may have rewritten it.
+  until <- rep(-Inf, length(events))
   build <- function(k) {
     key <- as.character(k)
     if (!is.null(memo[[key]])) return(memo[[key]])
@@ -2946,7 +3638,15 @@
         return(list(refuse = paste0(ev$name, " reads ", nm, ", which no DATA step in this job ",
                                     "builds before it")))
       }
+      until[[j]] <<- max(until[[j]], ev$pos)
       build(j)
+    }
+    if (isTRUE(ev$cond)) {
+      memo[[key]] <<- list(refuse = paste0(
+        ev$name, " is built inside an open-code %IF/%DO block, which SAS may ",
+        "run once, many times or not at all, and this translation does not ",
+        "evaluate it"))
+      return(memo[[key]])
     }
     res <- switch(ev$kind,
       data = .hzr_sas_translate_step(ev, input),
@@ -2966,9 +3666,27 @@
           from <- as.name(ev$from)
           # SAS orders a numeric missing value below every number, so an
           # ascending sort puts it first. DESCENDING is refused as a sort.
+          # SAS sorts character values in ASCII order (Base SAS documentation,
+          # PROC SORT); "radix" is the C-locale byte order on every platform,
+          # where the default follows the session's locale. For numbers the
+          # two agree, and both keep ties in input order, as SAS's default
+          # EQUALS does.
+          # SAS compares character values padded to the column's fixed
+          # length, which its first assignment sets ('B' makes 'AB' into 'A'),
+          # and in the session's SORTSEQ; this translation reproduces
+          # neither, so a character BY variable stops the emitted code.
+          chr <- as.call(c(quote(c), lapply(ev$by, function(b) {
+            call("is.character", call("$", from, as.name(b)))
+          })))
+          msg <- paste0(
+            "PROC SORT of ", ev$from, " is by a character variable. SAS compares ",
+            "character values at the column's fixed length and in its collating ",
+            "sequence, which this translation does not reproduce, so it cannot ",
+            "give the order SAS does")
           ord <- as.call(c(quote(order), lapply(ev$by, function(b) call("$", from, as.name(b))),
-                           list(na.last = FALSE)))
-          list(code = list(bquote(.(as.name(ev$name)) <- .(from)[.(ord), , drop = FALSE])),
+                           list(na.last = FALSE, method = "radix")))
+          list(code = list(bquote(if (any(.(chr))) stop(.(msg), call. = FALSE)),
+                           bquote(.(as.name(ev$name)) <- .(from)[.(ord), , drop = FALSE])),
                cols = r$cols, untr = empty, warn = character(0))
         }
       },
@@ -2983,6 +3701,7 @@
   if (is.na(k)) {
     return(refuse(paste0("no DATA step in this job builds ", name, " before this PROC HAZPRED")))
   }
+  until[[k]] <- before
   res <- build(k)
   if (!is.null(res$refuse)) return(refuse(res$refuse))
   if (!time_var %in% res$cols) {
@@ -2994,6 +3713,35 @@
   parts <- lapply(ks, function(j) memo[[as.character(j)]])
   code <- unlist(lapply(parts, function(x) x$code), recursive = FALSE)
   untr <- do.call(rbind, c(list(empty), lapply(parts, function(x) x$untr)))
+  # A statement that may write a dataset this cannot name (an %INCLUDE, a
+  # macro call, a procedure off the allow-list, ...), between a definition the
+  # grid uses and the step that reads it, may rewrite it. Before that
+  # definition it can change nothing the grid reads, because the definition
+  # builds its dataset afresh. Until the 1.2.13 release review such a call
+  # was recorded and the grid emitted; a refusal is loud where that was not.
+  for (cl in Filter(function(e) e$kind %in% c("call", "lastsort"), events)) {
+    hit <- vapply(ks, function(j) events[[j]]$pos < cl$pos && cl$pos < until[[j]], logical(1L))
+    if (!any(hit)) next
+    nms <- paste(unique(vapply(ks[hit], function(j) events[[j]]$name, "")), collapse = " and ")
+    return(refuse(paste0(
+      "`", cl$what, "` ", cl$why, ". It stands after the step that builds ", nms,
+      " and before ", nms, " is read for this PROC HAZPRED, so it may rewrite ", nms)))
+  }
+  # A call before the grid's first step cannot write a dataset the grid
+  # reads, because the grid's steps build those afresh, but it may set
+  # session state they read. The grid is emitted and the call recorded
+  # (maintainer decision, 2026-10-09). The windows of the steps the grid uses
+  # run without a gap from its first step to the PROC HAZPRED, so every
+  # other call before it was refused above.
+  first <- min(vapply(ks, function(j) events[[j]]$pos, numeric(1L)))
+  for (cl in Filter(function(e) identical(e$kind, "call") && e$pos < first, events)) {
+    untr <- rbind(untr, .hzr_untranslated_frame(NA_integer_, cl$what, paste0(
+      "This statement ", cl$why, ". It runs before the first step that builds the ",
+      "grid for DATA=", name, ", so it writes no dataset the grid reads, but it may ",
+      "change session state the grid depends on, such as OPTIONS OBS= or ",
+      "FIRSTOBS=. The grid emitted is the one the job's DATA steps show, which is ",
+      "SAS's only if this statement leaves that state alone.")))
+  }
   warn <- unlist(lapply(parts, function(x) x$warn))
   W <- as.name(name)
   body <- c(
@@ -3188,6 +3936,7 @@
     )
   }
 
+  time_syntax_error <- character(0)
   for (i in seq_along(st)[-1L]) {
     w <- strsplit(trimws(st[[i]]), " ", fixed = TRUE)[[1L]]
     w <- w[nzchar(w)]
@@ -3203,6 +3952,22 @@
     # `TIME NAME` (hazpred_y.y:80): the grid variable predictions are made
     # at. The last one written is the one setvar(11, ...) keeps.
     if (identical(token, "TIME")) time_var <- if (length(w) >= 2L) w[[2L]] else NA_character_
+    # `timestmt : TIME NAME` (hazpred_y.y:80) takes exactly one name. A
+    # second is a syntax error (common/yyerror.c:19), and PROC HAZPRED stops
+    # (hazpred/initprz.c:53-55), as PROC HAZARD does on a multi-operand TIME
+    # (#431). A later `(` clears the flag (hazpred_l.l:32), and a macro
+    # operand can expand to one name, so neither carries the verdict.
+    if (identical(token, "TIME") && length(w) > 2L && !any(.hzr_sas_is_macro(w[-1L])) &&
+          !grepl("(", paste(st[-seq_len(i)], collapse = ";"), fixed = TRUE)) {
+      stmt_text <- paste(w, collapse = " ")
+      why <- paste0(
+        "more than one operand; PROC HAZPRED's TIME takes exactly one variable ",
+        "name (hazpred_y.y:80), so a second one is a syntax error ",
+        "(common/yyerror.c:19) and PROC HAZPRED stops (initprz.c:53-55)")
+      time_syntax_error <- c(time_syntax_error, paste0(stmt_text, ": ", why))
+      note(stmt_text, why)
+      mapped <- mapped - 1L
+    }
     if (!(token %in% c("TIME", "ID"))) {
       mapped <- mapped - 1L
       note(kw, "SAS listing control; no R effect")
@@ -3276,6 +4041,8 @@
   ds_refusal <- c(
     if (!is.null(pred_syntax_error)) paste0(
       "PROC HAZPRED rejects this block: ", pred_syntax_error, "."),
+    if (length(time_syntax_error)) paste0(
+      "PROC HAZPRED rejects this block: ", paste(time_syntax_error, collapse = "; "), "."),
     if (length(absent)) macro_refusal,
     if (length(bad_ds)) paste0(
       "PROC HAZPRED rejects this block: ", paste(bad_ds, collapse = "; "),

@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # A `scope` the screen cannot honour is refused, not ignored (#343).
 #
 # A backward screen never read `scope`: from `~ age + mal` with

@@ -1247,13 +1247,13 @@
 # hzr_repeated_events() can be checked against the job's .log and .lst.
 #
 # The data are PHI. They stay on the study volume and nothing here is a
-# fixture: the directory is found at run time and is NA when not mounted.
+# fixture: the directory comes from HAZARD_MAZE_DATASETS at run time and is
+# NA when that is unset. No default path: the repository is public, and a
+# study's folder name says which study it is.
 
 .hzr_maze_datasets_dir <- function() {
   env <- Sys.getenv("HAZARD_MAZE_DATASETS", "")
   if (nzchar(env) && dir.exists(env)) return(env)
-  default <- "/Volumes/qhsstudies/cardiac/rhythm/maze/permanent/datasets"
-  if (dir.exists(default)) return(default)
   NA_character_
 }
 
@@ -1322,13 +1322,12 @@
 # SAS evidence for renewal in the job corpus: the maze cardioversion job never
 # reads the column.
 #
-# PHI, as above: the directory is found at run time and is NA when not mounted.
+# PHI, as above: the directory comes from HAZARD_ACHALASIA_DIR and is NA when
+# that is unset.
 
 .hzr_achalasia_dir <- function() {
   env <- Sys.getenv("HAZARD_ACHALASIA_DIR", "")
   if (nzchar(env) && dir.exists(env)) return(env)
-  default <- "/Volumes/qhsstudies/thoracic/esophagus/benign/achalasia/outcomes/clinical"
-  if (dir.exists(default)) return(default)
   NA_character_
 }
 

@@ -63,11 +63,19 @@
 #' commented-out PARMS statements are common in these jobs and would otherwise
 #' inflate every count, and comment prose is where study and patient detail live.
 #'
+#' The text of each `* ... ;` comment removed is kept as the attribute
+#' `star_comments`: SAS's macro processor runs a macro call inside one (#687),
+#' so the caller has to see what was removed. A `%* ... ;` macro comment is
+#' kept too: whether a call inside one runs has not been checked against SAS,
+#' and recording one that does not costs a row, where missing one drops a fit.
+#'
 #' @noRd
 .hzr_sas_strip_comments <- function(lines) {
   out <- character(length(lines))
   in_block <- FALSE
   in_star <- FALSE
+  star <- character(0)
+  star_open <- NULL
 
   for (i in seq_along(lines)) {
     line <- lines[i]
@@ -104,8 +112,13 @@
     if (in_star) {
       p <- .idx(line, ";")
       if (p == 0L) {
+        if (!is.null(star_open)) star_open <- paste(star_open, line)
         line <- ""
       } else {
+        if (!is.null(star_open)) {
+          star <- c(star, paste(star_open, substring(line, 1L, p)))
+        }
+        star_open <- NULL
         line <- substring(line, p + 1L)
         in_star <- FALSE
       }
@@ -114,15 +127,19 @@
     if (grepl("^[[:space:]]*%?\\*", line)) {
       p <- .idx(line, ";")
       if (p == 0L) {
+        star_open <- line
         line <- ""
         in_star <- TRUE
       } else {
+        star <- c(star, substring(line, 1L, p))
         line <- substring(line, p + 1L)
       }
     }
 
     out[i] <- line
   }
+  if (!is.null(star_open)) star <- c(star, star_open)
+  attr(out, "star_comments") <- star
   out
 }
 
@@ -135,20 +152,26 @@
 #' first-`;` search (.idx()), not the quote-aware .first_semi(); HAZARD's
 #' lexer rule (`<STMT>\*[^;]*;`) has no quote awareness, so an apostrophe in
 #' comment prose (e.g. "patient's") must not be read as an unclosed string.
+#' Each `* ... ;` comment removed is kept as the attribute `star_comments`,
+#' as in .hzr_sas_strip_comments().
 #'
 #' @noRd
 .hzr_sas_strip_inline_comments <- function(txt) {
+  star <- character(0)
   repeat {
     p <- .re(txt, "; *%?[*]")
     if (p == 0L) break
     rest <- substring(txt, p + 1L)
     q <- .idx(rest, ";")
     if (q == 0L) {
+      star <- c(star, rest)
       txt <- substring(txt, 1L, p)
       break
     }
+    star <- c(star, substring(rest, 1L, q))
     txt <- paste0(substring(txt, 1L, p), substring(rest, q + 1L))
   }
+  attr(txt, "star_comments") <- star
   txt
 }
 
@@ -156,11 +179,31 @@
 #'
 #' @noRd
 .hzr_sas_normalise <- function(lines) {
+  .hzr_sas_normalise_parts(lines)$text
+}
+
+#' The `* ... ;` comments .hzr_sas_normalise() removes, upper-cased.
+#'
+#' SAS's macro processor runs a macro call inside one, so a caller has to see
+#' what was removed (#687). Kept apart from the normalised text: `substring()`
+#' copies attributes, so an attribute on the text broke every `identical()`
+#' test of a piece of it.
+#'
+#' @noRd
+.hzr_sas_star_comments <- function(lines) {
+  .hzr_sas_normalise_parts(lines)$star_comments
+}
+
+#' @noRd
+.hzr_sas_normalise_parts <- function(lines) {
   lines <- .hzr_sas_strip_comments(lines)
+  star <- toupper(attr(lines, "star_comments"))
   s <- paste(lines, collapse = " ")
   s <- toupper(s)
   s <- gsub("[[:space:]]+", " ", s)
-  trimws(.hzr_sas_strip_inline_comments(s))
+  s <- .hzr_sas_strip_inline_comments(s)
+  star <- c(star, attr(s, "star_comments"))
+  list(text = trimws(as.vector(s)), star_comments = star)
 }
 
 #' Offset of the `)` that balances the `(` at `open_at`, or NA if none does.

@@ -33,8 +33,9 @@ whatever their variance.}
 \description{
 Restricts the sandwich to the parameters the prediction uses. A parameter
 held fixed (\code{fixed}, from the fit's \code{fixed_mask}; e.g. \code{fixed = "shapes"})
-with an NA row is dropped as known. (The CoE-conserved \code{log_mu} is one when
-its full-information recompute failed; the caller warns.) A fixed one with
+with an NA row is dropped as known. (The CoE-conserved \code{log_mu} is one in
+an object saved before #652 whose full-information recompute failed; the
+caller warns. A fit made since has no vcov in that case.) A fixed one with
 a variance, such as a shape a g3 constraint derives, stays in. An NA
 variance on a parameter that is NOT fixed was masked by \code{.hzr_safe_solve()}
 as non-positive: it withholds the standard error if the prediction uses

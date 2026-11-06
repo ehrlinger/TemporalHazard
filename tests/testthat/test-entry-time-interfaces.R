@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # #253: how `time_lower` reaches each family, across statuses and interfaces.
 #
 # On status 0/1 rows `time_lower` is the counting-process entry time when

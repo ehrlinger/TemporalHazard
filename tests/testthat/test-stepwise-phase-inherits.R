@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # tests/testthat/test-stepwise-phase-inherits.R
 # A multiphase phase with no formula of its own inherits the global design.
 # A stepwise step that entered a variable into such a phase built `~ var`

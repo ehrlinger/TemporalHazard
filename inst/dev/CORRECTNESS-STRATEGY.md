@@ -1,6 +1,6 @@
 # Correctness Strategy — TemporalHazard ⇄ HAZARD
 
-**Status:** proposed (2026-06-05)
+**Status:** adopted (2026-10-12, John Ehrlinger); proposed 2026-06-05
 **Scope:** how the R (`TemporalHazard`) and SAS/C (`hazard`) codebases are used
 together to assure correctness, and how to do it *efficiently* as both mature
 into maintained peer engines.
@@ -46,6 +46,16 @@ And when the engines genuinely **disagree** (conserved-μ standard error;
 survival CL transform), exact parity only *flags* the difference — it cannot say
 which engine is right. Those disagreements are the high-value signal;
 mechanically reproducing the agreeing 95% by hand is not.
+
+**Not in scope of this section: bit-identical oracles for performance work.**
+For a performance refactor of code already known to be correct, an oracle
+comparing the old code's outputs with the new code's, bit for bit, is the
+accepted instrument. It compares R with R, so it needs no parser, no
+reconstructed input and no SAS access, and none of the costs above apply. And
+because such a refactor claims to change no answer, exact agreement is the
+right tolerance, not a print convention. The 1.2.14 speed-up (#631) was gated
+this way: an oracle over 1,344 `decompos` cells, whole fits and bootstrap
+replicates, with 1-ulp mutants planted to show it could fail.
 
 ---
 
@@ -200,8 +210,8 @@ The remaining hand-port candidates buy little new coverage:
 
 ## 9. Open decisions (for John / Rajes / Blackstone)
 
-- **Reference authority:** ratify "correct = math + agree-where-right," not
-  "match SAS." (§3)
+- ✅ **Reference authority:** "correct = math + agree-where-right," not
+  "match SAS." (§3) Ratified 2026-10-12 by adopting this document.
 - **Conserved-μ variance** and **survival-CL transform:** which construction is
   canonical? (§3)
 - **Coverage line:** confirm the §5 matrix is "enough" and the long-tail ports

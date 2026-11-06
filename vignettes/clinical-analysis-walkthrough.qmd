@@ -430,7 +430,7 @@ p-values.
 
 ```{r}
 #| label: stepwise-forward
-#| eval: !expr requireNamespace("TemporalHazard", quietly = TRUE)
+#| eval: false
 base_mp <- hazard(
   survival::Surv(int_dead, dead) ~ 1,
   data   = avc,
@@ -456,6 +456,26 @@ fit_step <- hzr_stepwise(
   trace     = FALSE,
   control   = list(n_starts = 2, maxit = 500)
 )
+```
+
+```{r}
+#| label: stepwise-forward-load
+#| include: false
+#| eval: !expr requireNamespace("TemporalHazard", quietly = TRUE)
+# Refitting the chunk above takes long enough to push R CMD check past
+# CRAN's time limit, so data-raw/vignette-fit-step.R stores its result and
+# test-vignette-fit-step.R refits and compares. Without the file, refit.
+stored <- system.file("extdata", "vignette-fit-step.rds",
+                      package = "TemporalHazard")
+if (nzchar(stored)) {
+  fit_step <- readRDS(stored)
+} else {
+  eval(parse(text = knitr::knit_code$get("stepwise-forward")))
+}
+```
+
+```{r}
+#| eval: !expr requireNamespace("TemporalHazard", quietly = TRUE)
 fit_step
 ```
 

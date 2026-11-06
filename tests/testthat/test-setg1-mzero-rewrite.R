@@ -1,3 +1,7 @@
+# Too slow for the CRAN check time budget; runs on CI and locally.
+# See "Where the check's time actually goes" in AGENTS.md.
+skip_on_cran()
+
 # SETG1's rewrites of an early phase that starts at M = 0 (#471).
 #
 # PROC HAZARD does not fit `PARMS M=0 NU=1` with M free: SETG1 fixes M at 0
