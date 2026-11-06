@@ -66,16 +66,20 @@ test_that("a response variable outside `data` is refused", {
 })
 
 test_that("the response is checked where the fit evaluates it", {
-  # The Surv() term is evaluated in `data`, then the search path, never in
-  # the formula's environment, so a local of the same name must not hide
-  # the per-row vector the fit actually used.
-  assign("tt_g_278", avc_278$int_dead, envir = globalenv())
+  # The Surv() term is evaluated in `data`, then the formula's environment
+  # (#447), so the per-row local is what the fit used, and the same-named
+  # global constant must not hide it from the screen. A screen that looked
+  # where the parser used to, past the formula's environment, would find
+  # the constant, call it a constant, and bootstrap the local without resampling it.
+  assign("tt_g_278", 5, envir = globalenv())
   withr::defer(rm("tt_g_278", envir = globalenv()))
   shadowed <- function() {
-    tt_g_278 <- 5 # nolint: object_usage_linter.
+    tt_g_278 <- avc_278$int_dead
     weibull_278(survival::Surv(tt_g_278, dead) ~ age)
   }
-  expect_error(hzr_bootstrap(shadowed(), n_boot = 3, seed = 1),
+  fit <- shadowed()
+  expect_equal(fit$data$time, avc_278$int_dead)
+  expect_error(hzr_bootstrap(fit, n_boot = 3, seed = 1),
                "uses 'tt_g_278', which is not a column")
 })
 
