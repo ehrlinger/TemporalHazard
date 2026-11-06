@@ -470,10 +470,9 @@ NULL
 #'   unaffected, as is an element with no name, which no expression can look
 #'   up -- but an `NA_character_` name is refused, because R binds such an
 #'   element under the symbol `` `NA` `` and a call reaches it. Remove the
-#'   element: for a vector argument or `weights`, define the helper in the
-#'   calling environment; for one used inside the `Surv()` response, compute
-#'   the value into a `data` column first, since the response is evaluated
-#'   without the formula's environment.
+#'   element and define the helper in the calling environment. A vector
+#'   argument, `weights` and the formula's `Surv()` response all see that
+#'   environment (the response since #447).
 #' @param time_windows Optional numeric vector of strictly positive cut points for
 #'   piecewise time-varying coefficients. When provided, each predictor column in
 #'   `x` is expanded into one column per time window so each window gets its own
@@ -988,13 +987,9 @@ hazard <- function(formula = NULL,
            ". `data` masks the calling frame while hazard() evaluates its ",
            "arguments and the formula's response, so such an element is ",
            "called in place of the function the expression names, changing ",
-           "the fit with nothing to show for it. Remove it from 'data'. ",
-           "For a vector argument, or the formula's 'weights', define the ",
-           "helper in the calling environment instead. For a helper used ",
-           "inside the formula's Surv() response, compute the value into a ",
-           "'data' column first: the response is evaluated without the ",
-           "formula's environment, so a helper defined there is not visible ",
-           "to it.", call. = FALSE)
+           "the fit with nothing to show for it. Remove it from 'data' and ",
+           "define the helper in the calling environment instead.",
+           call. = FALSE)
     }
   }
 

@@ -47,9 +47,17 @@
     stop("Formula LHS must be a Surv() call.", call. = FALSE)
   }
 
-  # Evaluate the entire Surv() call in the context of data
-  # Make sure Surv is available in the evaluation environment
-  env_with_surv <- list2env(c(as.list(data), list(Surv = survival::Surv)))
+  # Evaluate the Surv() call in `data`, then the formula's environment, as
+  # the right-hand side and stats::lm() do (#447). list2env() without a
+  # parent hung this off the parser's own frame instead, so a name the
+  # response used resolved to a same-named global, or to `data` or `lhs`
+  # here, and never to the caller: a silently wrong fit. A formula with no
+  # environment falls back to this package's namespace and the search path.
+  # `Surv` is bound so the response works without survival attached.
+  env_with_surv <- list2env(
+    c(as.list(data), list(Surv = survival::Surv)),
+    parent = environment(formula) %||% environment(.hzr_parse_formula)
+  )
   surv_obj <- eval(lhs, envir = env_with_surv)
 
   # Surv() returns a Surv object; extract the matrix and attributes

@@ -75,10 +75,9 @@ purpose. A list-column of functions is a list, not a function, and is
 unaffected, as is an element with no name, which no expression can look
 up -- but an \code{NA_character_} name is refused, because R binds such an
 element under the symbol \code{`NA`} and a call reaches it. Remove the
-element: for a vector argument or \code{weights}, define the helper in the
-calling environment; for one used inside the \code{Surv()} response, compute
-the value into a \code{data} column first, since the response is evaluated
-without the formula's environment.}
+element and define the helper in the calling environment. A vector
+argument, \code{weights} and the formula's \code{Surv()} response all see that
+environment (the response since #447).}
 
 \item{time}{Numeric follow-up time vector. A row whose time is 0 is
 dropped before fitting, whatever its status, as PROC HAZARD drops it

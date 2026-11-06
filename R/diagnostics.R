@@ -2402,9 +2402,9 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     stored <- .hzr_stored_formula(object, "`object`")
     # Candidate refits build their formulas in the stored formula's
     # environment (.hzr_formula_update()), so covariates and `scope`
-    # variables resolve there. The Surv() term does not: .hzr_parse_formula()
-    # evaluates it in `data`, then this package's namespace and the search
-    # path, so the response is looked up that way.
+    # variables resolve there. So does the Surv() term: .hzr_parse_formula()
+    # evaluates it in `data`, then the formula's environment, falling back to
+    # this package's namespace for a formula without one (#447).
     base_env <- if (is.null(stored)) call_env else environment(stored)
     scope_vars <- if (inherits(scope, "formula")) {
       all.vars(scope)
@@ -2417,7 +2417,8 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
                              }))
     outside <- c(
       if (length(stored) == 3L) {
-        outside_in(all.vars(stored[[2L]]), environment(.hzr_parse_formula))
+        outside_in(all.vars(stored[[2L]]),
+                   environment(stored) %||% environment(.hzr_parse_formula))
       },
       if (!is.null(stored)) {
         outside_in(all.vars(stats::delete.response(
