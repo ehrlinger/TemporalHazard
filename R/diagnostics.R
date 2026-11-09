@@ -2484,6 +2484,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
         if (is.null(environment(f))) environment(f) <- env
         f
       }
+      at_envs <- function(f, envs) {
+        lapply(Filter(Negate(is.null), envs), function(e) {
+          environment(f) <- e
+          f
+        })
+      }
       follow_forms <- c(
         if (length(stored) == 3L) {
           list(stats::as.formula(
@@ -2493,16 +2499,30 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
         },
         if (!is.null(stored)) list(with_env(stored, base_env %||% call_env)),
         lapply(phase_formulas, with_env, env = call_env),
+        # A scope is checked in every environment its refit can read it
+        # from, as the name check above does: a scope formula keeps the
+        # frame it was written in, but the refit evaluates its terms in the
+        # stored formula's environment or the phase's own.
         if (inherits(scope, "formula")) {
-          list(with_env(scope, base_env %||% call_env))
+          at_envs(scope, list(base_env %||% call_env,
+                              environment(scope) %||% call_env))
         } else if (is.character(scope) && length(scope) > 0L) {
-          sf <- stats::reformulate(scope)
-          environment(sf) <- base_env %||% call_env
-          list(sf)
+          at_envs(stats::reformulate(scope), list(base_env %||% call_env))
         },
         if (is.list(scope)) {
-          lapply(Filter(function(sc) inherits(sc, "formula"), scope),
-                 with_env, env = call_env)
+          unlist(lapply(names(scope), function(p) {
+            sc <- scope[[p]]
+            if (!inherits(sc, "formula")) return(list())
+            pf <- object$spec$phases[[p]]$formula
+            at_envs(sc, c(
+              if (is.null(pf)) {
+                list(environment(.hzr_parse_formula), base_env %||% call_env)
+              } else {
+                list(environment(pf))
+              },
+              list(environment(sc) %||% call_env)
+            ))
+          }), recursive = FALSE)
         }
       )
       unfollowed <- .hzr_position_bound_columns(

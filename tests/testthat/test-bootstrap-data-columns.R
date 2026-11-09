@@ -307,3 +307,49 @@ test_that("a per-row vector reached through an object member is refused", {
   expect_error(hzr_bootstrap(fit, n_boot = 5, seed = 1),
                "'cfg\\$z', which does not follow the rows of `data`")
 })
+
+test_that("a scope helper is checked where the refit reads it (#721)", {
+  # The scope formula is written at top level, but the refit evaluates it
+  # in the stored formula's environment, where the closure lives. Checking
+  # it only in its own frame found nothing to evaluate and passed it.
+  local_base <- function() {
+    zvec <- avc_278$age
+    z <- function(x) x + zvec # nolint: object_usage_linter.
+    # Through the wrapper, the stored formula keeps this frame as its
+    # environment, so the refit finds `z` here and would run silently.
+    weibull_278(survival::Surv(int_dead, dead) ~ 1, theta = c(0.3, 1))
+  }
+  base <- local_base()
+  expect_error(
+    hzr_bootstrap(base, n_boot = 3, seed = 1, scope = ~ z(mal) + mal,
+                  criterion = "wald", slentry = 0.99),
+    "'z\\(mal\\)', which does not follow the rows of `data`"
+  )
+  expect_error(
+    hzr_bootstrap(base, n_boot = 3, seed = 1, scope = "z(mal)",
+                  criterion = "wald", slentry = 0.99),
+    "'z\\(mal\\)', which does not follow the rows of `data`"
+  )
+})
+
+test_that("a multiphase scope helper is checked in the phase's frame (#721)", {
+  mk_phases <- function() {
+    zvec <- avc_278$age
+    z <- function(x) x + zvec # nolint: object_usage_linter.
+    list(
+      early    = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                           fixed = "m", formula = ~ mal),
+      constant = hzr_phase("constant")
+    )
+  }
+  base <- suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = avc_278, dist = "multiphase",
+    phases = mk_phases(), fit = TRUE,
+    control = list(n_starts = 1L, conserve = FALSE)
+  ))
+  expect_error(
+    hzr_bootstrap(base, n_boot = 3, seed = 1, scope = list(early = ~ z(age)),
+                  criterion = "wald", slentry = 0.99),
+    "'z\\(age\\)', which does not follow the rows of `data`"
+  )
+})
