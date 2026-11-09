@@ -130,7 +130,6 @@ for the prediction types used internally.
 ## Examples
 
 ``` r
-# \donttest{
 data(avc)
 avc <- na.omit(avc)
 fit <- hazard(
@@ -170,5 +169,4 @@ print(cal)
 #>          0.393      0.4090
 #> 
 #> Overall: chi-sq = 13.9 on 9 df, p = 0.127 
-# }
 ```

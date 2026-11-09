@@ -175,7 +175,6 @@ for prediction types.
 ## Examples
 
 ``` r
-# \donttest{
 data(avc)
 avc <- na.omit(avc)
 fit <- hazard(
@@ -217,5 +216,4 @@ if (requireNamespace("ggplot2", quietly = TRUE)) {
     theme_minimal()
 }
 
-# }
 ```

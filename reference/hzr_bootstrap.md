@@ -347,7 +347,7 @@ for the selection procedure used when `scope` is supplied.
 ## Examples
 
 ``` r
-# \donttest{
+# A quick run: ten resamples of a two-covariate Weibull fit.
 data(avc)
 avc <- na.omit(avc)
 fit <- hazard(
@@ -357,6 +357,20 @@ fit <- hazard(
   theta = c(mu = 0.01, nu = 0.5, 0, 0),
   fit   = TRUE
 )
+bs_small <- hzr_bootstrap(fit, n_boot = 10, seed = 123)
+print(bs_small)
+#> Bootstrap inference for hazard model
+#> Mode: fixed refit 
+#> Replicates: 10 successful, 0 failed
+#> 
+#>  parameter  n pct    mean     sd     min     max ci_lower ci_upper
+#>         mu 10 100  0.0005 0.0004  0.0001  0.0013   0.0001   0.0012
+#>         nu 10 100  0.2225 0.0121  0.2041  0.2392   0.2050   0.2383
+#>        age 10 100 -0.0069 0.0025 -0.0104 -0.0036  -0.0103  -0.0036
+#>        mal 10 100  0.8405 0.2968  0.2720  1.2682   0.3501   1.2492
+
+# \donttest{
+# More resamples give more stable intervals.
 bs <- hzr_bootstrap(fit, n_boot = 50, seed = 123)
 print(bs)
 #> Bootstrap inference for hazard model
