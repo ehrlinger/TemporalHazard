@@ -8,10 +8,3 @@
   looked there. A column of `data` still takes precedence. `hzr_bootstrap()`
   now checks response variables in the same place, so a per-row local in the
   response is refused instead of being left out of the resampling.
-  Two cases are still not caught (#721). A per-row vector reached through
-  another object, such as `cfg$caps` with `cfg <- list(caps = ...)`, or
-  through a helper function that uses it, such as
-  `cap <- function(x) pmin(x, caps)`, is bootstrapped without being
-  resampled. The check measures the name in the formula (`cfg`, `cap`), not
-  the values it leads to. The right-hand side, and a global in the response,
-  have had the same gap since before this change.

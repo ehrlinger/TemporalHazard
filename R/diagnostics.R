@@ -2470,6 +2470,89 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
            " fixed, and the interval would be wrong. Add ",
            if (one) "it" else "them", " to `data` and refit.", call. = FALSE)
     }
+    # The check above reads names and skips any that hold a function, so a
+    # helper closing over a per-row vector, `z <- function(x) x + zvec`, got
+    # through: every replicate succeeded with `zvec` in its original order
+    # (#721). Read the same terms by behaviour instead: evaluated on the rows
+    # rotated by one, a term that follows its rows gives each row its own
+    # value, and one that reads an outside per-row vector does not. A helper
+    # that only transforms its argument, `log()`, `scale()`, `poly()`, passes
+    # whatever its environment can reach. See .hzr_position_bound_columns()
+    # for what this cannot see.
+    if (nrow(orig_data) >= 2L) {
+      with_env <- function(f, env) {
+        if (is.null(environment(f))) environment(f) <- env
+        f
+      }
+      at_envs <- function(f, envs) {
+        lapply(Filter(Negate(is.null), envs), function(e) {
+          environment(f) <- e
+          f
+        })
+      }
+      follow_forms <- c(
+        if (length(stored) == 3L) {
+          # .hzr_parse_formula() supplies `Surv` itself, so a bare `Surv()`
+          # fits with survival not attached; supply it here too, or the
+          # response cannot be evaluated and is passed unchecked.
+          resp_env <- new.env(parent = environment(stored) %||%
+                                environment(.hzr_parse_formula))
+          assign("Surv", survival::Surv, envir = resp_env)
+          list(stats::as.formula(call("~", stored[[2L]]), env = resp_env))
+        },
+        if (!is.null(stored)) list(with_env(stored, base_env %||% call_env)),
+        lapply(phase_formulas, with_env, env = call_env),
+        # A scope is checked in every environment its refit can read it
+        # from, as the name check above does: a scope formula keeps the
+        # frame it was written in, but the refit evaluates its terms in the
+        # stored formula's environment or the phase's own.
+        if (inherits(scope, "formula")) {
+          at_envs(scope, list(base_env %||% call_env,
+                              environment(scope) %||% call_env))
+        } else if (is.character(scope) && length(scope) > 0L) {
+          # hzr_stepwise() resolves a character scope by lookup: a string
+          # that is exactly a column names that column (.hzr_resolve_names()),
+          # which follows its rows. Only the rest are read as terms.
+          terms_scope <- setdiff(scope, names(orig_data))
+          if (length(terms_scope) > 0L) {
+            at_envs(stats::reformulate(terms_scope),
+                    list(base_env %||% call_env))
+          }
+        },
+        if (is.list(scope)) {
+          unlist(lapply(names(scope), function(p) {
+            sc <- scope[[p]]
+            if (!inherits(sc, "formula")) return(list())
+            pf <- object$spec$phases[[p]]$formula
+            at_envs(sc, c(
+              if (is.null(pf)) {
+                list(environment(.hzr_parse_formula), base_env %||% call_env)
+              } else {
+                list(environment(pf))
+              },
+              list(environment(sc) %||% call_env)
+            ))
+          }), recursive = FALSE)
+        }
+      )
+      unfollowed <- .hzr_position_bound_columns(
+        follow_forms, orig_data,
+        keep = c(FALSE, rep(TRUE, nrow(orig_data) - 1L))
+      )
+      if (length(unfollowed) > 0L) {
+        one <- length(unfollowed) == 1L
+        stop("hzr_bootstrap() resamples the rows of the fit's `data`, but ",
+             "the model's ", paste0("'", unfollowed, "'", collapse = ", "),
+             if (one) ", which does not" else ", which do not",
+             " follow the rows of `data`: evaluated on the same rows in ",
+             "another order, ", if (one) "it does" else "they do",
+             " not give each row its own value. A helper that reads a ",
+             "per-row vector from outside `data` does this. Each replicate ",
+             "would hold that vector fixed, and the interval would be wrong. ",
+             "Add the vector to `data`, pass it to the helper as an ",
+             "argument, and refit.", call. = FALSE)
+      }
+    }
   }
 
   # A design matrix passed directly as `x` on the vector interface is never
@@ -2816,7 +2899,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # (#611) meant writing .Random.seed into .GlobalEnv, which CRAN policy
   # forbids, and the documentation says `seed =` sets the session's stream.
   # Nothing above draws from the stream: the screen's multi-start fits draw
-  # their offsets from an internal seed and restore the stream.
+  # their offsets from an internal seed and restore the stream. The one
+  # exception is the #721 term probe, which evaluates each term and so draws
+  # for a random term such as `jitter(age)`; such a term is always refused,
+  # so a refused call can have advanced the stream. Restoring it would mean
+  # writing .Random.seed, which this function does not do (#653).
   if (!is.null(seed)) set.seed(seed)
 
   for (b in seq_len(n_boot)) {
