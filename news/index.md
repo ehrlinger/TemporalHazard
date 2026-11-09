@@ -2,6 +2,8 @@
 
 ## TemporalHazard 1.3.0
 
+CRAN release: 2026-11-08
+
 This is the first CRAN release since 1.1.0. The nineteen 1.2.x versions
 below were released internally and never sent to CRAN; their sections
 are the detailed record, and several later entries there reverse earlier

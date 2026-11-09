@@ -6,8 +6,8 @@ from one saved run of the full test suite by `tools/feature-matrix.R`,
 which refuses to write it unless the run has no failure and its recorded
 commit, installed dependencies and test names all match the tree.
 
-**Measured at 4b8e6221 on 2026-11-03, version 1.2.19.** That run: 2720
-tests run, 16039 expectations, 6 tests skipped. A page older than the
+**Measured at 24387957 on 2026-11-09, version 1.3.0.** That run: 2751
+tests run, 16145 expectations, 6 tests skipped. A page older than the
 code it describes is still possible: regenerate it at each release.
 
 ## How to read it
@@ -74,7 +74,7 @@ code it describes is still possible: regenerate it at each release.
 
 | Feature | Status | Tests run | Expectations | Skipped | Reference | Default start | Notes |
 |:---|:---|---:|---:|---:|:---|:---|:---|
-| Standard errors and the Hessian | tested | 92 | 268 | 0 | 1 of 1 ran (C binary) | none |  |
+| Standard errors and the Hessian | tested | 95 | 277 | 0 | 1 of 1 ran (C binary) | none |  |
 | Convergence and degraded-fit reporting | in progress | 87 | 500 | 0 | none cited | none | Single-distribution false maxima warn (#531); the multiphase criterion is open (#589). |
 | Prediction (predict.hazard) | tested | 256 | 1816 | 0 | 3 of 3 ran (SAS) | none |  |
 | Decomposition and evaluation | tested | 83 | 436 | 0 | none cited | none |  |
@@ -84,15 +84,15 @@ code it describes is still possible: regenerate it at each release.
 
 | Feature | Status | Tests run | Expectations | Skipped | Reference | Default start | Notes |
 |:---|:---|---:|---:|---:|:---|:---|:---|
-| Stepwise selection (hzr_stepwise) | tested | 301 | 1304 | 0 | 2 of 2 ran (SAS) | none |  |
-| Score and Wald tests | tested | 96 | 503 | 0 | none cited | none |  |
+| Stepwise selection (hzr_stepwise) | tested | 309 | 1340 | 0 | 2 of 2 ran (SAS) | none |  |
+| Score and Wald tests | tested | 99 | 512 | 0 | none cited | none |  |
 | Bootstrap (hzr_bootstrap) | tested | 85 | 632 | 0 | none cited | none |  |
 
 ## SAS migration
 
 | Feature | Status | Tests run | Expectations | Skipped | Reference | Default start | Notes |
 |:---|:---|---:|---:|---:|:---|:---|:---|
-| SAS job translator (hzr_translate_sas) | tested | 499 | 5255 | 0 | none cited | none |  |
+| SAS job translator (hzr_translate_sas) | tested | 519 | 5316 | 0 | none cited | none |  |
 | SAS output readers (hzr_read_outhaz and listings) | tested | 82 | 257 | 3 | none cited | none |  |
 
 ## Regenerating
