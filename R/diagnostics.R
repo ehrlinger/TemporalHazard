@@ -2470,6 +2470,59 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
            " fixed, and the interval would be wrong. Add ",
            if (one) "it" else "them", " to `data` and refit.", call. = FALSE)
     }
+    # The check above reads names and skips any that hold a function, so a
+    # helper closing over a per-row vector, `z <- function(x) x + zvec`, got
+    # through: every replicate succeeded with `zvec` in its original order
+    # (#721). Read the same terms by behaviour instead: evaluated on the rows
+    # rotated by one, a term that follows its rows gives each row its own
+    # value, and one that reads an outside per-row vector does not. A helper
+    # that only transforms its argument, `log()`, `scale()`, `poly()`, passes
+    # whatever its environment can reach. See .hzr_position_bound_columns()
+    # for what this cannot see.
+    if (nrow(orig_data) >= 2L) {
+      with_env <- function(f, env) {
+        if (is.null(environment(f))) environment(f) <- env
+        f
+      }
+      follow_forms <- c(
+        if (length(stored) == 3L) {
+          list(stats::as.formula(
+            call("~", stored[[2L]]),
+            env = environment(stored) %||% environment(.hzr_parse_formula)
+          ))
+        },
+        if (!is.null(stored)) list(with_env(stored, base_env %||% call_env)),
+        lapply(phase_formulas, with_env, env = call_env),
+        if (inherits(scope, "formula")) {
+          list(with_env(scope, base_env %||% call_env))
+        } else if (is.character(scope) && length(scope) > 0L) {
+          sf <- stats::reformulate(scope)
+          environment(sf) <- base_env %||% call_env
+          list(sf)
+        },
+        if (is.list(scope)) {
+          lapply(Filter(function(sc) inherits(sc, "formula"), scope),
+                 with_env, env = call_env)
+        }
+      )
+      unfollowed <- .hzr_position_bound_columns(
+        follow_forms, orig_data,
+        keep = c(FALSE, rep(TRUE, nrow(orig_data) - 1L))
+      )
+      if (length(unfollowed) > 0L) {
+        one <- length(unfollowed) == 1L
+        stop("hzr_bootstrap() resamples the rows of the fit's `data`, but ",
+             "the model's ", paste0("'", unfollowed, "'", collapse = ", "),
+             if (one) ", which does not" else ", which do not",
+             " follow the rows of `data`: evaluated on the same rows in ",
+             "another order, ", if (one) "it does" else "they do",
+             " not give each row its own value. A helper that reads a ",
+             "per-row vector from outside `data` does this. Each replicate ",
+             "would hold that vector fixed, and the interval would be wrong. ",
+             "Add the vector to `data`, pass it to the helper as an ",
+             "argument, and refit.", call. = FALSE)
+      }
+    }
   }
 
   # A design matrix passed directly as `x` on the vector interface is never

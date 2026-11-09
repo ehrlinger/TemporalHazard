@@ -225,3 +225,85 @@ test_that("a bootstrap over columns of `data` still runs and varies", {
   expect_equal(nrow(row), 1L)
   expect_gt(row$sd, 0)
 })
+
+# #721: the screen above reads the names in each formula and skips any name
+# that holds a function, so a helper that closes over a per-row vector got
+# through. Every replicate reported success while the vector stayed in its
+# original order. The terms are now also evaluated on the rows in two orders,
+# and a term whose values do not follow their rows is refused.
+
+test_that("a right-hand-side helper closing over a per-row vector is refused", {
+  rhs_closure <- function() {
+    zvec <- avc_278$age
+    z <- function(x) x + zvec
+    weibull_278(survival::Surv(int_dead, dead) ~ z(mal))
+  }
+  fit <- rhs_closure()
+  expect_true(fit$fit$converged)
+  expect_error(hzr_bootstrap(fit, n_boot = 5, seed = 1),
+               "'z\\(mal\\)', which does not follow the rows of `data`")
+})
+
+test_that("a response helper closing over a per-row vector is refused", {
+  resp_closure <- function() {
+    capvec <- rep(c(1e6, 0.5), length.out = nrow(avc_278))
+    cap <- function(x) pmin(x, capvec)
+    weibull_278(survival::Surv(cap(int_dead), dead) ~ age,
+                theta = c(0.3, 1, 0))
+  }
+  # The response sees the formula's environment (#447), so `cap()` is
+  # found and the fit runs.
+  fit <- resp_closure()
+  expect_true(fit$fit$converged)
+  expect_error(hzr_bootstrap(fit, n_boot = 5, seed = 1),
+               "Surv\\(cap\\(int_dead\\), dead\\)'.*does not follow the rows")
+})
+
+test_that("a phase-formula helper closing over a per-row vector is refused", {
+  local_mp <- function() {
+    zvec <- avc_278$age
+    z <- function(x) x + zvec
+    hazard(survival::Surv(int_dead, dead) ~ 1, data = avc_278,
+           dist = "multiphase",
+           phases = list(
+             early    = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1,
+                                  fixed = "m", formula = ~ z(mal)),
+             constant = hzr_phase("constant")
+           ),
+           fit = TRUE, control = list(n_starts = 1L, conserve = FALSE))
+  }
+  expect_error(hzr_bootstrap(suppressWarnings(local_mp()), n_boot = 2,
+                             seed = 1),
+               "'z\\(mal\\)', which does not follow the rows of `data`")
+})
+
+test_that("helpers that only transform their own rows still bootstrap", {
+  # The false-refusal side of #721: a top-level helper closes over the
+  # global environment, which holds the data itself, and must not be read
+  # as carrying per-row data. Row-set terms (scale) follow their rows too.
+  assign("lg_721", function(x) log(x), envir = globalenv())
+  withr::defer(rm("lg_721", envir = globalenv()))
+  fit <- weibull_278(survival::Surv(int_dead, dead) ~ lg_721(age) +
+                       scale(mal),
+                     theta = c(0.3, 1, 0, 0))
+  bs <- suppressWarnings(hzr_bootstrap(fit, n_boot = 4, seed = 1))
+  expect_equal(bs$n_success, 4)
+  expect_equal(bs$n_failed, 0)
+  # The replicates must differ, not just succeed.
+  row <- bs$summary[bs$summary$parameter == "lg_721(age)", ]
+  expect_equal(nrow(row), 1L)
+  expect_gt(row$sd, 0)
+})
+
+test_that("a per-row vector reached through an object member is refused", {
+  # The second #721 shape: the formula names `cfg`, which is a list and
+  # does not hold one value per row, so the name check passed it.
+  member_fit <- function() {
+    cfg <- list(z = avc_278$age)
+    weibull_278(survival::Surv(int_dead, dead) ~ cfg$z)
+  }
+  fit <- member_fit()
+  expect_true(fit$fit$converged)
+  expect_error(hzr_bootstrap(fit, n_boot = 5, seed = 1),
+               "'cfg\\$z', which does not follow the rows of `data`")
+})
