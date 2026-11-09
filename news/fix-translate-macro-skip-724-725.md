@@ -1,0 +1,2 @@
+* `hzr_translate_sas()`: when a job's first fit sits in a `%MACRO` the file never calls, the `$untranslated` row for an ambiguous `INHAZ=` now names the fit the emitted `predict()` uses (`fit_2`, say), not the skipped `fit` (#724).
+* `hzr_translate_sas()`: the job state restored after a block in a `%MACRO` the file never calls now includes the prediction grid. The in-macro grid refusal already kept such a block from setting `job$grid`, so output does not change; the test now checks the restore itself, not the refusal (#725).

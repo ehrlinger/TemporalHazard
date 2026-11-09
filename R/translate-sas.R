@@ -309,7 +309,7 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
     # a fit SAS never made.
     never <- .hzr_sas_uncalled_macro_at(macro_st, macro_defs, b$start, star)
     if (!is.null(never)) {
-      kept <- list(calls = names(calls), guarded_data = guarded_data,
+      kept <- list(calls = names(calls), guarded_data = guarded_data, grid = grid,
                    repeat_scan = repeat_scan, fits = fits, loaded_ext = loaded_ext,
                    first_unresolved_inhaz = first_unresolved_inhaz,
                    n_unresolved_inhaz = n_unresolved_inhaz)
@@ -518,8 +518,8 @@ hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
               NA_integer_, paste0("INHAZ=", this_inhaz),
               sprintf(paste("does not match any of this job's %d OUTHAZ",
                              "values; ambiguous which fit() this predict()",
-                             "belongs to, defaulting to `fit`"),
-                      length(fits))
+                             "belongs to, defaulting to `%s`"),
+                      length(fits), fit_ref)
             ))
           }
         }
