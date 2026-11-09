@@ -1,7 +1,7 @@
-# measured_at: 4b8e6221
-# measured_on: 2026-11-03
-# version: 1.2.19
-# suite: 2720 tests run, 16039 expectations, 6 tests skipped
+# measured_at: 24387957
+# measured_on: 2026-11-09
+# version: 1.3.0
+# suite: 2751 tests run, 16145 expectations, 6 tests skipped
 "area","feature","status","files","tests_run","expectations","skipped","reference","default_start","notes"
 "Model","Exponential distribution","tested",4,32,67,0,"2 of 2 ran (oracle)","none",""
 "Model","Weibull distribution","tested",9,68,303,1,"none cited","none","The C-binary file tests the binary interface (command, input and output parsing), not estimates."
@@ -20,13 +20,13 @@
 "Data","Time-varying covariates (start/stop epochs)","in progress",1,6,14,0,"none cited","none","Named as under-tested at the 2026-10-29 review. The epoch tests check that splitting a row into epochs leaves the log-likelihood unchanged. Production time-varying covariate analyses are under way; none of them is in the test suite yet."
 "Covariates","Formula and vector interfaces","tested",15,163,640,0,"none cited","none",""
 "Covariates","Phase-specific covariates","tested",5,44,201,0,"none cited","none",""
-"Inference","Standard errors and the Hessian","tested",12,92,268,0,"1 of 1 ran (C binary)","none",""
+"Inference","Standard errors and the Hessian","tested",13,95,277,0,"1 of 1 ran (C binary)","none",""
 "Inference","Convergence and degraded-fit reporting","in progress",11,87,500,0,"none cited","none","Single-distribution false maxima warn (#531); the multiphase criterion is open (#589)."
 "Inference","Prediction (predict.hazard)","tested",18,256,1816,0,"3 of 3 ran (SAS)","none",""
 "Inference","Decomposition and evaluation","tested",4,83,436,0,"none cited","none",""
 "Inference","Goodness of fit and deciles","tested",9,135,531,0,"3 of 3 ran (SAS)","none",""
-"Selection","Stepwise selection (hzr_stepwise)","tested",34,301,1304,0,"2 of 2 ran (SAS)","none",""
-"Selection","Score and Wald tests","tested",11,96,503,0,"none cited","none",""
+"Selection","Stepwise selection (hzr_stepwise)","tested",36,309,1340,0,"2 of 2 ran (SAS)","none",""
+"Selection","Score and Wald tests","tested",12,99,512,0,"none cited","none",""
 "Selection","Bootstrap (hzr_bootstrap)","tested",8,85,632,0,"none cited","none",""
-"SAS migration","SAS job translator (hzr_translate_sas)","tested",17,499,5255,0,"none cited","none",""
+"SAS migration","SAS job translator (hzr_translate_sas)","tested",17,519,5316,0,"none cited","none",""
 "SAS migration","SAS output readers (hzr_read_outhaz and listings)","tested",6,82,257,3,"none cited","none",""
