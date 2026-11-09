@@ -270,7 +270,7 @@ interface.
 }
 
 \examples{
-\donttest{
+# A quick run: ten resamples of a two-covariate Weibull fit.
 data(avc)
 avc <- na.omit(avc)
 fit <- hazard(
@@ -280,6 +280,11 @@ fit <- hazard(
   theta = c(mu = 0.01, nu = 0.5, 0, 0),
   fit   = TRUE
 )
+bs_small <- hzr_bootstrap(fit, n_boot = 10, seed = 123)
+print(bs_small)
+
+\donttest{
+# More resamples give more stable intervals.
 bs <- hzr_bootstrap(fit, n_boot = 50, seed = 123)
 print(bs)
 

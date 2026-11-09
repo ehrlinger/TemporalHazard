@@ -132,7 +132,6 @@ out, and the totals, residual and E/O then describe only the patients
 counted.  Include the exit times in \code{time_grid} to count everyone.
 }
 \examples{
-\donttest{
 data(avc)
 avc <- na.omit(avc)
 fit <- hazard(
@@ -161,7 +160,6 @@ if (requireNamespace("ggplot2", quietly = TRUE)) {
     geom_line(aes(y = cum_expected), colour = "#0072B2") +
     labs(x = "Time", y = "Cumulative events") +
     theme_minimal()
-}
 }
 
 }

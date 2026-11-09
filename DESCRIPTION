@@ -17,8 +17,8 @@ Description: Provides native R implementations of the multiphase parametric
     package are currently developed and maintained at The Cleveland Clinic
     Foundation, and the R code was wholly developed at The Cleveland Clinic
     Foundation. The generalized temporal
-    decomposition family extends to longitudinal mixed-effects settings
-    (Rajeswaran et al. 2018 <doi:10.1177/0962280215623583>). The package is
+    decomposition family extends to longitudinal mixed-effects settings, as
+    in Rajeswaran et al. (2018) <doi:10.1177/0962280215623583>. The package is
     intentionally implemented in pure R first; performance-critical paths may
     later be accelerated with 'Rcpp' without changing the public interface.
 License: GPL (>= 2)
@@ -49,4 +49,4 @@ Suggests:
     withr
 LazyData: true
 Config/testthat/edition: 3
-Config/roxygen2/version: 8.1.0
+Config/roxygen2/version: 8.1.1
