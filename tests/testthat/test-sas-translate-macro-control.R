@@ -266,11 +266,45 @@ test_that("a skipped prediction does not replace the job's grid", {
   pred <- "%HAZPRED( PROC HAZPRED DATA=P INHAZ=OUTEST OUT=P; TIME MONTHS; );"
   ran <- c(live, "DATA P; DO MONTHS = 1 TO 3; OUTPUT; END; RUN;", pred)
   old <- c("%MACRO OLD;", "DATA P; DO MONTHS = 10 TO 30; OUTPUT; END; RUN;", pred, "%MEND OLD;")
+  # A PROC HAZPRED inside a %MACRO has its grid refused, so on its own the
+  # skipped block never sets a grid, and this test would pass whatever the
+  # restore does (#725). Relax that refusal here, so the skipped block does
+  # set one and only the restore can keep it out of job$grid.
+  parse_grid <- .hzr_parse_grid
+  local_mocked_bindings(.hzr_parse_grid = function(...) {
+    g <- parse_grid(...)
+    if (is.null(g$call) && grepl("inside a %MACRO definition", g$reason, fixed = TRUE)) {
+      g$call <- quote(data.frame(MONTHS = c(10, 20, 30)))
+    }
+    g
+  })
   alone <- do.call(macro_job, as.list(ran))
   job <- do.call(macro_job, as.list(c(ran, old)))
   expect_false(is.null(alone$grid))
-  expect_true(any(startsWith(names(job$not_run), "pred")))
+  # The skipped block did build a grid, so the next assertion can fail.
+  skipped_grid <- names(job$not_run)[startsWith(names(job$not_run), "grid")]
+  expect_length(skipped_grid, 1L)
+  expect_identical(job$calls[[skipped_grid]][[3L]], quote(data.frame(MONTHS = c(10, 20, 30))))
   expect_identical(job$grid, alone$grid)
+})
+
+test_that("an ambiguous INHAZ after a skipped first fit names the fit predict() uses", {
+  # The first fit is in a macro the file never calls, so `fit` never runs and
+  # the predict() falls back to fit_2; the $untranslated row must say so (#724).
+  fit_out <- function(mue, outhaz) {
+    sub("DATA=AVCS;", paste0("DATA=AVCS OUTHAZ=", outhaz, ";"),
+        sub("0.3", mue, macro_live, fixed = TRUE), fixed = TRUE)
+  }
+  pred <- "%HAZPRED( PROC HAZPRED DATA=P INHAZ=ZZZ OUT=P; TIME MONTHS; );"
+  grid <- "DATA P; DO MONTHS = 1 TO 3; OUTPUT; END; RUN;"
+  job <- macro_job("%MACRO OLD;", fit_out("0.4", "A"), "%MEND OLD;",
+                   fit_out("0.3", "B"), fit_out("0.2", "C"), grid, pred)
+  expect_identical(unname(job$not_run[["fit"]]), "OLD")
+  target <- deparse1(job$calls$pred[[2L]])
+  expect_identical(target, "fit_2")
+  rows <- macro_rows(job, "ambiguous which fit()")
+  expect_equal(nrow(rows), 1L)
+  expect_match(rows$reason, "defaulting to `fit_2`", fixed = TRUE)
 })
 
 test_that("a skipped prediction's INHAZ neither stops the document nor loads its fit", {
