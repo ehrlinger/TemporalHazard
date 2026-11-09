@@ -1,7 +1,7 @@
 # measured_at: 24387957
-# measured_on: 2026-11-08
+# measured_on: 2026-11-09
 # version: 1.3.0
-# suite: 2745 tests run, 16023 expectations, 12 tests skipped
+# suite: 2751 tests run, 16145 expectations, 6 tests skipped
 "area","feature","status","files","tests_run","expectations","skipped","reference","default_start","notes"
 "Model","Exponential distribution","tested",4,32,67,0,"2 of 2 ran (oracle)","none",""
 "Model","Weibull distribution","tested",9,68,303,1,"none cited","none","The C-binary file tests the binary interface (command, input and output parsing), not estimates."
@@ -15,7 +15,7 @@
 "Data","Interval and left censoring","tested",7,112,369,0,"none cited","none",""
 "Data","Entry times (left truncation)","tested",10,43,302,0,"7 of 7 ran (oracle, SAS)","none",""
 "Data","Observation weights","in progress",5,56,182,2,"1 of 3 ran (SAS)","none","SAS parity covers fractional weights; weights beside repeated events are untested (#681)."
-"Data","Repeated events","in progress",5,75,233,6,"0 of 4 ran (SAS)","none","The SAS listing comparisons run only in the release suite with the private study data; no fit from default starts is tested yet (#681)."
+"Data","Repeated events","in progress",5,81,361,0,"4 of 4 ran (SAS)","none","The SAS listing comparisons run only in the release suite with the private study data; no fit from default starts is tested yet (#681)."
 "Data","Time-varying coefficients (time_windows)","tested",4,23,107,0,"none cited","none",""
 "Data","Time-varying covariates (start/stop epochs)","in progress",1,6,14,0,"none cited","none","Named as under-tested at the 2026-10-29 review. The epoch tests check that splitting a row into epochs leaves the log-likelihood unchanged. Production time-varying covariate analyses are under way; none of them is in the test suite yet."
 "Covariates","Formula and vector interfaces","tested",15,163,640,0,"none cited","none",""
@@ -28,5 +28,5 @@
 "Selection","Stepwise selection (hzr_stepwise)","tested",36,309,1340,0,"2 of 2 ran (SAS)","none",""
 "Selection","Score and Wald tests","tested",12,99,512,0,"none cited","none",""
 "Selection","Bootstrap (hzr_bootstrap)","tested",8,85,632,0,"none cited","none",""
-"SAS migration","SAS job translator (hzr_translate_sas)","tested",17,519,5322,0,"none cited","none",""
+"SAS migration","SAS job translator (hzr_translate_sas)","tested",17,519,5316,0,"none cited","none",""
 "SAS migration","SAS output readers (hzr_read_outhaz and listings)","tested",6,82,257,3,"none cited","none",""
