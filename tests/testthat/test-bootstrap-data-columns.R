@@ -353,3 +353,40 @@ test_that("a multiphase scope helper is checked in the phase's frame (#721)", {
     "'z\\(age\\)', which does not follow the rows of `data`"
   )
 })
+
+test_that("a bare Surv() response helper is probed without survival attached", {
+  # The fit binds `Surv` itself, so a bare `Surv()` works with survival not
+  # attached; the probe has to find it the same way, or the response is
+  # skipped and its helper's vector is never checked. A test's own frame
+  # inherits from the package namespace, which imports `Surv`, so the fit is
+  # built in a frame rooted at the global environment, as a user's is. Under
+  # devtools::load_all() the attached package exports its imports and `Surv`
+  # is visible there anyway, so this runs under R CMD check and CI.
+  user <- new.env(parent = globalenv())
+  skip_if(exists("Surv", envir = user),
+          "`Surv` is visible from the global environment")
+  user$avc_278 <- avc_278
+  user$hazard <- hazard
+  fit <- local({
+    capvec <- rep(c(1e6, 0.5), length.out = nrow(avc_278))
+    cap <- function(x) pmin(x, capvec) # nolint: object_usage_linter.
+    hazard(Surv(cap(int_dead), dead) ~ age, data = avc_278,
+           dist = "weibull", theta = c(0.3, 1, 0), fit = TRUE)
+  }, envir = user)
+  expect_true(fit$fit$converged)
+  expect_error(hzr_bootstrap(fit, n_boot = 3, seed = 1),
+               "Surv\\(cap\\(int_dead\\), dead\\)'.*does not follow the rows")
+})
+
+test_that("a character scope naming a column is not probed as an expression", {
+  # hzr_stepwise() resolves a character scope by lookup: a string that is
+  # exactly a column names that column, even one called `cumsum(age)`.
+  d <- avc_278
+  d[["cumsum(age)"]] <- d$age
+  fit <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                dist = "weibull", theta = c(0.3, 1), fit = TRUE)
+  bs <- suppressWarnings(hzr_bootstrap(fit, n_boot = 3, seed = 1,
+                                       scope = "cumsum(age)",
+                                       criterion = "wald", slentry = 0.99))
+  expect_equal(bs$n_success, 3)
+})
