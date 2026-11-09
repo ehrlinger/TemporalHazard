@@ -179,9 +179,7 @@ and the emitted document format are all expected to change.
 }
 
 \examples{
-\donttest{
 job <- hzr_translate_sas(
   system.file("extdata", "hz-example.sas", package = "TemporalHazard")
 )
-}
 }

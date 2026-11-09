@@ -83,7 +83,6 @@ hold fewer rows than there are subjects, so no subject's predicted
 cumulative hazard can be formed. Refit it on complete cases.
 }
 \examples{
-\donttest{
 data(avc)
 avc <- na.omit(avc)
 fit <- hazard(
@@ -95,7 +94,6 @@ fit <- hazard(
 )
 cal <- hzr_deciles(fit, time = 120)
 print(cal)
-}
 
 }
 \seealso{

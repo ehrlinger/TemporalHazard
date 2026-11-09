@@ -200,11 +200,9 @@
 #' 1.2.2 `NEWS.md` entry. The function's API, the `hzr_sas_job` field layout
 #' and the emitted document format are all expected to change.
 #' @examples
-#' \donttest{
 #' job <- hzr_translate_sas(
 #'   system.file("extdata", "hz-example.sas", package = "TemporalHazard")
 #' )
-#' }
 #' @export
 hzr_translate_sas <- function(path, out_dir = NULL, librefs = NULL) {
   stopifnot(is.character(path), length(path) == 1L)
