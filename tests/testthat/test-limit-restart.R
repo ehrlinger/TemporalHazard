@@ -1,0 +1,100 @@
+# tests/testthat/test-limit-restart.R
+skip_on_cran()
+# #683/#729: a shape parameter running to its limit is restarted, or refused;
+# the drifted iterate is never returned. hm.death.patient blind start.
+
+valves_729 <- function() {
+  data(valves, package = "TemporalHazard", envir = environment())
+  d <- valves
+  d$nyha[is.na(d$nyha)] <- mean(d$nyha, na.rm = TRUE)
+  d$mv_nyha <- d$mitral * d$nyha
+  d
+}
+fit_729 <- function(n_starts = 1L, limit_restart = TRUE, d = valves_729()) {
+  hazard(survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 10, nu = 0.2, m = 1, fixed = "m",
+                    formula = ~ age_cop + nyha + mv_nyha + double_ + ao_pinc),
+                  constant = hzr_phase("constant", formula = ~ age_cop + black + i_path)),
+    fit = TRUE,
+    control = list(n_starts = n_starts, maxit = 2000, conserve = TRUE,
+                   limit_restart = limit_restart))
+}
+sas_ll_729 <- -1792.07   # hm.death.patient.lst, asserted in test-sas-parity.R
+
+for (ns in c(1L, 5L)) {
+  test_that(paste0("#729 blind start, n_starts = ", ns, ", reaches SAS's optimum"), {
+    expect_warning(fit <- fit_729(ns), class = "hzr_limit_restarted")
+    expect_equal(fit$fit$objective / sas_ll_729, 1, tolerance = 1e-5)
+    lim <- fit$fit$limit
+    expect_type(lim, "list")
+    # The drift it recovered from is on the record, and is the bad one.
+    expect_lt(lim$original$objective, sas_ll_729 - 10)
+    expect_true(any(vapply(lim$trigger, `[[`, "", "phase") == "early"))
+    # The grid ran, varied, and the winner is a grid row.
+    expect_gte(nrow(lim$grid), 2L)
+    expect_gt(length(unique(round(lim$grid$objective[is.finite(lim$grid$objective)], 4))), 1L)
+    expect_false(lim$grid$triggered[[lim$winner]])
+    expect_equal(lim$grid$objective[[lim$winner]], fit$fit$objective)
+    # A rescued fit is an ordinary fit, and is not itself at a limit.
+    expect_null(.hzr_limit_trigger(fit))
+    expect_true(isTRUE(fit$fit$converged))
+    # The fixed shape (m) has no variance; every free parameter does.
+    free <- !as.logical(fit$fit$fixed_mask)
+    expect_true(any(free))
+    expect_true(all(is.finite(sqrt(diag(vcov(fit))[free]))))
+    # Its call is the user's, so hzr_bootstrap() refits from the user's start.
+    expect_null(fit$call$theta)
+  })
+}
+
+test_that("limit_restart = FALSE refuses at once, naming the parameter", {
+  err <- tryCatch(suppressWarnings(fit_729(1L, limit_restart = FALSE)),
+                  hzr_limit_refusal = function(e) e)
+  expect_s3_class(err, "hzr_limit_refusal")
+  expect_identical(err$phase, "early")
+  expect_true(err$parameter %in% c("nu", "t_half"))
+  expect_match(conditionMessage(err), "hzr_phase\\(")
+  expect_lt(err$best_objective, sas_ll_729 - 10)
+})
+
+test_that("#448: when the best objective is at the step, the fit refuses", {
+  # Task 1 grid: best -21.66 at the step, best clean start -208.31. Returning
+  # the clean start would be 130 units worse than today's -78.15.
+  data(avc, package = "TemporalHazard", envir = environment())
+  tt <- avc$int_dead
+  st <- avc$dead
+  k <- is.finite(tt) & is.finite(st) & tt > 0
+  err <- tryCatch(suppressWarnings(hazard(
+    time = tt[k], status = st[k], dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m"),
+                  late = hzr_phase("g3", tau = 5, gamma = 1, alpha = 1, eta = 1,
+                                   constraint = "alpha_gamma_eta")),
+    fit = TRUE, control = list(n_starts = 1L))),
+    hzr_limit_refusal = function(e) e)
+  expect_s3_class(err, "hzr_limit_refusal")
+  expect_identical(err$parameter, "nu")
+  # The best objective it reports is the step's, above today's returned fit.
+  expect_gt(err$best_objective, -78.15)
+})
+
+test_that("a clean fit is unchanged and records $limit NULL", {
+  data(avc, package = "TemporalHazard", envir = environment())
+  k <- is.finite(avc$int_dead) & avc$int_dead > 0
+  fit <- hazard(time = avc$int_dead[k], status = avc$dead[k], dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1, fixed = "m"),
+                  constant = hzr_phase("constant")),
+    fit = TRUE, control = list(n_starts = 1L))
+  expect_true("limit" %in% names(fit$fit))
+  expect_null(fit$fit$limit)
+})
+
+test_that("an unfitted object records $limit NA", {
+  fit <- hazard(time = c(1, 2, 3), status = c(1, 0, 1), dist = "multiphase",
+    phases = list(constant = hzr_phase("constant")), fit = FALSE)
+  expect_true(is.na(fit$fit$limit))
+})
+
+test_that("limit_restart must be TRUE or FALSE", {
+  expect_error(fit_729(1L, limit_restart = NA), "limit_restart")
+  expect_error(fit_729(1L, limit_restart = "yes"), "limit_restart")
+})

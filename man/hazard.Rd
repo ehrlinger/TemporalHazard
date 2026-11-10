@@ -317,6 +317,15 @@ count as observed times. A fit with any record that has no
 \code{warned_by} raises one warning whose classes are \code{"hzr_"}
 plus each such record's mechanism, all inheriting
 \code{"hzr_boundary"}, so one handler catches the whole family.
+\itemize{
+\item \code{fit$fit$limit}: \code{NA} when the limit check did not run (an
+unfitted object, or a non-multiphase model); \code{NULL} when it ran and
+found no shape parameter at a limit; or a list when \code{hazard()}
+restarted the fit (\code{trigger}, \code{original}, \code{grid},
+\code{winner}), which also raises a warning of class
+\code{"hzr_limit_restarted"}. A fit that cannot be rescued is not
+returned: \code{hazard()} stops with class \code{"hzr_limit_refusal"}.
+}
 }
 \description{
 Creates a \code{hazard} object and optionally fits it via maximum likelihood.
@@ -350,6 +359,14 @@ starts when a fit is suspected of sitting in a local optimum, and compare
 the resulting \code{objective} values. A fractional value is rejected rather
 than truncated, since \code{3.9} and \code{3} would otherwise select the same
 ensemble without saying so.
+\item \code{limit_restart} (multiphase, default \code{TRUE}): when a phase's shape
+parameter runs to a limit of its parameterisation (\code{t_half} toward 0 or
+past the data, \code{nu} toward 0 as a step, or a flat direction through a
+shape), refit from a fixed grid of starts and return the best fit without
+a parameter at a limit. The original drift is recorded in
+\code{fit$fit$limit}. When no start succeeds, or with \code{FALSE}, \code{hazard()}
+stops with an error of class \code{hzr_limit_refusal} naming the parameter.
+The drifted estimate is never returned.
 \item \code{phase_share_tol}: Threshold for the multiphase identifiability warning
 (default 1e-8). A phase is reported as having left the model when it
 supplies less than this share of the cumulative hazard at every observed

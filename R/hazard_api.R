@@ -563,6 +563,14 @@ NULL
 #'   the resulting `objective` values. A fractional value is rejected rather
 #'   than truncated, since `3.9` and `3` would otherwise select the same
 #'   ensemble without saying so.
+#' - `limit_restart` (multiphase, default `TRUE`): when a phase's shape
+#'   parameter runs to a limit of its parameterisation (`t_half` toward 0 or
+#'   past the data, `nu` toward 0 as a step, or a flat direction through a
+#'   shape), refit from a fixed grid of starts and return the best fit without
+#'   a parameter at a limit. The original drift is recorded in
+#'   `fit$fit$limit`. When no start succeeds, or with `FALSE`, `hazard()`
+#'   stops with an error of class `hzr_limit_refusal` naming the parameter.
+#'   The drifted estimate is never returned.
 #' - `phase_share_tol`: Threshold for the multiphase identifiability warning
 #'   (default 1e-8). A phase is reported as having left the model when it
 #'   supplies less than this share of the cumulative hazard at every observed
@@ -911,6 +919,13 @@ NULL
 #'   \code{warned_by} raises one warning whose classes are \code{"hzr_"}
 #'   plus each such record's mechanism, all inheriting
 #'   \code{"hzr_boundary"}, so one handler catches the whole family.
+#' - \code{fit$fit$limit}: \code{NA} when the limit check did not run (an
+#'   unfitted object, or a non-multiphase model); \code{NULL} when it ran and
+#'   found no shape parameter at a limit; or a list when \code{hazard()}
+#'   restarted the fit (\code{trigger}, \code{original}, \code{grid},
+#'   \code{winner}), which also raises a warning of class
+#'   \code{"hzr_limit_restarted"}. A fit that cannot be rescued is not
+#'   returned: \code{hazard()} stops with class \code{"hzr_limit_refusal"}.
 #' @export
 hazard <- function(formula = NULL,
                    data = NULL,
@@ -928,6 +943,14 @@ hazard <- function(formula = NULL,
                    control = list(),
                    objective = c("likelihood", "sas"),
                    ...) {
+
+  # #683: a multiphase fit is checked for a shape parameter at a limit, and
+  # restarted or refused. The layer re-evaluates this very call (inner),
+  # so everything below runs unchanged for it.
+  if (isTRUE(fit) && identical(unname(dist), "multiphase") &&
+        !.hzr_limit_state$inner) {
+    return(.hzr_limit_fit(match.call(), parent.frame(), control))
+  }
 
   objective <- match.arg(objective)
   # A named scalar such as c(model = "multiphase") is a valid `dist`, but
@@ -2077,6 +2100,11 @@ hazard <- function(formula = NULL,
     legacy_args = list(...),
     engine = "native-r-m2"
   )
+
+  # #683: NA not examined; NULL examined and clean. The limit layer replaces
+  # it with a record when it restarts.
+  obj$fit["limit"] <- list(
+    if (fit_ran && identical(dist, "multiphase")) NULL else NA)
 
   class(obj) <- "hazard"
 
@@ -3702,7 +3730,8 @@ vcov.hazard <- function(object, ...) {
 .hzr_control_names <- list(
   all = c("maxit", "reltol"),
   single = "shape_param_count",
-  multiphase = c("n_starts", "conserve", "phase_share_tol", "start_seed")
+  multiphase = c("n_starts", "conserve", "phase_share_tol", "start_seed",
+                 "limit_restart")
 )
 
 # Names ?hazard documented as accepted, a translation emitted, or a user

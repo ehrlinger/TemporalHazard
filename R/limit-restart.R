@@ -146,3 +146,180 @@
   }
   out[!duplicated(lapply(out, unname))]
 }
+
+# TRUE while hazard() is evaluating a call on the limit layer's behalf, so
+# the inner call fits and returns without checking again. Package-private;
+# not a control element, so no user setting can turn the check off.
+.hzr_limit_state <- new.env(parent = emptyenv())
+.hzr_limit_state$inner <- FALSE
+
+#' Evaluate a hazard() call as the limit layer's inner call
+#'
+#' Its warnings are held back (a discarded fit's warnings must not reach the
+#' user as if they described the result) and its error is returned, not
+#' raised.
+#' @param cl A `hazard()` call. @param env Where to evaluate it.
+#' @return `list(value, warnings)`; `value` is a fit or an error condition.
+#' @keywords internal
+#' @noRd
+.hzr_limit_capture <- function(cl, env) {
+  old <- .hzr_limit_state$inner
+  .hzr_limit_state$inner <- TRUE
+  on.exit(.hzr_limit_state$inner <- old, add = TRUE)
+  caught <- list()
+  value <- tryCatch(
+    withCallingHandlers(eval(cl, env), warning = function(w) {
+      caught[[length(caught) + 1L]] <<- w
+      invokeRestart("muffleWarning")
+    }),
+    error = function(e) e)
+  list(value = value, warnings = caught)
+}
+
+.hzr_limit_describe <- function(trigger) {
+  paste(vapply(trigger, function(r) {
+    paste0(r$phase, ".", r$parameter, " ran to ", r$limit)
+  }, character(1)), collapse = "; ")
+}
+
+#' The refusal condition
+#' @keywords internal
+#' @noRd
+.hzr_limit_refusal <- function(trigger, best_objective, n_tried,
+                               disabled = FALSE) {
+  first <- trigger[[1L]]
+  msg <- paste0(
+    "hazard(): ", .hzr_limit_describe(trigger), ". ",
+    if (disabled) {
+      "No restart was tried (control$limit_restart = FALSE)"
+    } else if (n_tried > 0L) {
+      paste0("None of ", n_tried, " restarts reached a fit without a ",
+             "parameter at a limit")
+    } else {
+      "No restart start could be built (no event times, or every shape fixed)"
+    },
+    "; the best objective reached was ", format(best_objective, digits = 8),
+    ". The drifted estimate is not returned. Fix the parameter at a value ",
+    "you choose, as SAS's FIX", toupper(first$parameter), " does: ",
+    "hzr_phase(..., ", first$parameter, " = <value>, fixed = \"",
+    first$parameter, "\"), or supply other starting values (`theta`).")
+  structure(
+    class = c("hzr_limit_refusal", "error", "condition"),
+    list(message = msg, call = NULL, phase = first$phase,
+         parameter = first$parameter, limit = first$limit,
+         best_objective = best_objective, trigger = trigger))
+}
+
+.hzr_limit_usable <- function(v) {
+  inherits(v, "hazard") && !isFALSE(v$fit$converged) &&
+    isTRUE(is.finite(v$fit$objective))
+}
+
+#' hazard()'s limit layer: fit, check, restart or refuse
+#'
+#' @param cl `match.call()` of the user's `hazard()` call.
+#' @param env Its `parent.frame()`.
+#' @param control The call's evaluated `control`.
+#' @return A `hazard` object; or an error is raised.
+#' @keywords internal
+#' @noRd
+.hzr_limit_fit <- function(cl, env, control) {
+  restart <- control$limit_restart %||% TRUE
+  if (!(isTRUE(restart) || isFALSE(restart))) {
+    stop("control$limit_restart must be TRUE or FALSE.", call. = FALSE)
+  }
+  first <- .hzr_limit_capture(cl, env)
+  emit <- function(r) for (w in r$warnings) warning(w)
+  if (inherits(first$value, "condition")) {
+    emit(first)
+    stop(first$value)
+  }
+  trigger <- .hzr_limit_trigger(first$value)
+  if (is.null(trigger)) {
+    emit(first)
+    return(first$value)
+  }
+  # On a refusal the drifted fit's own warnings (weak, boundary) are raised
+  # first: they describe the drift the refusal names.
+  if (!restart) {
+    emit(first)
+    stop(.hzr_limit_refusal(trigger, first$value$fit$objective, 0L,
+                            disabled = TRUE))
+  }
+  fit0 <- first$value
+  prep <- .hzr_evaluate_prepare(fit0)
+  # The user's start: their theta if they gave one, else the phase specs'
+  # default, assembled as the optimizer assembles it.
+  # cl$theta is an unevaluated call, so test its VALUE: a symbol that
+  # evaluates to NULL means no theta was given.
+  theta_given <- if (is.null(cl$theta)) NULL else eval(cl$theta, env)
+  start <- if (!is.null(theta_given)) {
+    stats::setNames(theta_given, prep$names)
+  } else {
+    stats::setNames(unlist(lapply(names(prep$phases), function(nm) {
+      .hzr_phase_start(prep$phases[[nm]],
+                       n_covariates = prep$covariate_counts[[nm]])
+    }), use.names = FALSE), prep$names)
+  }
+  fixed <- prep$names[as.logical(fit0$fit$fixed_mask %||%
+                                   logical(length(prep$names)))]
+  grid <- .hzr_limit_grid(start, trigger, prep$phases,
+                          event_times = fit0$data$time[fit0$data$status == 1],
+                          fixed = fixed)
+  ctrl <- control
+  ctrl$n_starts <- 1L   # the grid IS the multi-start; 9 x n_starts is waste
+  runs <- lapply(grid, function(s) {
+    cl_i <- cl
+    cl_i$theta <- s
+    cl_i$control <- ctrl
+    .hzr_limit_capture(cl_i, env)
+  })
+  rows <- data.frame(
+    start = seq_along(runs),
+    objective = vapply(runs, function(r) {
+      if (.hzr_limit_usable(r$value)) r$value$fit$objective else NA_real_
+    }, numeric(1)),
+    triggered = vapply(runs, function(r) {
+      .hzr_limit_usable(r$value) && !is.null(.hzr_limit_trigger(r$value))
+    }, logical(1)),
+    error = vapply(runs, function(r) {
+      if (inherits(r$value, "condition")) conditionMessage(r$value) else NA_character_
+    }, character(1)),
+    stringsAsFactors = FALSE)
+  # The winner is the best objective OVERALL, the original included. A clean
+  # fit that is worse than a fit at a limit is not a rescue: there the data
+  # support the limit, and the fit refuses (amended after Task 1: on #448's
+  # avc fixture the best clean start was -208.31, against -21.66 at the step
+  # and -78.15 returned today).
+  best_any <- suppressWarnings(max(c(fit0$fit$objective, rows$objective),
+                                   na.rm = TRUE))
+  ok <- which(is.finite(rows$objective) & !rows$triggered)
+  win <- if (length(ok)) ok[which.max(rows$objective[ok])] else NA_integer_
+  # Relative tolerance: grid starts that reach the same optimum differ in
+  # the last digits, and a tie must not read as "a limit fit was better".
+  if (is.na(win) ||
+        best_any - rows$objective[[win]] > 1e-6 * max(1, abs(best_any))) {
+    emit(first)
+    stop(.hzr_limit_refusal(trigger, best_any, length(runs)))
+  }
+  out <- runs[[win]]$value
+  emit(runs[[win]])
+  # The user's call, not the grid start's, so print() shows what they wrote
+  # and hzr_bootstrap() refits from their start (through this layer again).
+  out$call <- fit0$call
+  out$call_env <- fit0$call_env
+  out$fit$limit <- list(
+    trigger = trigger,
+    original = list(objective = fit0$fit$objective, theta = fit0$fit$theta,
+                    weak = fit0$fit$weak, boundary = fit0$fit$boundary),
+    grid = rows, winner = win)
+  warning(structure(
+    class = c("hzr_limit_restarted", "warning", "condition"),
+    list(message = paste0(
+      .hzr_limit_describe(trigger), " (objective ",
+      format(fit0$fit$objective, digits = 8), "). Restarted from ",
+      length(runs), " starts; returned start ", win, " (objective ",
+      format(out$fit$objective, digits = 8), "). See fit$fit$limit."),
+      call = NULL)))
+  out
+}
