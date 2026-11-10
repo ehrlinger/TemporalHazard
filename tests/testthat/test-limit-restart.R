@@ -27,6 +27,7 @@ for (ns in c(1L, 5L)) {
     expect_equal(fit$fit$objective / sas_ll_729, 1, tolerance = 1e-5)
     lim <- fit$fit$limit
     expect_type(lim, "list")
+    expect_identical(lim$outcome, "restarted")
     # The drift it recovered from is on the record, and is the bad one.
     expect_lt(lim$original$objective, sas_ll_729 - 10)
     expect_true(any(vapply(lim$trigger, `[[`, "", "phase") == "early"))
@@ -48,13 +49,54 @@ for (ns in c(1L, 5L)) {
 }
 
 test_that("limit_restart = FALSE refuses at once, naming the parameter", {
-  err <- tryCatch(suppressWarnings(fit_729(1L, limit_restart = FALSE)),
+  # n_starts = 5 lands on phase_beyond_data, a hard trigger.
+  err <- tryCatch(suppressWarnings(fit_729(5L, limit_restart = FALSE)),
                   hzr_limit_refusal = function(e) e)
   expect_s3_class(err, "hzr_limit_refusal")
   expect_identical(err$phase, "early")
-  expect_true(err$parameter %in% c("nu", "t_half"))
+  expect_identical(err$parameter, "t_half")
+  expect_true(all(vapply(err$trigger, `[[`, "", "source") != "weak"))
+  expect_true(any(vapply(err$trigger, `[[`, "", "source") == "phase_beyond_data"))
   expect_match(conditionMessage(err), "hzr_phase\\(")
   expect_lt(err$best_objective, sas_ll_729 - 10)
+})
+
+test_that("limit_restart = FALSE never refits a weak-only trigger", {
+  fit <- suppressWarnings(fit_729(1L, limit_restart = FALSE))
+  expect_lt(fit$fit$objective, sas_ll_729 - 100)   # the drifted fit, about -2036.66
+  expect_null(fit$fit$limit)
+})
+
+weak_only_fit <- function(limit_restart = TRUE) {
+  set.seed(42)
+  n <- 100
+  time   <- rexp(n, rate = 0.5) + 0.01
+  status <- sample(0:1, n, replace = TRUE, prob = c(0.2, 0.8))
+  phases <- list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                 const = hzr_phase("constant"))
+  hazard(time = time, status = status, dist = "multiphase",
+         phases = phases, fit = TRUE,
+         control = list(n_starts = 5, maxit = 500, limit_restart = limit_restart))
+}
+
+test_that("a weak-only trigger tries the grid and keeps the original", {
+  # A ridge (weak flag only): the grid finds nothing better, so the original
+  # fit is returned, with the tried grid on the record. Never a refusal.
+  fit <- NULL
+  w <- testthat::capture_warnings(fit <- weak_only_fit())
+  expect_s3_class(fit, "hazard")
+  expect_false(any(grepl("Restarted from", w)))
+  lim <- fit$fit$limit
+  expect_type(lim, "list")
+  expect_identical(lim$outcome, "kept")
+  expect_true(is.na(lim$winner))
+  expect_gte(nrow(lim$grid), 2L)
+  expect_true(all(vapply(lim$trigger, `[[`, "", "source") == "weak"))
+  # The same fit as with the layer off.
+  off <- suppressWarnings(weak_only_fit(limit_restart = FALSE))
+  expect_null(off$fit$limit)
+  expect_identical(fit$fit$objective, off$fit$objective)
+  expect_identical(fit$fit$theta, off$fit$theta)
 })
 
 test_that("#448: when the best objective is at the step, the fit refuses", {

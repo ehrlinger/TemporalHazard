@@ -923,9 +923,12 @@ NULL
 #'   unfitted object, or a non-multiphase model); \code{NULL} when it ran and
 #'   found no shape parameter at a limit; or a list when \code{hazard()}
 #'   restarted the fit (\code{trigger}, \code{original}, \code{grid},
-#'   \code{winner}), which also raises a warning of class
+#'   \code{winner}, \code{outcome}), which also raises a warning of class
 #'   \code{"hzr_limit_restarted"}. A fit that cannot be rescued is not
 #'   returned: \code{hazard()} stops with class \code{"hzr_limit_refusal"}.
+#'   A fit whose only flag is a flat direction (a ridge) tries the same
+#'   restart, but is never refused: when no restart does better it is returned
+#'   unchanged, with \code{outcome = "kept"} and \code{winner = NA}.
 #' @export
 hazard <- function(formula = NULL,
                    data = NULL,

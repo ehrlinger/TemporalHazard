@@ -239,6 +239,14 @@
     emit(first)
     return(first$value)
   }
+  # A weak-only trigger (a flat direction and nothing else) is an ordinary
+  # ridge, not a drift: it tries the grid, and keeps the original unless the
+  # grid does better. A hard trigger restarts or refuses.
+  hard <- any(vapply(trigger, function(r) !identical(r$source, "weak"), logical(1)))
+  if (!restart && !hard) {
+    emit(first)
+    return(first$value)
+  }
   # On a refusal the drifted fit's own warnings (weak, boundary) are raised
   # first: they describe the drift the refusal names.
   if (!restart) {
@@ -297,8 +305,21 @@
   win <- if (length(ok)) ok[which.max(rows$objective[ok])] else NA_integer_
   # Relative tolerance: grid starts that reach the same optimum differ in
   # the last digits, and a tie must not read as "a limit fit was better".
-  if (is.na(win) ||
-        best_any - rows$objective[[win]] > 1e-6 * max(1, abs(best_any))) {
+  tol <- 1e-6 * max(1, abs(best_any))
+  if (!hard) {
+    # Weak-only: a rescue only when the grid beats the original; otherwise
+    # keep the original, with the tried grid on the record.
+    if (is.na(win) || rows$objective[[win]] - fit0$fit$objective <= tol) {
+      out <- fit0
+      out$fit$limit <- list(
+        trigger = trigger,
+        original = list(objective = fit0$fit$objective, theta = fit0$fit$theta,
+                        weak = fit0$fit$weak, boundary = fit0$fit$boundary),
+        grid = rows, winner = NA_integer_, outcome = "kept")
+      emit(first)
+      return(out)
+    }
+  } else if (is.na(win) || best_any - rows$objective[[win]] > tol) {
     emit(first)
     stop(.hzr_limit_refusal(trigger, best_any, length(runs)))
   }
@@ -312,7 +333,7 @@
     trigger = trigger,
     original = list(objective = fit0$fit$objective, theta = fit0$fit$theta,
                     weak = fit0$fit$weak, boundary = fit0$fit$boundary),
-    grid = rows, winner = win)
+    grid = rows, winner = win, outcome = "restarted")
   warning(structure(
     class = c("hzr_limit_restarted", "warning", "condition"),
     list(message = paste0(
