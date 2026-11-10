@@ -12,6 +12,7 @@
   se.fit = FALSE,
   level = 0.95,
   conf.type = c("log-log", "logit"),
+  average = FALSE,
   ...
 )
 }
@@ -130,6 +131,19 @@ reproducing SAS HAZARD's \code{HAZPRED} survival limits. Other types are
 unaffected (hazard/cumulative-hazard use a log scale that already matches
 HAZPRED). Only used when \code{se.fit = TRUE}.}
 
+\item{average}{Logical; if \code{TRUE}, average the predictions of all rows
+that share a \code{time} and return one row per distinct time, sorted. Use it
+for the expected survival curve of a cohort, \verb{Sbar(t) = mean S(t | x_i)},
+scored through the fit. The standard error is the delta-method standard
+error of that mean, \verb{sqrt(g' V g)} with \code{g} the mean of the rows'
+gradients, so it allows for the errors of different rows being
+correlated. Averaging the rows' own \code{lower} and \code{upper} instead treats
+them as perfectly correlated and gives a band that is too wide. Needs
+\code{se.fit = TRUE} and \code{type = "survival"} or \code{"cumulative_hazard"}, and
+cannot be combined with \code{decompose = TRUE}. Survival limits are built on
+\code{Sbar} through \code{conf.type}, so a single row gives exactly its own
+limits. Default \code{FALSE}.}
+
 \item{...}{Unused; included for S3 compatibility.}
 }
 \value{
@@ -145,6 +159,24 @@ For multiphase \code{type = "cumulative_hazard"} with
 \code{decompose = TRUE}, a long data frame (\code{time}, \code{component}, \code{fit},
 \code{se.fit}, \code{lower}, \code{upper}); with \code{decompose = TRUE} and \code{se.fit = FALSE},
 a wide data frame of per-phase contributions.
+
+With \code{average = TRUE}, a data frame with columns \code{time}, \code{n} (the number
+of rows averaged at that time), \code{fit}, \code{se.fit}, \code{lower} and \code{upper}.
+
+A \code{se.fit = TRUE} result whose standard errors could be computed carries
+an attribute \code{"jacobian"}, a list of three elements: \code{J}, the derivative
+of each row's \code{fit} with respect to the model's parameters (one row per
+row of the result, one column per parameter); \code{vcov}, the covariance
+matrix of those parameters; and \code{names}, the parameters' names as
+\code{\link[=summary.hazard]{summary.hazard()}} names its coefficient rows. From it
+any linear combination of the predictions has standard error
+\code{sqrt(t(g) \%*\% vcov \%*\% g)} with \code{g = colSums(w * J)} for weights \code{w}:
+the expected count of events in a cohort, for instance, is the sum of the
+cumulative hazards at each patient's own time. The columns are the
+parameters the standard errors used. A parameter held fixed in the fit,
+or one the prediction does not depend on, is left out. A Weibull fit's
+first column is \code{log(mu)}, not \code{mu}. When the standard errors are \code{NA}
+there is no attribute, and a \code{decompose = TRUE} result has none.
 }
 \description{
 Produces prediction outputs from a \code{hazard} object. Supports multiple prediction

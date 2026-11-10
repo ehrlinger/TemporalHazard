@@ -628,13 +628,18 @@ NULL
 #' @param conf_type Survival CL transform: `"log-log"` (default, on
 #'   `log(-log S)`) or `"logit"` (on `logit(1 - S)`, HAZPRED-compatible).
 #'   Only consulted when `type == "survival"`.
-#' @return data.frame with columns `fit`, `se.fit`, `lower`, `upper`.
+#' @param average Logical; `TRUE` averages the rows at each distinct `time`
+#'   (#731). The caller has checked `type` and `time`.
+#' @return data.frame with columns `fit`, `se.fit`, `lower`, `upper` (with
+#'   `time` and `n` first when `average`), and the "jacobian" attribute when
+#'   the standard errors could be computed.
 #' @keywords internal
 .hzr_predict_with_se <- function(object, type, time = NULL,
                                    x = NULL, x_list = NULL,
                                    cov_counts = NULL, phases = NULL,
                                    level = 0.95, diff_fn,
-                                   conf_type = c("log-log", "logit")) {
+                                   conf_type = c("log-log", "logit"),
+                                   average = FALSE) {
   # Only survival CLs use conf_type; validate only then so an ignored value
   # (hazard / cumulative_hazard / linear_predictor) is not an error.
   if (type == "survival") conf_type <- match.arg(conf_type)
@@ -650,6 +655,18 @@ NULL
     vcov_mat <- lsc$vcov
   }
   p <- length(theta)
+  # Named as summary() names its coefficient rows: a single-distribution fit
+  # stores an unnamed theta. A Weibull fit is read on the log(mu) scale
+  # (#566), so its first parameter is named for that scale.
+  param_names <- if (dist == "multiphase") {
+    names(theta)
+  } else {
+    .hzr_parameter_names(theta = object$fit$theta, dist = dist,
+                         p = if (is.null(object$data$x)) 0L else
+                           ncol(object$data$x))
+  }
+  if (length(param_names) != p) param_names <- paste0("param_", seq_len(p))
+  if (dist == "weibull") param_names[1L] <- "log(mu)"
   target <- diff_fn(theta)
 
   # --- Build Jacobian of the delta-method target ---------------------------
@@ -691,24 +708,26 @@ NULL
     } else {
       rep(TRUE, p)
     }
-    # A Weibull fit is read on the log(mu) scale (#566), so its first
-    # parameter is named for that scale.
     fv <- .hzr_free_vcov(vcov_mat, p, unused = which(!used),
                          fixed = object$fit$fixed_mask,
-                         param_names = if (dist == "weibull") {
-                           c("log(mu)", names(object$fit$theta)[-1L])
-                         } else {
-                           names(theta)
-                         })
+                         param_names = param_names)
   } else {
     fv <- .hzr_free_vcov(vcov_mat, p)
   }
+  surv_scale <- if (type == "survival") {
+    if (conf_type == "logit") "logit_survival" else "loglog_survival"
+  }
+  fit <- if (type == "survival") exp(-target) else target
   if (is.null(fv)) {
-    n <- length(target)
-    fit <- if (type == "survival") exp(-target) else target
-    na_vec <- rep(NA_real_, n)
-    return(data.frame(fit = fit, se.fit = na_vec,
-                      lower = na_vec, upper = na_vec))
+    if (average) {
+      grp <- .hzr_average_groups(time)
+      fit <- as.numeric(rowsum(fit, grp$idx, reorder = TRUE)) / grp$n
+    }
+    na_vec <- rep(NA_real_, length(fit))
+    res <- data.frame(fit = fit, se.fit = na_vec,
+                      lower = na_vec, upper = na_vec)
+    if (average) res <- data.frame(time = grp$time, n = grp$n, res)
+    return(res)
   }
   .hzr_warn_conserved_variance(object)
   vcov_use <- fv$vcov_use
@@ -717,13 +736,23 @@ NULL
   # Restrict J to the free columns so the sandwich dimensions match.
   J <- J[, free_idx, drop = FALSE]
 
+  # The Jacobian of `fit` on its own scale, for the "jacobian" attribute and
+  # the average (#731). The target of a survival prediction is H, and
+  # dS/dtheta = -S * dH/dtheta, row by row.
+  J_fit <- if (type == "survival") -fit * J else J
+  dimnames(J_fit) <- list(NULL, param_names[free_idx])
+  vcov_use <- unname(vcov_use)
+
+  if (average) {
+    return(.hzr_predict_average(fit, J_fit, vcov_use, time, type, level,
+                                surv_scale))
+  }
+
   # --- Sandwich -------------------------------------------------------------
   se_target <- .hzr_predict_se_from_jacobian(J, vcov_use)
 
   # --- Scale transform -----------------------------------------------------
-  if (type == "survival") {
-    fit <- exp(-target)
-    surv_scale <- if (conf_type == "logit") "logit_survival" else "loglog_survival"
+  res <- if (type == "survival") {
     res <- .hzr_predict_cl_from_se(fit, se_target, level, surv_scale)
     # The limits need se(H); the reported SE is of `fit` = S itself.
     # dS/dH = -S, so se(S) = S * se(H), as summary.survfit's std.err.
@@ -736,6 +765,62 @@ NULL
   } else {
     stop("Unknown prediction type '", type, "' for se.fit.", call. = FALSE)
   }
+  .hzr_with_jacobian(res, J_fit, vcov_use)
+}
+
+# The "jacobian" attribute of an se.fit result (#731): the Jacobian of `fit`
+# over the parameters the sandwich used, that sandwich's vcov block, and
+# their names. Attached only where a standard error was computed.
+.hzr_with_jacobian <- function(res, J_fit, vcov_use) {
+  attr(res, "jacobian") <- list(J = J_fit, vcov = vcov_use,
+                                names = colnames(J_fit))
+  res
+}
+
+# The distinct prediction times, sorted, each row's position among them and
+# the number of rows at each. rowsum(reorder = TRUE) returns its groups in
+# the same sorted order.
+.hzr_average_groups <- function(time) {
+  ut <- sort(unique(time))
+  idx <- match(time, ut)
+  list(time = ut, idx = idx, n = tabulate(idx, nbins = length(ut)))
+}
+
+#' Mean prediction per distinct time with its delta-method SE (#731)
+#'
+#' The mean of the rows' predictions at each time, `fbar`, has gradient
+#' `g = colMeans(J_fit)` over those rows, so `se(fbar) = sqrt(g' V g)`. A
+#' cumulative hazard takes log-scale limits. A mean survival `Sbar` takes its
+#' limits on the `conf.type` scale through `H* = -log(Sbar)`, whose standard
+#' error is `se(Sbar) / Sbar`; with one row that is the per-row arithmetic.
+#'
+#' @param fit Per-row predictions on their own scale.
+#' @param J_fit Jacobian of `fit` over the free parameters (n x k).
+#' @param vcov_use The matching k x k vcov block.
+#' @param time Per-row prediction times.
+#' @param type `"survival"` or `"cumulative_hazard"`.
+#' @param level Confidence level.
+#' @param surv_scale CL scale for survival, or NULL.
+#' @return `data.frame(time, n, fit, se.fit, lower, upper)` with the
+#'   "jacobian" attribute, one Jacobian row per time.
+#' @keywords internal
+#' @noRd
+.hzr_predict_average <- function(fit, J_fit, vcov_use, time, type, level,
+                                 surv_scale) {
+  grp <- .hzr_average_groups(time)
+  fbar <- as.numeric(rowsum(fit, grp$idx, reorder = TRUE)) / grp$n
+  G <- rowsum(J_fit, grp$idx, reorder = TRUE) / grp$n
+  dimnames(G) <- list(NULL, colnames(J_fit))
+  se_bar <- .hzr_predict_se_from_jacobian(G, vcov_use)
+  res <- if (type == "survival") {
+    r <- .hzr_predict_cl_from_se(fbar, se_bar / fbar, level, surv_scale)
+    r$se.fit <- se_bar
+    r
+  } else {
+    .hzr_predict_cl_from_se(fbar, se_bar, level, "log")
+  }
+  res <- data.frame(time = grp$time, n = grp$n, res)
+  .hzr_with_jacobian(res, G, vcov_use)
 }
 
 #' Per-phase + total cumulative-hazard predictions with delta-method CLs
