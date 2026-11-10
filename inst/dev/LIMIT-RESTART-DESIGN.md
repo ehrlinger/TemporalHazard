@@ -70,6 +70,11 @@ these:
 
 - `$weak` names a phase's shape or log-scale parameter. This covers #729's stall at
   `nu = 0.067`.
+  - **Exception (amended 2026-11-10):** not for a phase that `$boundary` records as
+    vanished (`coe_phase_vanished`). Its shapes are unidentified because its `mu` went to
+    0. That is a different limit, already warned by #565.
+  - Task 1 measured this on #444's `t_half = 3` fixture. Every grid start vanished the
+    same way, at about -410.1.
 - `$boundary` holds a `phase_discontinuity` record (#448: `nu -> 0`, a step).
 - `$boundary` holds an `unbounded_phase` record (#444: `t_half` below the first observed
   time).
@@ -94,8 +99,16 @@ That is at most 9 refits per triggered phase. There is no RNG.
 `$weak` and `$degraded`, so a rescued fit is an ordinary fit object. The check is switched
 off inside a restart, so the grid cannot recurse.
 
-**The winner** is the start with the best objective among those whose own
-`.hzr_limit_trigger()` is `NULL`.
+**The winner** is the fit with the best objective **overall**, taken across the original
+fit and every grid start.
+- If that fit is clean, meaning its own `.hzr_limit_trigger()` is `NULL`, it is returned.
+- If the best objective belongs to a fit at a limit, the data support the limit, and the
+  fit refuses. It never returns a clean but worse fit.
+
+Amended 2026-11-10 after Task 1 measured the #448 `avc` fixture. Its grid's best was
+-21.66, at the step. The best fit that did not trigger was -208.31, 130 log-likelihood
+units below the -78.15 the fit returns today. "Best that does not trigger" would have
+returned it as a rescue.
 
 ### Outcome, wired after the `$boundary` assembly (`hazard_api.R` around line 2010)
 
@@ -105,7 +118,8 @@ off inside a restart, so the grid cannot recurse.
   - `$limit` records the trigger, each start with its objective and trigger, and the
     winner.
   - A warning names the original drift and the objective gained.
-- **Trigger, and no clean restart**, or `control$limit_restart = FALSE`. The fit stops
+- **Trigger, and the best objective overall is at a limit** (the #448 step), or no clean
+  restart, or `control$limit_restart = FALSE`. The fit stops
   with `stop()`, class `hzr_limit_refusal`.
   - The fields are `phase`, `parameter`, `limit` and `best_objective`.
   - The message names the phase, the parameter and the limit, and points to

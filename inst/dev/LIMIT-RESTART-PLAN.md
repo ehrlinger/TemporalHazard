@@ -411,6 +411,16 @@ test_that("a FIXED parameter never triggers", {
     fixed = "early.nu")))
 })
 
+test_that("a weak reading in a VANISHED phase does not trigger", {
+  van <- list(list(mechanism = "coe_phase_vanished", phase = "early"))
+  expect_null(.hzr_limit_trigger(mk(boundary = van,
+                                    weak = list(params = c("early.log_t_half", "early.nu")))))
+  # but a limit record in that phase still does
+  tr <- .hzr_limit_trigger(mk(boundary = c(van, list(list(mechanism = "unbounded_phase",
+                                                            phase = "early")))))
+  expect_identical(tr[[1]]$source, "unbounded_phase")
+})
+
 test_that("one parameter reached two ways is reported once", {
   tr <- .hzr_limit_trigger(mk(
     boundary = list(list(mechanism = "phase_discontinuity", phase = "early")),
@@ -512,8 +522,18 @@ Create `R/limit-restart.R`:
       if (!is.null(m)) add(r$phase, m[[1L]], m[[2L]], r$mechanism)
     }
   }
+  # A phase recorded as vanished has unidentified shapes because its mu went
+  # to 0: a different limit, already warned (#565), and not a shape at a
+  # limit. Its weak reading does not trigger (amended after Task 1: #444's
+  # t_half = 3 fit vanished from every grid start).
+  vanished <- if (is.list(fs$boundary)) {
+    unlist(lapply(fs$boundary, function(r) {
+      if (identical(r$mechanism, "coe_phase_vanished")) r$phase
+    }))
+  }
   if (is.list(fs$weak)) {
     for (p in intersect(fs$weak$params, names(shape_phase))) {
+      if (shape_phase[[p]] %in% vanished) next
       short <- substring(p, nchar(shape_phase[[p]]) + 2L)
       add(shape_phase[[p]], .hzr_limit_user_name[[short]],
           "a flat direction (not identified)", "weak")
@@ -762,6 +782,25 @@ test_that("limit_restart = FALSE refuses at once, naming the parameter", {
   expect_lt(err$best_objective, sas_ll_729 - 10)
 })
 
+test_that("#448: when the best objective is at the step, the fit refuses", {
+  # Task 1 grid: best -21.66 at the step, best clean start -208.31. Returning
+  # the clean start would be 130 units worse than today's -78.15.
+  data(avc, package = "TemporalHazard", envir = environment())
+  tt <- avc$int_dead; st <- avc$dead
+  k <- is.finite(tt) & is.finite(st) & tt > 0
+  err <- tryCatch(suppressWarnings(hazard(
+    time = tt[k], status = st[k], dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m"),
+                  late = hzr_phase("g3", tau = 5, gamma = 1, alpha = 1, eta = 1,
+                                   constraint = "alpha_gamma_eta")),
+    fit = TRUE, control = list(n_starts = 1L))),
+    hzr_limit_refusal = function(e) e)
+  expect_s3_class(err, "hzr_limit_refusal")
+  expect_identical(err$parameter, "nu")
+  # The best objective it reports is the step's, above today's returned fit.
+  expect_gt(err$best_objective, -78.15)
+})
+
 test_that("a clean fit is unchanged and records $limit NULL", {
   data(avc, package = "TemporalHazard", envir = environment())
   k <- is.finite(avc$int_dead) & avc$int_dead > 0
@@ -952,13 +991,22 @@ add:
       if (inherits(r$value, "condition")) conditionMessage(r$value) else NA_character_
     }, character(1)),
     stringsAsFactors = FALSE)
+  # The winner is the best objective OVERALL, the original included. A clean
+  # fit that is worse than a fit at a limit is not a rescue: there the data
+  # support the limit, and the fit refuses (amended after Task 1: on #448's
+  # avc fixture the best clean start was -208.31, against -21.66 at the step
+  # and -78.15 returned today).
+  best_any <- suppressWarnings(max(c(fit0$fit$objective, rows$objective),
+                                   na.rm = TRUE))
   ok <- which(is.finite(rows$objective) & !rows$triggered)
-  if (!length(ok)) {
-    best <- suppressWarnings(max(c(fit0$fit$objective, rows$objective), na.rm = TRUE))
+  win <- if (length(ok)) ok[which.max(rows$objective[ok])] else NA_integer_
+  # Relative tolerance: grid starts that reach the same optimum differ in
+  # the last digits, and a tie must not read as "a limit fit was better".
+  if (is.na(win) ||
+        best_any - rows$objective[[win]] > 1e-6 * max(1, abs(best_any))) {
     emit(first)
-    stop(.hzr_limit_refusal(trigger, best, length(runs)))
+    stop(.hzr_limit_refusal(trigger, best_any, length(runs)))
   }
-  win <- ok[which.max(rows$objective[ok])]
   out <- runs[[win]]$value
   emit(runs[[win]])
   # The user's call, not the grid start's, so print() shows what they wrote
