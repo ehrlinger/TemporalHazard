@@ -182,6 +182,24 @@
   }, character(1)), collapse = "; ")
 }
 
+#' The always-printed limit line (a line shown only on bad news cannot be
+#' told from one its author forgot to write; R/degraded.R)
+#' @keywords internal
+#' @noRd
+.hzr_limit_line <- function(limit) {
+  paste0("  Limit check: ", if (is.null(limit)) {
+    "none"
+  } else if (!is.list(limit)) {
+    "not run"
+  } else if (identical(limit$outcome, "kept")) {
+    paste0("restart tried (", .hzr_limit_describe(limit$trigger),
+           "); none better, original kept")
+  } else {
+    paste0("restarted (", .hzr_limit_describe(limit$trigger), "); start ",
+           limit$winner, " of ", nrow(limit$grid), " kept")
+  })
+}
+
 #' The refusal condition
 #' @keywords internal
 #' @noRd

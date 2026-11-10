@@ -3091,6 +3091,7 @@ print.hazard <- function(x, ...) {
         sep = "\n")
   }
   # Always printed, "none" included (#242).
+  if (identical(x$spec$dist, "multiphase")) cat(.hzr_limit_line(x$fit$limit), "\n", sep = "")
   cat(.hzr_format_not_done(x$degraded, x$degraded_causes), sep = "\n")
   invisible(x)
 }
@@ -3234,6 +3235,7 @@ summary.hazard <- function(object, ...) {
     pd = object$fit$pd,
     weak = object$fit$weak,
     boundary = object$fit$boundary,
+    limit = object$fit$limit,
     degraded = object$degraded,
     degraded_causes = object$degraded_causes,
     phases = object$spec$phases,
@@ -3331,6 +3333,7 @@ print.summary.hazard <- function(x, ...) {
   # the notes that said "not examined for a weakly identified direction" and
   # "standard errors unavailable; the Hessian could not be inverted", both of
   # which could name the wrong cause.
+  if (identical(x$dist, "multiphase")) cat(.hzr_limit_line(x$limit), "\n", sep = "")
   cat(.hzr_format_not_done(x$degraded, x$degraded_causes), sep = "\n")
   if (!is.null(x$counts)) {
     fn_count <- x$counts[["function"]] %||% x$counts[["fn"]] %||% NA_integer_

@@ -127,3 +127,27 @@ test_that("a g3 trigger varies tau at the quartiles and nothing else", {
   expect_length(g, 3L)
   expect_true(all(vapply(g, `[[`, 0, "late.gamma") == 2))
 })
+
+test_that("the limit line has a sentence for each state", {
+  expect_identical(.hzr_limit_line(NULL), "  Limit check: none")
+  expect_identical(.hzr_limit_line(NA), "  Limit check: not run")
+  trig <- list(list(phase = "early", parameter = "nu",
+                    limit = "0 (a step at t_half)", source = "weak"))
+  lim <- list(trigger = trig, outcome = "restarted",
+              grid = data.frame(start = 1:2, objective = c(-5, -4)), winner = 2L)
+  expect_identical(.hzr_limit_line(lim),
+    "  Limit check: restarted (early.nu ran to 0 (a step at t_half)); start 2 of 2 kept")
+  kept <- list(trigger = trig, outcome = "kept",
+               grid = data.frame(start = 1:2, objective = c(-5, -4)), winner = NA_integer_)
+  expect_identical(.hzr_limit_line(kept),
+    "  Limit check: restart tried (early.nu ran to 0 (a step at t_half)); none better, original kept")
+})
+
+test_that("print() shows the limit line for a multiphase object", {
+  obj <- hazard(time = c(1, 2, 3), status = c(1, 0, 1), dist = "multiphase",
+    phases = list(constant = hzr_phase("constant")), fit = FALSE)
+  expect_match(paste(utils::capture.output(print(obj)), collapse = "\n"),
+               "Limit check: not run", fixed = TRUE)
+  expect_match(paste(utils::capture.output(print(summary(obj))), collapse = "\n"),
+               "Limit check: not run", fixed = TRUE)
+})
