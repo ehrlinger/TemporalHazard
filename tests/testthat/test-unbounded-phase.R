@@ -46,6 +46,44 @@ ub_fit <- function(d, phases, ...) {
                           control = list(n_starts = 1L), ...))
 }
 
+# #683: hazard() no longer returns a fit whose t_half ran below the data. It
+# restarts from a grid, or refuses with class hzr_limit_refusal. The record is
+# still built, on the fit the limit layer examined, and the layer reads its
+# trigger from it. ub_inner() evaluates a hazard() call as the layer's first
+# fit does (.hzr_limit_capture()), so the record's construction is asserted
+# on the fit hazard() built it for. Its warnings are captured, not raised.
+ub_inner <- function(expr) {
+  v <- .hzr_limit_capture(substitute(expr), parent.frame())$value
+  stopifnot(inherits(v, "hazard"))
+  v
+}
+
+# A fit that restarts: the hzr_limit_restarted warning is asserted, every
+# other warning muffled, and the restart names this file's mechanism.
+ub_restarted <- function(expr) {
+  fit <- NULL
+  expect_warning(
+    withCallingHandlers(fit <- expr, warning = function(w) {
+      if (!inherits(w, "hzr_limit_restarted")) invokeRestart("muffleWarning")
+    }),
+    class = "hzr_limit_restarted"
+  )
+  expect_identical(fit$fit$limit$outcome, "restarted")
+  expect_identical(vapply(fit$fit$limit$trigger, `[[`, "", "source"),
+                   "unbounded_phase")
+  # The fit returned is inside the data: its own record is gone.
+  expect_length(ub_records(fit$fit$boundary), 0L)
+  fit
+}
+
+# The refusal names the mechanism this file is about, and nothing else.
+expect_ub_refusal <- function(expr) {
+  err <- expect_error(suppressWarnings(expr), class = "hzr_limit_refusal")
+  expect_identical(vapply(err$trigger, `[[`, "", "source"), "unbounded_phase")
+  expect_identical(err$parameter, "t_half")
+  invisible(err)
+}
+
 test_that("a hazard phase fitted below the observed support is recorded and warned", {
   d <- ub_data()
   ph <- list(early = hzr_phase("hazard", t_half = 0.5, nu = 1, m = 0),
@@ -66,8 +104,15 @@ test_that("a hazard phase fitted below the observed support is recorded and warn
   expect_s3_class(w, "hzr_boundary")
   expect_equal(class(w), c("hzr_unbounded_phase", "hzr_boundary", "warning",
                            "condition"))
+  # The warning is raised, then the fit refuses: no restart reaches a fit
+  # inside the data that is as good (#683).
+  expect_ub_refusal(ub_fit(d, ph, theta = c(log(0.1), log(min(d$t) / 1000), 1,
+                                            0, log(0.05))))
 
-  f <- ub_fit(d, ph, theta = c(log(0.1), log(min(d$t) / 1000), 1, 0, log(0.05)))
+  f <- ub_inner(hazard(time = d$t, status = d$s, dist = "multiphase",
+                       phases = ph, fit = TRUE, control = list(n_starts = 1L),
+                       theta = c(log(0.1), log(min(d$t) / 1000), 1, 0,
+                                 log(0.05))))
   expect_true(is.list(f$fit$boundary))
   b <- ub_records(f$fit$boundary)
   expect_length(b, 1L)
@@ -169,7 +214,11 @@ test_that("summary reports the finding, and says nothing when there is none", {
   d <- ub_data()
   ph <- list(early = hzr_phase("hazard", t_half = 0.5, nu = 1, m = 0),
              late  = hzr_phase("constant"))
-  bad <- ub_fit(d, ph, theta = c(log(0.1), log(min(d$t) / 1000), 1, 0, log(0.05)))
+  th <- c(log(0.1), log(min(d$t) / 1000), 1, 0, log(0.05))
+  expect_ub_refusal(ub_fit(d, ph, theta = th))
+  bad <- ub_inner(hazard(time = d$t, status = d$s, dist = "multiphase",
+                         phases = ph, fit = TRUE,
+                         control = list(n_starts = 1L), theta = th))
   out <- paste(utils::capture.output(print(summary(bad))), collapse = " ")
   expect_match(out, "unbounded", fixed = TRUE)
   ok <- ub_fit(d, list(early = hzr_phase("hazard", t_half = 3, nu = 1, m = 0),
@@ -280,9 +329,18 @@ test_that("a weight-0 row does not supply the first observed time", {
   ph <- list(early = hzr_phase("hazard", t_half = 0.5, nu = 1, m = 0),
              late  = hzr_phase("constant"))
   th <- c(log(0.1), log(min(d$t) / 1000), 1, 0, log(0.05))
-  base <- ub_fit(d, ph, theta = th)
-  padded <- ub_fit(list(t = c(d$t, 1e-12), s = c(d$s, 0)), ph, theta = th,
-                   weights = c(rep(1, length(d$t)), 0))
+  pad <- list(t = c(d$t, 1e-12), s = c(d$s, 0))
+  wts <- c(rep(1, length(d$t)), 0)
+  # Both refuse on the record this test is about (#683); the records are
+  # read from the fits the limit layer examined.
+  expect_ub_refusal(ub_fit(d, ph, theta = th))
+  expect_ub_refusal(ub_fit(pad, ph, theta = th, weights = wts))
+  base <- ub_inner(hazard(time = d$t, status = d$s, dist = "multiphase",
+                          phases = ph, fit = TRUE,
+                          control = list(n_starts = 1L), theta = th))
+  padded <- ub_inner(hazard(time = pad$t, status = pad$s, weights = wts,
+                            dist = "multiphase", phases = ph, fit = TRUE,
+                            control = list(n_starts = 1L), theta = th))
   # The premise: the ghost row sits below the fitted t_half.
   expect_lt(1e-12, exp(unname(padded$fit$theta[["early.log_t_half"]])))
   expect_true(is.list(padded$fit$boundary))
@@ -304,10 +362,15 @@ test_that("a row the designs drop for an NA covariate is not an observed time", 
                    z = c(stats::rnorm(n), NA))
   ph <- list(early = hzr_phase("hazard", t_half = 0.5, nu = 1, m = 0),
              late  = hzr_phase("constant", formula = ~ z))
-  fit <- suppressWarnings(hazard(
+  th <- c(log(0.1), log(min(d$t) / 1000), 1, 0, log(0.05), 0)
+  # It refuses on the record this test is about (#683); the record is read
+  # from the fit the limit layer examined.
+  expect_ub_refusal(hazard(
     survival::Surv(t, s) ~ 1, data = df, dist = "multiphase",
-    phases = ph, fit = TRUE, control = list(n_starts = 1L),
-    theta = c(log(0.1), log(min(d$t) / 1000), 1, 0, log(0.05), 0)))
+    phases = ph, fit = TRUE, control = list(n_starts = 1L), theta = th))
+  fit <- ub_inner(hazard(
+    survival::Surv(t, s) ~ 1, data = df, dist = "multiphase",
+    phases = ph, fit = TRUE, control = list(n_starts = 1L), theta = th))
   t_half <- exp(unname(fit$fit$theta[["early.log_t_half"]]))
   expect_lt(1e-12, t_half)  # the premise: the dropped row is below t_half
   expect_true(is.list(fit$fit$boundary))
@@ -328,14 +391,17 @@ test_that("a bound the likelihood never reads is not an observed time", {
   lo <- c(rep(0, n), 1e-12)
   ph <- list(early = hzr_phase("hazard", t_half = 0.5, nu = 1, m = 0),
              late  = hzr_phase("constant"))
-  fit <- suppressWarnings(hazard(
+  # This fit restarts (#683): a grid start ends inside the data and is the
+  # best fit found. The record is asserted on the fit it replaced.
+  fit <- ub_restarted(hazard(
     time = tt, status = st, time_lower = lo, dist = "multiphase",
     phases = ph, fit = TRUE, control = list(n_starts = 1L),
     theta = c(log(0.1), log(min(d$t) / 1000), 1, 0, log(0.05))))
-  t_half <- exp(unname(fit$fit$theta[["early.log_t_half"]]))
+  orig <- fit$fit$limit$original
+  t_half <- exp(unname(orig$theta[["early.log_t_half"]]))
   expect_lt(1e-12, t_half)  # the premise: the unused bound is below t_half
-  expect_true(is.list(fit$fit$boundary))
-  ub <- ub_records(fit$fit$boundary)
+  expect_true(is.list(orig$boundary))
+  ub <- ub_records(orig$boundary)
   expect_length(ub, 1L)
   expect_match(ub[[1L]]$detail,
                paste0("below the first observed time (",
@@ -352,14 +418,17 @@ test_that("a `time` an explicit bound replaces is not an observed time", {
   up <- c(d$t, stats::median(d$t))
   ph <- list(early = hzr_phase("hazard", t_half = 0.5, nu = 1, m = 0),
              late  = hzr_phase("constant"))
-  fit <- suppressWarnings(hazard(
+  # This fit restarts (#683): a grid start ends inside the data and is the
+  # best fit found. The record is asserted on the fit it replaced.
+  fit <- ub_restarted(hazard(
     time = tt, status = st, time_upper = up, dist = "multiphase",
     phases = ph, fit = TRUE, control = list(n_starts = 1L),
     theta = c(log(0.1), log(min(d$t) / 1000), 1, 0, log(0.05))))
-  t_half <- exp(unname(fit$fit$theta[["early.log_t_half"]]))
+  orig <- fit$fit$limit$original
+  t_half <- exp(unname(orig$theta[["early.log_t_half"]]))
   expect_lt(1e-12, t_half)
-  expect_true(is.list(fit$fit$boundary))
-  ub <- ub_records(fit$fit$boundary)
+  expect_true(is.list(orig$boundary))
+  ub <- ub_records(orig$boundary)
   expect_length(ub, 1L)
   expect_match(ub[[1L]]$detail,
                paste0("below the first observed time (",
