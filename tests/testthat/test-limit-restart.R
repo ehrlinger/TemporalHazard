@@ -45,6 +45,10 @@ for (ns in c(1L, 5L)) {
     expect_true(all(is.finite(sqrt(diag(vcov(fit))[free]))))
     # Its call is the user's, so hzr_bootstrap() refits from the user's start.
     expect_null(fit$call$theta)
+    # The grid forces n_starts = 1; the stored control is the user's, which
+    # hzr_bootstrap() and hzr_stepwise() refit from.
+    expect_identical(fit$spec$control$n_starts, ns)
+    expect_identical(.hzr_inherit_control(list(), fit)$control$n_starts, ns)
   })
 }
 
@@ -58,6 +62,7 @@ test_that("limit_restart = FALSE refuses at once, naming the parameter", {
   expect_true(all(vapply(err$trigger, `[[`, "", "source") != "weak"))
   expect_true(any(vapply(err$trigger, `[[`, "", "source") == "phase_beyond_data"))
   expect_match(conditionMessage(err), "hzr_phase\\(")
+  expect_match(conditionMessage(err), "FIXTHALF", fixed = TRUE)
   expect_lt(err$best_objective, sas_ll_729 - 10)
 })
 
@@ -139,4 +144,14 @@ test_that("an unfitted object records $limit NA", {
 test_that("limit_restart must be TRUE or FALSE", {
   expect_error(fit_729(1L, limit_restart = NA), "limit_restart")
   expect_error(fit_729(1L, limit_restart = "yes"), "limit_restart")
+})
+
+test_that("the refusal message counts restarts that ended in an error", {
+  trig <- list(list(phase = "early", parameter = "t_half",
+                    limit = "0 (below the first observed time)",
+                    source = "unbounded_phase"))
+  with_err <- .hzr_limit_refusal(trig, -100, 9L, n_errored = 3L)
+  expect_match(conditionMessage(with_err), "3 ended in an error", fixed = TRUE)
+  without <- .hzr_limit_refusal(trig, -100, 9L, n_errored = 0L)
+  expect_no_match(conditionMessage(without), "ended in an error")
 })

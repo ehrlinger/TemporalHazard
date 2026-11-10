@@ -186,7 +186,7 @@
 #' @keywords internal
 #' @noRd
 .hzr_limit_refusal <- function(trigger, best_objective, n_tried,
-                               disabled = FALSE) {
+                               disabled = FALSE, n_errored = 0L) {
   first <- trigger[[1L]]
   msg <- paste0(
     "hazard(): ", .hzr_limit_describe(trigger), ". ",
@@ -194,13 +194,17 @@
       "No restart was tried (control$limit_restart = FALSE)"
     } else if (n_tried > 0L) {
       paste0("None of ", n_tried, " restarts reached a fit without a ",
-             "parameter at a limit")
+             "parameter at a limit",
+             if (n_errored > 0L) {
+               paste0(" (", n_errored, " ended in an error; see the error ",
+                      "column of the restart grid)")
+             })
     } else {
       "No restart start could be built (no event times, or every shape fixed)"
     },
     "; the best objective reached was ", format(best_objective, digits = 8),
     ". The drifted estimate is not returned. Fix the parameter at a value ",
-    "you choose, as SAS's FIX", toupper(first$parameter), " does: ",
+    "you choose, as SAS's FIX", toupper(gsub("_", "", first$parameter)), " does: ",
     "hzr_phase(..., ", first$parameter, " = <value>, fixed = \"",
     first$parameter, "\"), or supply other starting values (`theta`).")
   structure(
@@ -321,7 +325,8 @@
     }
   } else if (is.na(win) || best_any - rows$objective[[win]] > tol) {
     emit(first)
-    stop(.hzr_limit_refusal(trigger, best_any, length(runs)))
+    stop(.hzr_limit_refusal(trigger, best_any, length(runs),
+                            n_errored = sum(!is.na(rows$error))))
   }
   out <- runs[[win]]$value
   emit(runs[[win]])
@@ -329,6 +334,15 @@
   # and hzr_bootstrap() refits from their start (through this layer again).
   out$call <- fit0$call
   out$call_env <- fit0$call_env
+  # Likewise the user's control: the grid forced n_starts = 1, and
+  # hzr_bootstrap() and hzr_stepwise() refit from spec$control. The state the
+  # winner's own fit applied (conserve_applied and its reason) stays the
+  # winner's, since CoE may apply in one fit and not the other.
+  applied <- c("conserve_applied", "conserve_disabled_reason")
+  ctl <- fit0$spec$control
+  win_ctl <- out$spec$control
+  for (k in applied) ctl[k] <- list(win_ctl[[k]])
+  out$spec$control <- ctl
   out$fit$limit <- list(
     trigger = trigger,
     original = list(objective = fit0$fit$objective, theta = fit0$fit$theta,

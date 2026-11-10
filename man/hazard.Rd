@@ -362,14 +362,18 @@ starts when a fit is suspected of sitting in a local optimum, and compare
 the resulting \code{objective} values. A fractional value is rejected rather
 than truncated, since \code{3.9} and \code{3} would otherwise select the same
 ensemble without saying so.
-\item \code{limit_restart} (multiphase, default \code{TRUE}): when a phase's shape
-parameter runs to a limit of its parameterisation (\code{t_half} toward 0 or
-past the data, \code{nu} toward 0 as a step, or a flat direction through a
-shape), refit from a fixed grid of starts and return the best fit without
-a parameter at a limit. The original drift is recorded in
-\code{fit$fit$limit}. When no start succeeds, or with \code{FALSE}, \code{hazard()}
-stops with an error of class \code{hzr_limit_refusal} naming the parameter.
-The drifted estimate is never returned.
+\item \code{limit_restart} (multiphase, default \code{TRUE}): a shape parameter at a
+limit that the boundary checks record (\code{t_half} below the first or past
+the last observed time, \code{nu} toward 0 as a step) triggers a restart from
+a fixed grid of starts. The best fit is returned only if it has the best
+objective found and no parameter at a limit; otherwise \code{hazard()} stops
+with an error of class \code{hzr_limit_refusal} naming the parameter. A flat
+direction through a shape (the weak-identification reading) only tries
+the grid: a better fit is returned if one is found, and otherwise the
+original fit is returned unchanged. The original fit is recorded in
+\code{fit$fit$limit}. With \code{FALSE} the grid is skipped: a limit found by the
+boundary checks then refuses at once, and a flat direction returns the
+original fit.
 \item \code{phase_share_tol}: Threshold for the multiphase identifiability warning
 (default 1e-8). A phase is reported as having left the model when it
 supplies less than this share of the cumulative hazard at every observed
