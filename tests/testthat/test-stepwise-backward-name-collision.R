@@ -134,17 +134,20 @@ test_that("a phase formula beside a global design reads its own design", {
   d <- bnc_data()
   d$z <- stats::rnorm(nrow(d))
   # Only name resolution is tested here. An exponential sample under a cdf
-  # plus constant model has a singular Hessian, and hazard() says so.
+  # plus constant model has a singular Hessian, and hazard() says so. Its
+  # shapes are fixed: free, t_half runs past the data and hazard() refuses
+  # (#683).
   fit <- suppressWarnings(hazard(
     survival::Surv(time, status) ~ fla + flag, data = d,
     dist = "multiphase",
     phases = list(
-      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 0,
+      early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 0, fixed = "shapes",
                         formula = ~ z + flag + fla),
       constant = hzr_phase("constant")
     ),
     fit = TRUE
   ))
+  expect_null(fit$fit$limit)
   expect_false(.hzr_phase_inherits_global(fit, "early"))
   expect_true(.hzr_phase_inherits_global(fit, "constant"))
   expect_identical(colnames(fit$fit$x_list$early),

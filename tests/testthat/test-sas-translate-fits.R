@@ -179,6 +179,14 @@ test_that("a PARMS that builds no usable phase emits a stop(), not a fit", {
   }
 })
 
+# #683: times drawn from one exponential give the early phase nothing to fit,
+# so its t_half runs past the data and hazard() refuses the fit. Here 30% of
+# the times come from an early hazard (mean 0.125, near the jobs' THALF=0.15),
+# so the early phase is identified and the fit stays clear of the limit.
+early_tt <- function(n) {
+  ifelse(stats::runif(n) < 0.3, stats::rexp(n, 8), stats::rexp(n, 0.2))
+}
+
 test_that("the emitted call fits the multiphase model, not a Weibull", {
   skip_on_cran()
   f <- withr::local_tempfile(fileext = ".sas")
@@ -195,7 +203,7 @@ test_that("the emitted call fits the multiphase model, not a Weibull", {
 
   set.seed(1)
   n <- 200
-  D <- data.frame(TT = stats::rexp(n, 0.2),
+  D <- data.frame(TT = early_tt(n),
                   DEAD = rep(c(1, 0), length.out = n))
   env <- new.env(parent = environment())
   for (nm in names(job$calls)) {
@@ -207,6 +215,7 @@ test_that("the emitted call fits the multiphase model, not a Weibull", {
   # The decisive assertion: the fitted object must actually BE multiphase.
   expect_equal(fit$spec$dist, "multiphase")
   expect_length(fit$spec$phases, 2L)
+  expect_null(fit$fit$limit)
 })
 
 test_that("evaluating the emitted call emits no 'phases is ignored' warning", {
@@ -220,7 +229,7 @@ test_that("evaluating the emitted call emits no 'phases is ignored' warning", {
   job <- suppressWarnings(hzr_translate_sas(f))
   set.seed(1)
   n <- 200
-  D <- data.frame(TT = stats::rexp(n, 0.2),
+  D <- data.frame(TT = early_tt(n),
                   DEAD = rep(c(1, 0), length.out = n))
   env <- new.env(parent = environment())
   w <- character(0)
@@ -235,6 +244,7 @@ test_that("evaluating the emitted call emits no 'phases is ignored' warning", {
     }
   )
   expect_false(any(grepl("phases' is ignored", w, fixed = TRUE)))
+  expect_null(env$fit$fit$limit)
 })
 
 # theta used to carry only c(log(MUE), log(MUC)) -- the multiphase engine's
@@ -495,7 +505,7 @@ test_that("every covariate after a '/' option reaches the fitted model (#342)", 
   job <- suppressWarnings(hzr_translate_sas(f))
   set.seed(3)
   n <- 150
-  D <- data.frame(TT = stats::rexp(n, 0.2),
+  D <- data.frame(TT = early_tt(n),
                   DEAD = rep(c(1, 0, 1), length.out = n),
                   AGE = stats::rnorm(n), MAL = rep(0:1, length.out = n),
                   OPMOS = stats::runif(n), X = stats::rnorm(n),
@@ -506,6 +516,7 @@ test_that("every covariate after a '/' option reaches the fitted model (#342)", 
   expect_true(all(c("phase_1.AGE", "phase_1.MAL", "phase_1.OPMOS",
                     "phase_2.Y") %in% cf), info = paste(cf, collapse = " "))
   expect_false(any(grepl("\\.X$", cf)), info = paste(cf, collapse = " "))
+  expect_null(res$env$fit$fit$limit)
 })
 
 test_that("a phase variable outside the model still deletes its missing rows (#342)", {

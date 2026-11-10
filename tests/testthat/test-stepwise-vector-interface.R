@@ -127,15 +127,22 @@ test_that("a vector-interface refit carries BOTH censoring bounds through", {
   expect_true(all(D$up[D$st == 2] > D$lo[D$st == 2]))
   expect_gt(sum(D$st == 2), 0L)
 
+  # Shapes fixed: free, this fixture's nu runs to the step limit and
+  # hazard() refuses (#683). Only the bounds the refit carries are tested.
+  ph <- list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0,
+                               fixed = "shapes"),
+             const = hzr_phase("constant"))
   fv <- suppressWarnings(hazard(time = D$tt, status = D$st,
                                 time_lower = D$lo, time_upper = D$up,
-                                dist = "multiphase", phases = vec_phases(),
+                                dist = "multiphase", phases = ph,
                                 fit = TRUE))
+  expect_null(fv$fit$limit)
   out <- suppressWarnings(
     .hzr_refit_with_scope(fv, action = "add", var = "x1",
                           data = D, phase = "early"))
 
   expect_s3_class(out, "hazard")
+  expect_null(out$fit$limit)
   # Dropping `time_lower` refits a left-truncated cohort as at risk from 0;
   # dropping `time_upper` turns every interval row into something else. Both
   # are silent -- the refit still returns a populated fit.

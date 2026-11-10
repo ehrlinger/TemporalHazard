@@ -79,7 +79,14 @@ test_that("an unfitted multiphase model still carries theta as supplied (#408)",
 })
 
 test_that("no theta still means the fit builds its own starts (#408)", {
-  fit <- suppressWarnings(theta_len_fit(NULL))
+  # Shapes fixed: free, this fixture's nu runs to the step limit from the
+  # default start and hazard() refuses (#683). The starts are still built
+  # for every slot, fixed or free, so the length is the same 9.
+  ph <- list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 1,
+                               fixed = "shapes"),
+             constant = hzr_phase("constant"))
+  fit <- suppressWarnings(theta_len_fit(NULL, phases = ph))
+  expect_null(fit$fit$limit)
   expect_length(fit$fit$theta, 9L)
 })
 

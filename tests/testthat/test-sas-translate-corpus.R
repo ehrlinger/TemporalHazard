@@ -61,6 +61,21 @@ test_that("public-corpus jobs that translate also render", {
   # valid SAS, so none may be refused: this is the false-refusal check the
   # corpus can give that the unit tests cannot.
   n_parse_rejected <- 0L
+  # Jobs whose fit chunk hazard() refuses on THIS synthetic data (#683), by
+  # job and chunk. sas_synth_data() spaces the times evenly to 60 with no
+  # early events, so a job's early phase has nothing to fit: its t_half runs
+  # past the data, no restart reaches a fit off that limit, and hazard()
+  # stops with class hzr_limit_refusal rather than return the drifted fit.
+  # That is the test data, not the job: SAS's own hm.death.AVC fit, on the
+  # study data, has THALF 0.151, inside its data. The refusal is asserted
+  # for exactly these, with its message, so a new refusal, or one of these
+  # starting to render, fails here. Measured at 1906f75b against the hazard
+  # commit CI pins (dad7978), whose .sas files match the local checkout.
+  limit_refused <- c("hm.death.AVC.deciles.sas" = "fit",
+                     "hm.death.AVC.sas" = "fit_2",
+                     "hzr.J24407.X32.sas" = "fit",
+                     "hzr.J24407.X38.sas" = "fit")
+  refused_seen <- character(0)
 
   for (f in fs) {
     job <- tryCatch(suppressWarnings(hzr_translate_sas(f)), error = function(e) NULL)
@@ -111,6 +126,19 @@ test_that("public-corpus jobs that translate also render", {
     }
 
     n_eligible <- n_eligible + 1L
+    refused <- limit_refused[basename(f)]
+    if (!is.na(refused)) {
+      res <- sim$results[[refused]]
+      expect_match(res, "^ERROR: hazard\\(\\): phase_1\\.t_half ran to Inf ",
+                   info = basename(f))
+      expect_match(res, "The drifted estimate is not returned.", fixed = TRUE,
+                   info = basename(f))
+      expect_identical(setdiff(names(sim$results)[sim$results != "ok"],
+                               shape$refusals), unname(refused),
+                       info = basename(f))
+      refused_seen <- c(refused_seen, basename(f))
+      next
+    }
     # Assert the fit was BOUND, not merely evaluated. A chunk that calls
     # hazard() without assigning it returns "ok" from render_sim and leaves
     # every downstream predict() chunk referencing an object that is not
@@ -160,5 +188,8 @@ test_that("public-corpus jobs that translate also render", {
   expect_identical(n_parse_rejected, 0L)
   expect_gte(n_eligible, 10L)
   expect_gte(n_partial, 11L)
-  expect_equal(n_rendered, n_eligible)
+  # Every eligible job renders, except the refusals named above, each of
+  # which was seen (#683).
+  expect_setequal(unique(refused_seen), names(limit_refused))
+  expect_equal(n_rendered + length(refused_seen), n_eligible)
 })

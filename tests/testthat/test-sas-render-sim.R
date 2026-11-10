@@ -25,10 +25,18 @@ test_that("render_sim does not report ok when nothing was evaluated", {
   expect_false(got$ok)
 })
 
+# #683: times drawn from one exponential give the early phase nothing to fit,
+# so its t_half runs past the data and hazard() refuses the fit. Here 30% of
+# the times come from an early hazard (mean 0.125, near the jobs' THALF=0.15),
+# so the early phase is identified and the fit stays clear of the limit.
+early_tt <- function(n) {
+  ifelse(stats::runif(n) < 0.3, stats::rexp(n, 8), stats::rexp(n, 0.2))
+}
+
 test_that("a minimal translated job renders end to end", {
   skip_on_cran()
   set.seed(1)
-  AVCS <- data.frame(INT_DEAD = stats::rexp(200, 0.2),
+  AVCS <- data.frame(INT_DEAD = early_tt(200),
                      DEAD = rep(c(1, 0), length.out = 200))
   f <- withr::local_tempfile(fileext = ".sas")
   writeLines(paste(
@@ -42,6 +50,7 @@ test_that("a minimal translated job renders end to end", {
                                    collapse = " | "))
   expect_s3_class(got$env$fit, "hazard")
   expect_true(isTRUE(got$env$fit$fit$converged))
+  expect_null(got$env$fit$fit$limit)
 })
 
 test_that("a censoring job's status chunk renders", {
@@ -70,7 +79,7 @@ test_that("a censoring job's status chunk renders", {
 test_that("a HAZARD + HAZPRED job renders, predictions included", {
   skip_on_cran()
   set.seed(3)
-  AVCS <- data.frame(INT_DEAD = stats::rexp(200, 0.2),
+  AVCS <- data.frame(INT_DEAD = early_tt(200),
                      DEAD = rep(c(1, 0), length.out = 200))
   f <- withr::local_tempfile(fileext = ".sas")
   writeLines(c(
@@ -84,6 +93,7 @@ test_that("a HAZARD + HAZPRED job renders, predictions included", {
   expect_true(got$ok, info = paste(names(got$results), got$results,
                                    collapse = " | "))
   expect_true("time" %in% names(got$env$PGRID))
+  expect_null(got$env$fit$fit$limit)
 })
 
 test_that("the ICENSOR count reaches the fitted object as weights", {
