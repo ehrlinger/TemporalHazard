@@ -79,3 +79,51 @@ test_that("one parameter reached two ways is reported once", {
     weak = list(params = c("early.nu", "early.log_mu"))))
   expect_length(tr, 1L)
 })
+
+test_that("the grid is 3 t_half x 3 nu, covariates zeroed, nothing else moved", {
+  start <- c(early.log_mu = -1, early.log_t_half = log(10), early.nu = 0.2,
+             early.m = 1, constant.log_mu = -3, early.age = 0.4, constant.age = 0.2)
+  tr <- list(list(phase = "early", parameter = "nu", limit = "x", source = "weak"))
+  et <- c(1, 2, 3, 4, 5, 6, 7, 8)
+  g <- .hzr_limit_grid(start, tr, phases2, event_times = et, fixed = "early.m")
+  expect_length(g, 9L)
+  th <- vapply(g, `[[`, 0, "early.log_t_half")
+  nu <- vapply(g, `[[`, 0, "early.nu")
+  expect_setequal(unique(round(exp(th), 6)),
+                  round(unname(stats::quantile(et, c(.25, .5, .75))), 6))
+  expect_setequal(unique(nu), c(0.5, 1, 2))
+  for (s in g) {
+    expect_identical(names(s), names(start))
+    expect_equal(unname(s[c("early.age", "constant.age")]), c(0, 0))
+    expect_equal(unname(s[c("early.log_mu", "early.m", "constant.log_mu")]),
+                 unname(start[c("early.log_mu", "early.m", "constant.log_mu")]))
+  }
+  expect_false(anyDuplicated(lapply(g, unname)) > 0L)
+})
+
+test_that("a fixed t_half collapses the grid to nu alone", {
+  start <- c(early.log_mu = -1, early.log_t_half = 0, early.nu = 1, early.m = 1,
+             constant.log_mu = -3)
+  tr <- list(list(phase = "early", parameter = "nu", limit = "x", source = "weak"))
+  g <- .hzr_limit_grid(start, tr, phases2, event_times = 1:8,
+                       fixed = c("early.m", "early.log_t_half"))
+  expect_length(g, 3L)
+  expect_true(all(vapply(g, `[[`, 0, "early.log_t_half") == 0))
+})
+
+test_that("no events gives no grid", {
+  start <- c(early.log_mu = -1, early.log_t_half = 0, early.nu = 1, early.m = 1,
+             constant.log_mu = -3)
+  tr <- list(list(phase = "early", parameter = "t_half", limit = "x", source = "weak"))
+  expect_length(.hzr_limit_grid(start, tr, phases2, numeric(0), "early.m"), 0L)
+})
+
+test_that("a g3 trigger varies tau at the quartiles and nothing else", {
+  ph <- list(late = hzr_phase("g3", tau = 1, gamma = 1, alpha = 1, eta = 1))
+  start <- c(late.log_mu = 0, late.log_tau = 0, late.gamma = 2, late.alpha = 1,
+             late.eta = 3)
+  tr <- list(list(phase = "late", parameter = "tau", limit = "x", source = "weak"))
+  g <- .hzr_limit_grid(start, tr, ph, event_times = 1:8, fixed = character(0))
+  expect_length(g, 3L)
+  expect_true(all(vapply(g, `[[`, 0, "late.gamma") == 2))
+})

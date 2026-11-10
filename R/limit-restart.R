@@ -99,3 +99,50 @@
   }
   if (!length(hits)) NULL else unname(hits)
 }
+
+# The grid's nu values. Spread across the sigmoid's usable range on the
+# natural scale, away from both limits (0 and large).
+.hzr_limit_grid_nu <- c(0.5, 1, 2)
+
+#' Restart starts for a triggered fit
+#'
+#' Covariate coefficients are zeroed, as SAS's RETRY_T does
+#' (hazrd3.c:343-361). For each triggered G1 phase, t_half is set to the
+#' 25/50/75% quantiles of the event times and crossed with nu in
+#' `.hzr_limit_grid_nu`; for a triggered g3 phase, tau takes the same
+#' quantiles. Every other entry keeps `start`, and a fixed entry never moves.
+#' Deterministic: no RNG, so a restarted fit is reproducible from its call.
+#'
+#' @param start Named full theta: the user's start.
+#' @param trigger Output of `.hzr_limit_trigger()`.
+#' @param phases The fit's phases.
+#' @param event_times Times of the rows with an event.
+#' @param fixed Names in `start` that must not move.
+#' @return A list of named theta vectors, without duplicates.
+#' @keywords internal
+#' @noRd
+.hzr_limit_grid <- function(start, trigger, phases, event_times, fixed) {
+  et <- event_times[is.finite(event_times) & event_times > 0]
+  if (!length(et)) return(list())
+  q <- unique(unname(stats::quantile(et, c(0.25, 0.5, 0.75))))
+  shape_phase <- .hzr_limit_shape_names(phases)
+  base <- start
+  is_cov <- !names(base) %in% c(names(shape_phase), paste0(names(phases), ".log_mu"))
+  base[is_cov & !names(base) %in% fixed] <- 0
+  set_free <- function(s, key, value) {
+    if (key %in% names(s) && !key %in% fixed) s[[key]] <- value
+    s
+  }
+  out <- list()
+  for (ph in unique(vapply(trigger, `[[`, "", "phase"))) {
+    if (identical(phases[[ph]]$type, "g3")) {
+      for (tq in q) out[[length(out) + 1L]] <- set_free(base, paste0(ph, ".log_tau"), log(tq))
+    } else {
+      for (tq in q) for (nu in .hzr_limit_grid_nu) {
+        s <- set_free(base, paste0(ph, ".log_t_half"), log(tq))
+        out[[length(out) + 1L]] <- set_free(s, paste0(ph, ".nu"), nu)
+      }
+    }
+  }
+  out[!duplicated(lapply(out, unname))]
+}
