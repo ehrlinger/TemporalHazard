@@ -702,6 +702,9 @@
 #' @return A one-line character string.
 #' @noRd
 .hzr_refit_failure_reason <- function(refit) {
+  if (inherits(refit, "hzr_limit_refusal")) {
+    return(.hzr_limit_reason(refit))
+  }
   if (inherits(refit, "error")) {
     return(conditionMessage(refit))
   }

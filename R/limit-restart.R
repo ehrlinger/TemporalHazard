@@ -182,6 +182,13 @@
   }, character(1)), collapse = "; ")
 }
 
+#' One short, stable reason for a refusal, for failure tallies
+#' @keywords internal
+#' @noRd
+.hzr_limit_reason <- function(e) {
+  paste0("limit: ", .hzr_limit_describe(e$trigger))
+}
+
 #' The always-printed limit line (a line shown only on bad news cannot be
 #' told from one its author forgot to write; R/degraded.R)
 #' @keywords internal

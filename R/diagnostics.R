@@ -3009,8 +3009,14 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       # A reason is a name in the tally, and R cannot index by the name "":
       # a bare stop() would drop out, and the tally would stop summing to
       # n_failed.
-      msg <- conditionMessage(boot_fit)
-      if (nzchar(msg)) msg else "error with an empty message"
+      # A limit refusal's long message would be a unique key per replicate;
+      # it is tallied under its one short reason (#683).
+      if (inherits(boot_fit, "hzr_limit_refusal")) {
+        .hzr_limit_reason(boot_fit)
+      } else {
+        msg <- conditionMessage(boot_fit)
+        if (nzchar(msg)) msg else "error with an empty message"
+      }
     } else if (!is.null(.hzr_bootstrap_not_a_fit(boot_fit))) {
       # Read outside the tryCatch() above: `$` on an atomic vector ended the
       # whole run.
