@@ -218,21 +218,30 @@ test_that("a warm refit that stops lower, at no limit, loses (#551)", {
   skip_on_cran() # a multiphase fit plus a screen
   # The warm start is the base fit with x1 at 0, so it cannot end below the
   # base; it can still end below the default start, in another basin. Here
-  # it does by 9.1 log-likelihood units, and neither fit has a parameter at a
-  # limit, so the default wins on #551's rule and not by the limit layer.
-  set.seed(9)
+  # it does by 2.1 log-likelihood units, and both fits are interior, so the
+  # default wins on #551's rule and not by the limit layer.
+  # 15% of the times come from an early hazard (mean 0.125), so the early
+  # phase is there to identify; x1 acts on the constant phase. Without x1 the
+  # base's early t_half lies past the data (log t_half 13.8, nu 11.7; the
+  # limit layer records nothing), and the warm refit from it stops in a slow,
+  # long-tailed early phase; the default refit finds the early hazard itself
+  # (t_half 0.11).
+  set.seed(21)
   n <- 300
-  D <- data.frame(tt = stats::rexp(n, 0.3) + 0.01,
-                  ev = stats::rbinom(n, 1, 0.75),
-                  x1 = stats::rnorm(n), x2 = stats::rnorm(n))
-  D$tt <- D$tt * exp(-0.8 * D$x1)
+  x1 <- stats::rnorm(n)
+  x2 <- stats::rnorm(n)
+  early <- stats::runif(n) < 0.15
+  tt <- ifelse(early, stats::rexp(n, 8), stats::rexp(n, 0.2 * exp(2.5 * x1)))
+  cens <- stats::runif(n, 2, 15)
+  D <- data.frame(tt = pmin(tt, cens) + 0.001, ev = as.numeric(tt <= cens),
+                  x1 = x1, x2 = x2)
   base <- suppressWarnings(hazard(
     time = D$tt, status = D$ev, data = D, dist = "multiphase",
     phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
                   const = hzr_phase("constant")),
     fit = TRUE
   ))
-  expect_null(base$fit$limit)
+  expect_gt(base$fit$theta[["early.log_t_half"]], log(max(D$tt)))
   cap <- ro_refit_starts(
     ro_screen(base, D, list(early = NULL, const = ~ x1 + x2))
   )
@@ -248,13 +257,25 @@ test_that("a warm refit that stops lower, at no limit, loses (#551)", {
   expect_null(default$fit$limit)
   expect_true(warm$fit$converged)
   expect_true(default$fit$converged)
+  # Both are interior, not merely silent detectors (#683 review): early nu
+  # clear of 0 (the nu -> 0 step), every log_mu clear of a vanished phase,
+  # and t_half inside the observed times. Fitted: warm nu 2.59, t_half 0.23;
+  # default nu 0.157, t_half 0.11; log_mu between -1.9 and -1.5.
+  for (f in list(warm, default)) {
+    th <- f$fit$theta
+    expect_gt(abs(th[["early.nu"]]), 0.05)
+    expect_gt(min(th[c("early.log_mu", "const.log_mu")]), -10)
+    expect_gt(th[["early.log_t_half"]], log(min(D$tt)))
+    expect_lt(th[["early.log_t_half"]], log(max(D$tt)))
+  }
 
   obj <- sw$fit$refit_objectives
   expect_identical(obj, c(warm = warm$fit$objective,
                           default = default$fit$objective))
   expect_identical(sw$fit$refit_start, "default")
   expect_gt(obj[["default"]], obj[["warm"]])
-  expect_equal(obj, c(warm = -563.892367954, default = -554.791003343),
+  expect_gt(obj[["default"]] - obj[["warm"]], 1)
+  expect_equal(obj, c(warm = -250.275133758, default = -248.164185365),
                tolerance = 1e-6)
 })
 
