@@ -61,7 +61,7 @@ return log-log limits that disagree with the SAS job being reproduced.
 As in \code{\link[=predict.hazard]{predict.hazard()}}, the value is checked only where it is used, so
 an ignored one does not make a point or hazard prediction fail.}
 
-\item{average}{Logical; average the predictions at each distinct time,
+\item{average}{\strong{Experimental.} Logical; average the predictions at each distinct time,
 as \code{\link[=predict.hazard]{predict.hazard()}} does. Default \code{FALSE}.}
 
 \item{...}{Must be empty. Anything landing here is an error rather than a

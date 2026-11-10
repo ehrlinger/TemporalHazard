@@ -508,7 +508,7 @@ hzr_read_outhaz <- function(path) {
 #'   return log-log limits that disagree with the SAS job being reproduced.
 #'   As in [predict.hazard()], the value is checked only where it is used, so
 #'   an ignored one does not make a point or hazard prediction fail.
-#' @param average Logical; average the predictions at each distinct time,
+#' @param average **Experimental.** Logical; average the predictions at each distinct time,
 #'   as [predict.hazard()] does. Default `FALSE`.
 #' @param ... Must be empty. Anything landing here is an error rather than a
 #'   silently ignored argument.

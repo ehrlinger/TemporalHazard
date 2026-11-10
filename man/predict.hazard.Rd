@@ -131,7 +131,8 @@ reproducing SAS HAZARD's \code{HAZPRED} survival limits. Other types are
 unaffected (hazard/cumulative-hazard use a log scale that already matches
 HAZPRED). Only used when \code{se.fit = TRUE}.}
 
-\item{average}{Logical; if \code{TRUE}, average the predictions of all rows
+\item{average}{\strong{Experimental.} Logical; if \code{TRUE}, average the
+predictions of all rows
 that share a \code{time} and return one row per distinct time, sorted. Use it
 for the expected survival curve of a cohort, \verb{Sbar(t) = mean S(t | x_i)},
 scored through the fit. The standard error is the delta-method standard
@@ -144,7 +145,8 @@ cannot be combined with \code{decompose = TRUE}. \code{newdata} is required: giv
 it one row for each patient at each prediction time, the patient's
 covariates repeated once per time. Survival limits are built on
 \code{Sbar} through \code{conf.type}, so a single row gives exactly its own
-limits. Default \code{FALSE}.}
+limits. The argument and its return shape may change in a later
+release. Default \code{FALSE}.}
 
 \item{...}{Unused; included for S3 compatibility.}
 }
@@ -165,8 +167,8 @@ a wide data frame of per-phase contributions.
 With \code{average = TRUE}, a data frame with columns \code{time}, \code{n} (the number
 of rows averaged at that time), \code{fit}, \code{se.fit}, \code{lower} and \code{upper}.
 
-A \code{se.fit = TRUE} result whose standard errors could be computed carries
-an attribute \code{"jacobian"}, a list of three elements: \code{J}, the derivative
+\strong{Experimental.} A \code{se.fit = TRUE} result whose standard errors could
+be computed carries an attribute \code{"jacobian"}, a list of three elements: \code{J}, the derivative
 of each row's \code{fit} with respect to the model's parameters (one row per
 row of the result, one column per parameter); \code{vcov}, the covariance
 matrix of those parameters; and \code{names}, the parameters' names as
@@ -183,7 +185,7 @@ Weibull fit's first column is \code{log(mu)}, not \code{mu}. The rows of \code{J
 the result's row names; after selecting or reordering rows of the
 result, select the same rows of \code{J} with \code{J[rownames(res), ]}. When the
 standard errors are \code{NA} there is no attribute, and a \code{decompose = TRUE}
-result has none.
+result has none. Its contents may change in a later release.
 }
 \description{
 Produces prediction outputs from a \code{hazard} object. Supports multiple prediction

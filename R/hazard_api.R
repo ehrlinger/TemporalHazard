@@ -2267,7 +2267,8 @@ hazard <- function(formula = NULL,
 #'   reproducing SAS HAZARD's `HAZPRED` survival limits. Other types are
 #'   unaffected (hazard/cumulative-hazard use a log scale that already matches
 #'   HAZPRED). Only used when `se.fit = TRUE`.
-#' @param average Logical; if `TRUE`, average the predictions of all rows
+#' @param average **Experimental.** Logical; if `TRUE`, average the
+#'   predictions of all rows
 #'   that share a `time` and return one row per distinct time, sorted. Use it
 #'   for the expected survival curve of a cohort, `Sbar(t) = mean S(t | x_i)`,
 #'   scored through the fit. The standard error is the delta-method standard
@@ -2280,7 +2281,8 @@ hazard <- function(formula = NULL,
 #'   it one row for each patient at each prediction time, the patient's
 #'   covariates repeated once per time. Survival limits are built on
 #'   `Sbar` through `conf.type`, so a single row gives exactly its own
-#'   limits. Default `FALSE`.
+#'   limits. The argument and its return shape may change in a later
+#'   release. Default `FALSE`.
 #' @param ... Unused; included for S3 compatibility.
 #'
 #' @details
@@ -2357,8 +2359,8 @@ hazard <- function(formula = NULL,
 #'   With `average = TRUE`, a data frame with columns `time`, `n` (the number
 #'   of rows averaged at that time), `fit`, `se.fit`, `lower` and `upper`.
 #'
-#'   A `se.fit = TRUE` result whose standard errors could be computed carries
-#'   an attribute `"jacobian"`, a list of three elements: `J`, the derivative
+#'   **Experimental.** A `se.fit = TRUE` result whose standard errors could
+#'   be computed carries an attribute `"jacobian"`, a list of three elements: `J`, the derivative
 #'   of each row's `fit` with respect to the model's parameters (one row per
 #'   row of the result, one column per parameter); `vcov`, the covariance
 #'   matrix of those parameters; and `names`, the parameters' names as
@@ -2375,7 +2377,7 @@ hazard <- function(formula = NULL,
 #'   the result's row names; after selecting or reordering rows of the
 #'   result, select the same rows of `J` with `J[rownames(res), ]`. When the
 #'   standard errors are `NA` there is no attribute, and a `decompose = TRUE`
-#'   result has none.
+#'   result has none. Its contents may change in a later release.
 #' @examples
 #' # -- Basic predictions ------------------------------------------------
 #' set.seed(1)
