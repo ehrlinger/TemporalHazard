@@ -16,6 +16,7 @@ predict(
   se.fit = FALSE,
   level = 0.95,
   conf.type = c("log-log", "logit"),
+  average = FALSE,
   ...
 )
 ```
@@ -155,6 +156,27 @@ predict(
   (hazard/cumulative-hazard use a log scale that already matches
   HAZPRED). Only used when `se.fit = TRUE`.
 
+- average:
+
+  **Experimental.** Logical; if `TRUE`, average the predictions of all
+  rows that share a `time` and return one row per distinct time, sorted.
+  Use it for the expected survival curve of a cohort,
+  `Sbar(t) = mean S(t | x_i)`, scored through the fit. The standard
+  error is the delta-method standard error of that mean, `sqrt(g' V g)`
+  with `g` the mean of the rows' gradients, so it allows for the errors
+  of different rows being correlated. It is never larger than the mean
+  of the rows' own `se.fit`. The limits are those of the mean, not the
+  average of the rows' own `lower` and `upper`. That average is a
+  different quantity: after the `conf.type` transform it can lie inside
+  or outside these limits, at either end. Needs `se.fit = TRUE` and
+  `type = "survival"` or `"cumulative_hazard"`, and cannot be combined
+  with `decompose = TRUE`. `newdata` is required: give it one row for
+  each patient at each prediction time, the patient's covariates
+  repeated once per time. Survival limits are built on `Sbar` through
+  `conf.type`, so a single row gives exactly its own limits. The
+  argument and its return shape may change in a later release. Default
+  `FALSE`.
+
 - ...:
 
   Unused; included for S3 compatibility.
@@ -173,6 +195,21 @@ method applied to `S = exp(-H)`. The survival limits are built from
 (`time`, `component`, `fit`, `se.fit`, `lower`, `upper`); with
 `decompose = TRUE` and `se.fit = FALSE`, a wide data frame of per-phase
 contributions.
+
+With `average = TRUE`, a data frame with columns `time`, `n` (the number
+of rows averaged at that time), `fit`, `se.fit`, `lower` and `upper`.
+
+**Experimental.** A `se.fit = TRUE` result whose standard errors could
+be computed carries the derivatives behind them, from which any weighted
+sum of the predictions has a standard error. Read them with
+[`hzr_jacobian()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_jacobian.md),
+which matches them to the rows you hold after selecting, reordering or
+repeating rows, and refuses rows it cannot match. They are stored in the
+attribute `"jacobian"`, whose contents may change in a later release; R
+keeps that attribute unchanged through `[` and
+[`rbind()`](https://rdrr.io/r/base/cbind.html), so do not read it
+directly. When the standard errors are `NA` there are none, and a
+`decompose = TRUE` result has none.
 
 ## Details
 

@@ -75,7 +75,8 @@
 <span>  phases <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  level <span class="op">=</span> <span class="fl">0.95</span>,</span>
 <span>  <span class="va">diff_fn</span>,</span>
-<span>  conf_type <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"log-log"</span>, <span class="st">"logit"</span><span class="op">)</span></span>
+<span>  conf_type <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"log-log"</span>, <span class="st">"logit"</span><span class="op">)</span>,</span>
+<span>  average <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -130,10 +131,17 @@ fallback in exp / loglogistic / lognormal.</p></dd>
 <code>log(-log S)</code>) or <code>"logit"</code> (on <code>logit(1 - S)</code>, HAZPRED-compatible).
 Only consulted when <code>type == "survival"</code>.</p></dd>
 
+
+<dt id="arg-average">average<a class="anchor" aria-label="anchor" href="#arg-average"></a></dt>
+<dd><p>Logical; <code>TRUE</code> averages the rows at each distinct <code>time</code>
+(#731). The caller has checked <code>type</code> and <code>time</code>.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>data.frame with columns <code>fit</code>, <code>se.fit</code>, <code>lower</code>, <code>upper</code>.</p>
+    <p>data.frame with columns <code>fit</code>, <code>se.fit</code>, <code>lower</code>, <code>upper</code> (with
+<code>time</code> and <code>n</code> first when <code>average</code>), and the "jacobian" attribute when
+the standard errors could be computed.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>

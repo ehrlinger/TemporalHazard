@@ -15,7 +15,8 @@ Dispatched from predict.hazard() when `se.fit = TRUE`.
   phases = NULL,
   level = 0.95,
   diff_fn,
-  conf_type = c("log-log", "logit")
+  conf_type = c("log-log", "logit"),
+  average = FALSE
 )
 ```
 
@@ -68,9 +69,16 @@ Dispatched from predict.hazard() when `se.fit = TRUE`.
   `"logit"` (on `logit(1 - S)`, HAZPRED-compatible). Only consulted when
   `type == "survival"`.
 
+- average:
+
+  Logical; `TRUE` averages the rows at each distinct `time` (#731). The
+  caller has checked `type` and `time`.
+
 ## Value
 
-data.frame with columns `fit`, `se.fit`, `lower`, `upper`.
+data.frame with columns `fit`, `se.fit`, `lower`, `upper` (with `time`
+and `n` first when `average`), and the "jacobian" attribute when the
+standard errors could be computed.
 
 ## Details
 

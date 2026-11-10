@@ -77,6 +77,7 @@ types including linear predictor, hazard, survival probability, and cumulative h
 <span>  se.fit <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  level <span class="op">=</span> <span class="fl">0.95</span>,</span>
 <span>  conf.type <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"log-log"</span>, <span class="st">"logit"</span><span class="op">)</span>,</span>
+<span>  average <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  <span class="va">...</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -206,6 +207,27 @@ unaffected (hazard/cumulative-hazard use a log scale that already matches
 HAZPRED). Only used when <code>se.fit = TRUE</code>.</p></dd>
 
 
+<dt id="arg-average">average<a class="anchor" aria-label="anchor" href="#arg-average"></a></dt>
+<dd><p><strong>Experimental.</strong> Logical; if <code>TRUE</code>, average the
+predictions of all rows that share a <code>time</code> and return one row per
+distinct time, sorted. Use it for the expected survival curve of a
+cohort, <code>Sbar(t) = mean S(t | x_i)</code>, scored through the fit. The
+standard error is the delta-method standard error of that mean,
+<code>sqrt(g' V g)</code> with <code>g</code> the mean of the rows' gradients, so it allows for
+the errors of different rows being correlated. It is never larger than
+the mean of the rows' own <code>se.fit</code>. The limits are those of the mean, not
+the average of the rows' own <code>lower</code> and <code>upper</code>. That average is a
+different quantity: after the <code>conf.type</code> transform it can lie inside or
+outside these limits, at either end. Needs
+<code>se.fit = TRUE</code> and <code>type = "survival"</code> or <code>"cumulative_hazard"</code>, and
+cannot be combined with <code>decompose = TRUE</code>. <code>newdata</code> is required: give
+it one row for each patient at each prediction time, the patient's
+covariates repeated once per time. Survival limits are built on
+<code>Sbar</code> through <code>conf.type</code>, so a single row gives exactly its own
+limits. The argument and its return shape may change in a later
+release. Default <code>FALSE</code>.</p></dd>
+
+
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
 <dd><p>Unused; included for S3 compatibility.</p></dd>
 
@@ -224,6 +246,17 @@ For multiphase <code>type = "cumulative_hazard"</code> with
 <code>decompose = TRUE</code>, a long data frame (<code>time</code>, <code>component</code>, <code>fit</code>,
 <code>se.fit</code>, <code>lower</code>, <code>upper</code>); with <code>decompose = TRUE</code> and <code>se.fit = FALSE</code>,
 a wide data frame of per-phase contributions.</p>
+<p>With <code>average = TRUE</code>, a data frame with columns <code>time</code>, <code>n</code> (the number
+of rows averaged at that time), <code>fit</code>, <code>se.fit</code>, <code>lower</code> and <code>upper</code>.</p>
+<p><strong>Experimental.</strong> A <code>se.fit = TRUE</code> result whose standard errors could
+be computed carries the derivatives behind them, from which any weighted
+sum of the predictions has a standard error. Read them with
+<code><a href="hzr_jacobian.html">hzr_jacobian()</a></code>, which matches them to the rows you hold after
+selecting, reordering or repeating rows, and refuses rows it cannot
+match. They are stored in the attribute <code>"jacobian"</code>, whose contents may
+change in a later release; R keeps that attribute unchanged through
+<code>[</code> and <code><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind()</a></code>, so do not read it directly. When the standard errors
+are <code>NA</code> there are none, and a <code>decompose = TRUE</code> result has none.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>

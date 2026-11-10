@@ -18,6 +18,7 @@ predict(
   se.fit = FALSE,
   level = 0.95,
   conf.type = c("log-log", "logit"),
+  average = FALSE,
   ...
 )
 ```
@@ -86,6 +87,13 @@ predict(
   [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md),
   the value is checked only where it is used, so an ignored one does not
   make a point or hazard prediction fail.
+
+- average:
+
+  **Experimental.** Logical; average the predictions at each distinct
+  time, as
+  [`predict.hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
+  does. Default `FALSE`.
 
 - ...:
 

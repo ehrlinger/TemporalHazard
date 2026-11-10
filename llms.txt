@@ -199,6 +199,8 @@ planned work.
   : Summarize a hazard model
 - [`predict(`*`<hazard>`*`)`](https://ehrlinger.github.io/TemporalHazard/reference/predict.hazard.md)
   : Predict from a hazard model object
+- [`hzr_jacobian()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_jacobian.md)
+  : Derivatives behind a prediction's standard errors
 - [`coef(`*`<hazard>`*`)`](https://ehrlinger.github.io/TemporalHazard/reference/coef.hazard.md)
   : Extract coefficients from hazard model
 - [`vcov(`*`<hazard>`*`)`](https://ehrlinger.github.io/TemporalHazard/reference/vcov.hazard.md)
