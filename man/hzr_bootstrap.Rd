@@ -115,7 +115,10 @@ so is any \code{...} argument without \code{scope}.}
 A list with class \code{"hzr_bootstrap"} containing:
 \describe{
 \item{replicates}{Data frame with columns \code{replicate}, \code{parameter},
-and \code{estimate}, one row per parameter per successful replicate.}
+\code{estimate} and \code{restarted}, one row per parameter per successful
+replicate. \code{restarted} is \code{TRUE} on every row of a replicate whose fit
+ran a shape parameter to a limit and was rescued by a restart, so its
+estimates are the restart's.}
 \item{summary}{Data frame with columns \code{parameter}, \code{n}, \code{pct},
 \code{mean}, \code{sd}, \code{min}, \code{max}, \code{ci_lower}, \code{ci_upper}, one row per
 parameter. In \code{mode = "select"}, \code{pct} is the selection frequency
@@ -165,6 +168,16 @@ It sums to \code{n_failed}, and
 is an empty named integer vector, never \code{NULL}, when none failed. When
 every replicate fails, \code{hzr_bootstrap()} also warns, naming the most
 common reason.}
+\item{n_restarted}{Number of successful replicates whose first fit ran a
+shape parameter to a limit and was refitted from a grid of other
+starts, the restart winning. Such a replicate counts as a success. It is
+reported for every multiphase fit, including when it is 0, and is \code{NA}
+for any other model, which has no limit check.}
+\item{restart_reasons}{Named integer vector counting the restarted
+replicates by the limit that triggered the restart, for example
+\code{"limit: early.nu ran to 0"}, most common first. It sums to
+\code{n_restarted}, and is an empty named integer vector when none were
+restarted.}
 \item{n_uncomputable_replicates}{Select mode only: number of otherwise
 successful replicates whose screen stopped because no remaining
 candidate could be tested (its score statistic, or for a removal its

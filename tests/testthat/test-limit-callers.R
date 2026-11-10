@@ -110,3 +110,52 @@ test_that("bootstrap tallies every refused replicate under one reason", {
   expect_identical(names(tally), "limit: constant.nu ran to 0 (a step at t_half)")
   expect_equal(unname(as.integer(tally)), 3L)
 })
+
+# Every refit inside `code` meets a hard trigger on its first (outer) fit and
+# a clean one on its single grid start, so the real layer runs its grid and
+# returns outcome "restarted". Each hazard() call reads the trigger twice
+# (outer, then the one grid run), so the mock alternates; a desync fails the
+# n_restarted assertions below loudly.
+with_restart <- function(code) {
+  state <- new.env()
+  state$outer <- TRUE
+  testthat::local_mocked_bindings(
+    .hzr_limit_trigger = function(object) {
+      hit <- state$outer
+      state$outer <- !state$outer
+      if (hit) limit_trigger_hard(names(object$spec$phases)[[1]])
+    },
+    .hzr_limit_grid = function(start, ...) list(start),
+    .package = "TemporalHazard")
+  force(code)
+}
+
+test_that("bootstrap counts every restarted replicate, and prints the count", {
+  d <- lc_data()
+  base <- lc_base(d)
+  boot <- with_restart(suppressWarnings(hzr_bootstrap(base, n_boot = 3L)))
+  expect_identical(boot$n_failed, 0L)
+  expect_identical(boot$n_success, 3L)
+  expect_identical(boot$n_restarted, 3L)
+  tally <- boot$restart_reasons
+  expect_length(tally, 1L)
+  expect_identical(names(tally),
+                   "limit: constant.nu ran to 0 (a step at t_half)")
+  expect_equal(unname(as.integer(tally)), 3L)
+  expect_true(all(boot$replicates$restarted))
+  expect_match(utils::capture.output(print(boot)),
+               "Restarted replicates: 3 of 3 successful", all = FALSE,
+               fixed = TRUE)
+})
+
+test_that("a clean bootstrap reports zero restarted, and still prints it", {
+  d <- lc_data()
+  base <- lc_base(d)
+  boot <- suppressWarnings(hzr_bootstrap(base, n_boot = 3L))
+  expect_identical(boot$n_restarted, 0L)
+  expect_length(boot$restart_reasons, 0L)
+  expect_false(any(boot$replicates$restarted))
+  expect_match(utils::capture.output(print(boot)),
+               "Restarted replicates: 0 of 3 successful", all = FALSE,
+               fixed = TRUE)
+})
