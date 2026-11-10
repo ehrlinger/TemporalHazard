@@ -132,14 +132,16 @@ unaffected (hazard/cumulative-hazard use a log scale that already matches
 HAZPRED). Only used when \code{se.fit = TRUE}.}
 
 \item{average}{\strong{Experimental.} Logical; if \code{TRUE}, average the
-predictions of all rows
-that share a \code{time} and return one row per distinct time, sorted. Use it
-for the expected survival curve of a cohort, \verb{Sbar(t) = mean S(t | x_i)},
-scored through the fit. The standard error is the delta-method standard
-error of that mean, \verb{sqrt(g' V g)} with \code{g} the mean of the rows'
-gradients, so it allows for the errors of different rows being
-correlated. Averaging the rows' own \code{lower} and \code{upper} instead treats
-them as perfectly correlated and gives a band that is too wide. Needs
+predictions of all rows that share a \code{time} and return one row per
+distinct time, sorted. Use it for the expected survival curve of a
+cohort, \verb{Sbar(t) = mean S(t | x_i)}, scored through the fit. The
+standard error is the delta-method standard error of that mean,
+\verb{sqrt(g' V g)} with \code{g} the mean of the rows' gradients, so it allows for
+the errors of different rows being correlated. It is never larger than
+the mean of the rows' own \code{se.fit}. The limits are those of the mean, not
+the average of the rows' own \code{lower} and \code{upper}. That average is a
+different quantity: after the \code{conf.type} transform it can lie inside or
+outside these limits, at either end. Needs
 \code{se.fit = TRUE} and \code{type = "survival"} or \code{"cumulative_hazard"}, and
 cannot be combined with \code{decompose = TRUE}. \code{newdata} is required: give
 it one row for each patient at each prediction time, the patient's

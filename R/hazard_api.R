@@ -2268,14 +2268,16 @@ hazard <- function(formula = NULL,
 #'   unaffected (hazard/cumulative-hazard use a log scale that already matches
 #'   HAZPRED). Only used when `se.fit = TRUE`.
 #' @param average **Experimental.** Logical; if `TRUE`, average the
-#'   predictions of all rows
-#'   that share a `time` and return one row per distinct time, sorted. Use it
-#'   for the expected survival curve of a cohort, `Sbar(t) = mean S(t | x_i)`,
-#'   scored through the fit. The standard error is the delta-method standard
-#'   error of that mean, `sqrt(g' V g)` with `g` the mean of the rows'
-#'   gradients, so it allows for the errors of different rows being
-#'   correlated. Averaging the rows' own `lower` and `upper` instead treats
-#'   them as perfectly correlated and gives a band that is too wide. Needs
+#'   predictions of all rows that share a `time` and return one row per
+#'   distinct time, sorted. Use it for the expected survival curve of a
+#'   cohort, `Sbar(t) = mean S(t | x_i)`, scored through the fit. The
+#'   standard error is the delta-method standard error of that mean,
+#'   `sqrt(g' V g)` with `g` the mean of the rows' gradients, so it allows for
+#'   the errors of different rows being correlated. It is never larger than
+#'   the mean of the rows' own `se.fit`. The limits are those of the mean, not
+#'   the average of the rows' own `lower` and `upper`. That average is a
+#'   different quantity: after the `conf.type` transform it can lie inside or
+#'   outside these limits, at either end. Needs
 #'   `se.fit = TRUE` and `type = "survival"` or `"cumulative_hazard"`, and
 #'   cannot be combined with `decompose = TRUE`. `newdata` is required: give
 #'   it one row for each patient at each prediction time, the patient's

@@ -249,3 +249,17 @@ for (dist in c("exponential", "loglogistic", "lognormal")) {
     }
   })
 }
+
+# #733 review: the SE bound does not carry over to limits after a nonlinear
+# transform. On this fit the average of the rows' logit upper limits is BELOW
+# the mean's own upper limit, so "averaging the limits is too wide" is false.
+test_that("averaged limits are not bounded by the average of row limits", {
+  fit <- fit_weibull()
+  nd <- data.frame(time = 4.831638, x = c(-4.470211, -4.597887, -2.525493))
+  rows <- predict(fit, nd, type = "survival", se.fit = TRUE,
+                  conf.type = "logit")
+  avg <- predict(fit, nd, type = "survival", se.fit = TRUE,
+                 conf.type = "logit", average = TRUE)
+  expect_lt(avg$se.fit, mean(rows$se.fit))
+  expect_lt(mean(rows$upper), avg$upper)
+})

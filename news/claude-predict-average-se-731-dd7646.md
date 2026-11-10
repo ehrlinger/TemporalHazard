@@ -5,9 +5,10 @@
   `upper`. Use it for the expected survival of a cohort scored through a
   fitted model, to set against its Kaplan-Meier. The standard error is the
   delta-method standard error of the mean, so it allows for the correlation
-  between patients. Averaging each patient's `lower` and `upper` instead, the
-  only way before, treats them as perfectly correlated and gives a band that
-  is too wide.
+  between patients, and is never larger than the mean of the patients' own
+  standard errors. The limits are the mean's own. Averaging each patient's
+  `lower` and `upper`, the only way before, gives a different band that is
+  not the mean's interval.
 * **A `se.fit = TRUE` result from `predict()` carries the derivatives behind
   its standard errors** (experimental), as the attribute `"jacobian"`: each
   row's derivative with respect to the parameters, their covariance matrix
