@@ -772,11 +772,14 @@ NULL
 # over the parameters the sandwich used, that sandwich's vcov block, and
 # their names. Attached only where a standard error was computed.
 .hzr_with_jacobian <- function(res, J_fit, vcov_use) {
-  # Selecting or reordering the result's rows keeps the attribute as it is,
-  # so J carries the result's row names to be realigned by (#731 review).
+  # Selecting, reordering or binding the result's rows keeps the attribute
+  # as it is (#733 review). J carries the result's row names, and `fit` and
+  # `se.fit` are kept as it was returned, so hzr_jacobian() can realign J to
+  # the rows a caller holds and refuse rows it cannot vouch for.
   rownames(J_fit) <- rownames(res)
   attr(res, "jacobian") <- list(J = J_fit, vcov = vcov_use,
-                                names = colnames(J_fit))
+                                names = colnames(J_fit),
+                                fit = res$fit, se.fit = res$se.fit)
   res
 }
 

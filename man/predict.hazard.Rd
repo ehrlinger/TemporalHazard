@@ -170,24 +170,14 @@ With \code{average = TRUE}, a data frame with columns \code{time}, \code{n} (the
 of rows averaged at that time), \code{fit}, \code{se.fit}, \code{lower} and \code{upper}.
 
 \strong{Experimental.} A \code{se.fit = TRUE} result whose standard errors could
-be computed carries an attribute \code{"jacobian"}, a list of three elements: \code{J}, the derivative
-of each row's \code{fit} with respect to the model's parameters (one row per
-row of the result, one column per parameter); \code{vcov}, the covariance
-matrix of those parameters; and \code{names}, the parameters' names as
-\code{\link[=summary.hazard]{summary.hazard()}} names its coefficient rows. From it
-any linear combination of the predictions has standard error
-\code{sqrt(t(g) \%*\% vcov \%*\% g)} with \code{g = colSums(w * J)} for weights \code{w}:
-the expected count of events in a cohort, for instance, is the sum of the
-cumulative hazards at each patient's own time. The columns are the
-parameters the standard errors used. A parameter held fixed in the fit
-without a variance, or one the prediction does not depend on (such as a
-coefficient whose covariate is 0 in every row), is left out, so the
-columns can differ between calls: combine two results by \code{names}. A
-Weibull fit's first column is \code{log(mu)}, not \code{mu}. The rows of \code{J} carry
-the result's row names; after selecting or reordering rows of the
-result, select the same rows of \code{J} with \code{J[rownames(res), ]}. When the
-standard errors are \code{NA} there is no attribute, and a \code{decompose = TRUE}
-result has none. Its contents may change in a later release.
+be computed carries the derivatives behind them, from which any weighted
+sum of the predictions has a standard error. Read them with
+\code{\link[=hzr_jacobian]{hzr_jacobian()}}, which matches them to the rows you hold after
+selecting, reordering or repeating rows, and refuses rows it cannot
+match. They are stored in the attribute \code{"jacobian"}, whose contents may
+change in a later release; R keeps that attribute unchanged through
+\code{[} and \code{rbind()}, so do not read it directly. When the standard errors
+are \code{NA} there are none, and a \code{decompose = TRUE} result has none.
 }
 \description{
 Produces prediction outputs from a \code{hazard} object. Supports multiple prediction

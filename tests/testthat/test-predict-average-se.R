@@ -111,7 +111,7 @@ for (dist in c("weibull", "multiphase")) {
     fit <- make_fit()
     nd <- data.frame(time = c(0.4, 1.1, 2.5, 4, 6), x = c(-1, 0, 0.5, 1, 2))
     res <- predict(fit, nd, type = "cumulative_hazard", se.fit = TRUE)
-    j <- attr(res, "jacobian")
+    j <- hzr_jacobian(res)
     expect_named(j, c("J", "vcov", "names"))
     expect_equal(dim(j$J), c(nrow(nd), length(j$names)))
     expect_equal(dim(j$vcov), rep(length(j$names), 2L))
@@ -126,7 +126,7 @@ for (dist in c("weibull", "multiphase")) {
 
     # Survival: J is of S itself, not of H.
     res_s <- predict(fit, nd, type = "survival", se.fit = TRUE)
-    js <- attr(res_s, "jacobian")
+    js <- hzr_jacobian(res_s)
     expect_equal(js$J, -res_s$fit * j$J, tolerance = 1e-12)
   })
 }
@@ -137,19 +137,19 @@ test_that("Weibull attribute is on the log(mu) scale", {
                  se.fit = TRUE)
   # summary()'s row names, with the first on the scale predictions use.
   expect_equal(rownames(summary(fit)$coefficients), c("mu", "nu", "beta1"))
-  expect_equal(attr(res, "jacobian")$names, c("log(mu)", "nu", "beta1"))
+  expect_equal(hzr_jacobian(res)$names, c("log(mu)", "nu", "beta1"))
   # A coefficient whose covariate is 0 in every row is not read, so it is
   # not a column.
   res0 <- predict(fit, data.frame(time = 2, x = 0), type = "survival",
                   se.fit = TRUE)
-  expect_equal(attr(res0, "jacobian")$names, c("log(mu)", "nu"))
+  expect_equal(hzr_jacobian(res0)$names, c("log(mu)", "nu"))
 })
 
 test_that("multiphase attribute leaves out the fixed shapes", {
   fit <- fit_multiphase()
   res <- predict(fit, data.frame(time = 2, x = 0.3),
                  type = "cumulative_hazard", se.fit = TRUE)
-  nms <- attr(res, "jacobian")$names
+  nms <- hzr_jacobian(res)$names
   fixed <- names(fit$fit$theta)[fit$fit$fixed_mask %in% TRUE &
                                   is.na(diag(fit$fit$vcov))]
   expect_gt(length(fixed), 0L)
@@ -161,7 +161,7 @@ test_that("an averaged result carries one Jacobian row per time", {
   fit <- fit_weibull()
   nd <- hetero_nd(c(1, 4))
   avg <- predict(fit, nd, type = "survival", se.fit = TRUE, average = TRUE)
-  j <- attr(avg, "jacobian")
+  j <- hzr_jacobian(avg)
   expect_equal(nrow(j$J), 2L)
   expect_equal(unname(sqrt(rowSums((j$J %*% j$vcov) * j$J))), avg$se.fit,
                tolerance = 1e-12)
@@ -177,6 +177,7 @@ test_that("no attribute when the vcov is unusable", {
   )
   expect_true(is.na(res$se.fit))
   expect_null(attr(res, "jacobian"))
+  expect_error(hzr_jacobian(res), "carries no derivatives")
   expect_warning(
     avg <- predict(fit, hetero_nd(c(1, 2)), type = "survival", se.fit = TRUE,
                    average = TRUE),
@@ -202,16 +203,52 @@ test_that("average = TRUE refuses what it cannot average", {
                        decompose = TRUE, average = TRUE), "decompose")
 })
 
-test_that("J rows carry the result's row names, for realignment", {
+test_that("hzr_jacobian() follows selected, reordered and repeated rows", {
   fit <- fit_weibull()
   nd <- data.frame(time = c(0.5, 1, 2, 4), x = c(-1, 0.2, 0.9, 1.6))
   res <- predict(fit, nd, type = "cumulative_hazard", se.fit = TRUE)
-  J <- attr(res, "jacobian")$J
-  expect_equal(rownames(J), rownames(res))
-  sub <- res[c(4, 2), ]
-  Js <- J[rownames(sub), , drop = FALSE]
-  V <- attr(res, "jacobian")$vcov
-  expect_equal(unname(sqrt(rowSums((Js %*% V) * Js))), sub$se.fit, tolerance = 1e-12)
+  full <- hzr_jacobian(res)
+  se_of <- function(j) unname(sqrt(rowSums((j$J %*% j$vcov) * j$J)))
+  # Reordered, repeated (row names "1.1"), and a subset bound back together
+  # from the same result.
+  picks <- list(res[c(4, 2), ], res[c(3, 1, 1, 3), ],
+                rbind(res[1:2, ], res[3:4, ]), res[4:1, ])
+  for (sub in picks) {
+    j <- hzr_jacobian(sub)
+    expect_equal(nrow(j$J), nrow(sub))
+    expect_equal(se_of(j), sub$se.fit, tolerance = 1e-12)
+  }
+  # A repeated row has its original row's derivatives, exactly.
+  rep_j <- hzr_jacobian(res[c(3, 1, 1, 3), ])$J
+  expect_equal(unname(rep_j), unname(full$J[c(3, 1, 1, 3), ]))
+  # Var of a sum over repeated rows, against the numerical gradient.
+  nd_rep <- nd[c(3, 1, 1, 3), ]
+  g <- colSums(rep_j)
+  expect_equal(sqrt(drop(t(g) %*% full$vcov %*% g)) /
+                 numeric_se(fit, nd_rep, "cumulative_hazard", sum), 1,
+               tolerance = 1e-5)
+})
+
+test_that("hzr_jacobian() refuses rows it cannot vouch for", {
+  fit <- fit_weibull()
+  nd <- data.frame(time = c(0.5, 1, 2, 4), x = c(-1, 0.2, 0.9, 1.6))
+  res <- predict(fit, nd, type = "cumulative_hazard", se.fit = TRUE)
+  other <- predict(fit, data.frame(time = c(3, 5), x = c(0.1, -0.4)),
+                   type = "cumulative_hazard", se.fit = TRUE)
+  # rbind() keeps the first argument's derivatives only.
+  expect_error(hzr_jacobian(rbind(res, res)), "Row 5")
+  expect_error(hzr_jacobian(rbind(res, other)), "does not match")
+  # Rows 3:4 of `res` are named 3, 4: the bound rows of `other` reuse those
+  # names, and only their values tell them apart.
+  expect_error(hzr_jacobian(rbind(res[1:2, ], other)), "Row 3")
+  changed <- res
+  changed$se.fit <- round(changed$se.fit, 3)
+  expect_error(hzr_jacobian(changed), "does not match")
+  no_se <- res
+  no_se$se.fit <- NULL
+  expect_error(hzr_jacobian(no_se), "'fit' and 'se.fit'")
+  expect_error(hzr_jacobian(data.frame(fit = 1, se.fit = 1)),
+               "carries no derivatives")
 })
 
 test_that("average = TRUE needs newdata", {

@@ -9,12 +9,13 @@
   standard errors. The limits are the mean's own. Averaging each patient's
   `lower` and `upper`, the only way before, gives a different band that is
   not the mean's interval.
-* **A `se.fit = TRUE` result from `predict()` carries the derivatives behind
-  its standard errors** (experimental), as the attribute `"jacobian"`: each
-  row's derivative with respect to the parameters, their covariance matrix
-  and their names. Any weighted sum of the predictions now has a standard
-  error, such as the expected number of events for a one-sample log-rank
-  test, without rebuilding the package's handling of fixed parameters or of
-  the Weibull scale. A Weibull fit's first column is `log(mu)`. Both are
-  experimental: the argument and the attribute's contents may change in a
-  later release.
+* **`hzr_jacobian()` returns the derivatives behind the standard errors of a
+  `se.fit = TRUE` result from `predict()`** (experimental): each row's
+  derivative with respect to the parameters, their covariance matrix and
+  their names. Any weighted sum of the predictions now has a standard error,
+  such as the expected number of events for a one-sample log-rank test,
+  without rebuilding the package's handling of fixed parameters or of the
+  Weibull scale. It matches the derivatives to the rows you hold after
+  selecting, reordering or repeating rows, and refuses rows it cannot match,
+  such as rows bound from another prediction. A Weibull fit's first column
+  is `log(mu)`. It and `average` may change in a later release.

@@ -2362,24 +2362,14 @@ hazard <- function(formula = NULL,
 #'   of rows averaged at that time), `fit`, `se.fit`, `lower` and `upper`.
 #'
 #'   **Experimental.** A `se.fit = TRUE` result whose standard errors could
-#'   be computed carries an attribute `"jacobian"`, a list of three elements: `J`, the derivative
-#'   of each row's `fit` with respect to the model's parameters (one row per
-#'   row of the result, one column per parameter); `vcov`, the covariance
-#'   matrix of those parameters; and `names`, the parameters' names as
-#'   [summary.hazard()] names its coefficient rows. From it
-#'   any linear combination of the predictions has standard error
-#'   `sqrt(t(g) %*% vcov %*% g)` with `g = colSums(w * J)` for weights `w`:
-#'   the expected count of events in a cohort, for instance, is the sum of the
-#'   cumulative hazards at each patient's own time. The columns are the
-#'   parameters the standard errors used. A parameter held fixed in the fit
-#'   without a variance, or one the prediction does not depend on (such as a
-#'   coefficient whose covariate is 0 in every row), is left out, so the
-#'   columns can differ between calls: combine two results by `names`. A
-#'   Weibull fit's first column is `log(mu)`, not `mu`. The rows of `J` carry
-#'   the result's row names; after selecting or reordering rows of the
-#'   result, select the same rows of `J` with `J[rownames(res), ]`. When the
-#'   standard errors are `NA` there is no attribute, and a `decompose = TRUE`
-#'   result has none. Its contents may change in a later release.
+#'   be computed carries the derivatives behind them, from which any weighted
+#'   sum of the predictions has a standard error. Read them with
+#'   [hzr_jacobian()], which matches them to the rows you hold after
+#'   selecting, reordering or repeating rows, and refuses rows it cannot
+#'   match. They are stored in the attribute `"jacobian"`, whose contents may
+#'   change in a later release; R keeps that attribute unchanged through
+#'   `[` and `rbind()`, so do not read it directly. When the standard errors
+#'   are `NA` there are none, and a `decompose = TRUE` result has none.
 #' @examples
 #' # -- Basic predictions ------------------------------------------------
 #' set.seed(1)
