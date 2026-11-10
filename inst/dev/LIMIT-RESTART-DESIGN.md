@@ -110,6 +110,28 @@ Amended 2026-11-10 after Task 1 measured the #448 `avc` fixture. Its grid's best
 units below the -78.15 the fit returns today. "Best that does not trigger" would have
 returned it as a rescue.
 
+### Hard and weak-only triggers (amended 2026-11-10, after Task 5)
+
+The Task 5 suite census found the weak-flag source refusing 59 ordinary,
+weakly identified test fits. The grid found nothing better for them, and each
+fit paid 9 refits. So the two kinds of trigger now behave differently.
+
+- **Hard trigger: any record from `$boundary`** (the step, the rise past the
+  data, or below the first observed time). The rule is restart, then refuse, as
+  described below. These are facts about the data.
+- **Weak-only trigger: every record is the weak flag.** The grid is only tried.
+  - **A grid start beats the original** by more than the relative tolerance: it
+    is returned as a rescue.
+  - **Otherwise the original fit is returned unchanged**, with its own weak
+    warning, and `$limit` records the grid that was tried with
+    `outcome = "kept"`. A weak-only trigger never refuses.
+- **`control$limit_restart = FALSE`:** a hard trigger refuses at once. A
+  weak-only trigger returns the original fit, with `$limit` `NULL`.
+
+#729's two fits illustrate the split. The 1-start fit (nu 0.067) is weak-only,
+and it is rescued because the grid beats it. The 5-start fit (log t_half 275.8)
+is caught by `phase_beyond_data`, so its trigger is hard.
+
 ### Outcome, wired after the `$boundary` assembly (`hazard_api.R` around line 2010)
 
 - **No trigger.** The object is unchanged and `$limit` is `NULL`. The parity fixtures
