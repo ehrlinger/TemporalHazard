@@ -292,7 +292,7 @@ probe_chr <- function(x) {
   list(kind = "chr", value = as.character(x))
 }
 
-probe_boot <- function(b) {
+probe_boot <- function(b, fit) {
   # `replicates` is a long data frame: replicate, parameter, estimate. The
   # REPLICATES are compared, never `$summary` -- a summary statistic of 500
   # identical fits once reported n_success = 500 with no warning.
@@ -317,6 +317,13 @@ probe_boot <- function(b) {
   } else {
     NULL
   }
+  # A FIXED parameter has zero spread by design (early.m in the #683 cases),
+  # so the zero-spread check reads only the free ones. The fit's own mask
+  # says which are fixed; without it every parameter counts as free.
+  fm <- fit$fit$fixed_mask
+  th <- names(fit$fit$theta)
+  fixed <- if (length(fm) == length(th)) th[as.logical(fm)] else character()
+  free_spread <- spread[setdiff(names(spread), fixed)]
   list(
     kind = "boot",
     replicates = reps,
@@ -328,7 +335,12 @@ probe_boot <- function(b) {
     # spread means the replicates are identical, which is the defect this
     # field exists to make visible rather than to hide.
     spread = spread,
-    spread_is_zero = !is.null(spread) && any(spread == 0),
+    fixed_params = fixed,
+    # Reported by census-compare.R on each side, even when both sides match:
+    # identical replicates on both sides are still identical replicates.
+    zero_spread_free = names(free_spread)[!is.na(free_spread) & free_spread == 0],
+    spread_is_zero = length(free_spread) > 0L &&
+      any(!is.na(free_spread) & free_spread == 0),
     limit = list(
       field = if ("n_restarted" %in% names(b)) "present" else "absent",
       n_restarted = if ("n_restarted" %in% names(b)) b$n_restarted else "absent",
@@ -597,21 +609,21 @@ census_cases <- function() {
       fit <- hazard(survival::Surv(time, status) ~ z, data = d$basic,
                     dist = "weibull", theta = c(0.3, 1, 0), fit = TRUE)
       b <- hzr_bootstrap(fit, n_boot = 20L, seed = 20250917L)
-      probe_boot(b)
+      probe_boot(b, fit)
     }),
     boot_vector = list(needs = c("hazard", "hzr_bootstrap"), fn = function(d) {
       # No `x`: a design matrix passed directly cannot be resampled through
       # the stored call, and hzr_bootstrap() refuses it (see boot_vector_x).
       fit <- hazard(time = d$basic$time, status = d$basic$status,
                     dist = "weibull", theta = c(0.3, 1), fit = TRUE)
-      probe_boot(hzr_bootstrap(fit, n_boot = 20L, seed = 20250917L))
+      probe_boot(hzr_bootstrap(fit, n_boot = 20L, seed = 20250917L), fit)
     }),
     boot_vector_x = list(needs = c("hazard", "hzr_bootstrap"),
                          fn = function(d) {
       fit <- hazard(time = d$basic$time, status = d$basic$status,
                     x = cbind(z = d$basic$z), dist = "weibull",
                     theta = c(0.3, 1, 0), fit = TRUE)
-      probe_boot(hzr_bootstrap(fit, n_boot = 20L, seed = 20250917L))
+      probe_boot(hzr_bootstrap(fit, n_boot = 20L, seed = 20250917L), fit)
     }),
 
     ## -- predict(newdata = ), both interfaces ------------------------------
@@ -726,8 +738,13 @@ census_cases <- function() {
       fit <- hazard(survival::Surv(time, status) ~ z, data = d$basic,
                     dist = "weibull", theta = c(0.3, 1, 0), fit = TRUE)
       g <- hzr_gof(fit)
-      probe_num(list(observed = g$observed, expected = g$expected,
-                     ratio = g$ratio, coe = g$conservation_ratio))
+      # hzr_gof() returns a data frame (cum_observed, cum_expected, residual,
+      # ...) with a `summary` attribute. This probe used to read $observed,
+      # $expected, $ratio and $conservation_ratio, none of which exist, so it
+      # compared four NULLs and reported IDENTICAL over nothing.
+      tab <- as.list(as.data.frame(g))
+      stopifnot("gof probe read no rows" = length(tab$cum_expected) > 0L)
+      probe_num(list(table = tab, summary = attr(g, "summary")))
     }),
     kaplan = list(needs = c("hazard", "hzr_kaplan"), fn = function(d) {
       k <- hzr_kaplan(time = d$basic$time, status = d$basic$status)
@@ -1076,7 +1093,7 @@ census_cases <- function() {
                         late = hzr_phase("constant")),
           theta = c(log(0.1), log(max(d$ub$t) * 1e6), 1, 1, log(0.05)),
           fit = TRUE, control = list(n_starts = 1L))
-        probe_boot(hzr_bootstrap(fit, n_boot = 8L, seed = 683L))
+        probe_boot(hzr_bootstrap(fit, n_boot = 8L, seed = 683L), fit)
       }),
 
     # CONTROL: the bootstrap of a well-identified multiphase fit. The
@@ -1088,7 +1105,7 @@ census_cases <- function() {
         phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 0),
                       bg = hzr_phase("constant")),
         fit = TRUE)
-      probe_boot(hzr_bootstrap(fit, n_boot = 10L, seed = 20261110L))
+      probe_boot(hzr_bootstrap(fit, n_boot = 10L, seed = 20261110L), fit)
     })
   )
 }

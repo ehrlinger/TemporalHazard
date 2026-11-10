@@ -52,11 +52,24 @@ cases_file <- if (length(args) == 4L) {
                  "census-cases.R")
   if (length(f) == 1L && !is.na(f) && file.exists(f)) f else NA_character_
 }
+# The cases file is REQUIRED: coverage and the known positives are checked
+# against the declared battery, not against whatever the two saved runs
+# happen to hold. Two runs that are stale or incomplete in the same way agree
+# with each other perfectly.
+declared_names <- NULL
+declared_kp <- character()
+if (is.na(cases_file) || !file.exists(cases_file)) {
+  cat("census-compare: no cases file; the declared battery cannot be checked.\n")
+  quit(status = 3L, save = "no")
+}
 if (!is.na(cases_file) && file.exists(cases_file)) {
   local({
     e <- new.env(parent = globalenv())
     sys.source(cases_file, envir = e)
     cs <- e$census_cases()
+    declared_names <<- names(cs)
+    declared_kp <<- names(cs)[vapply(cs, function(c) !is.null(c[["kp"]]),
+                                     logical(1))]
     declared_gate_kp <<- names(cs)[vapply(cs, function(c) !is.null(c[["gate_kp"]]),
                                           logical(1))]
     declared_kp_expect <<- Filter(Negate(is.null),
@@ -149,10 +162,25 @@ if (length(only_old)) say("  !! cases present only in the old run: ",
                           paste(only_old, collapse = ", "))
 if (length(only_new)) say("  !! cases present only in the new run: ",
                           paste(only_new, collapse = ", "))
+say("  cases declared (cases file): ", length(declared_names),
+    "   known positives declared: ", length(declared_kp))
+# Each run must cover the DECLARED battery, not merely agree with the other.
+miss_decl <- list(old = setdiff(declared_names, names(old$results)),
+                  new = setdiff(declared_names, names(new$results)))
+extra_decl <- list(old = setdiff(names(old$results), declared_names),
+                   new = setdiff(names(new$results), declared_names))
+for (side in c("old", "new")) {
+  if (length(miss_decl[[side]])) say("  !! declared but not in the ", side,
+                                     " run: ", paste(miss_decl[[side]], collapse = ", "))
+  if (length(extra_decl[[side]])) say("  !! in the ", side, " run but not declared: ",
+                                      paste(extra_decl[[side]], collapse = ", "))
+}
 # Both runs read the same cases file, so the sets must match. Comparing only
 # the intersection would certify an incomplete census.
 if (length(only_old) || length(only_new) ||
-      !identical(old$counts$declared, new$counts$declared)) {
+      length(unlist(miss_decl)) || length(unlist(extra_decl)) ||
+      !identical(old$counts$declared, new$counts$declared) ||
+      !identical(as.integer(old$counts$declared), length(declared_names))) {
   say("  !! The two runs do not cover the same cases, so the census is ")
   say("  !! incomplete and is not compared. Re-run both from one cases file.")
   quit(status = 3)
@@ -455,6 +483,18 @@ for (nm in all_names) {
 # leaf to nudge, or a nudge the comparator misses, means an IDENTICAL verdict
 # on that row would carry no information, so the script fails.
 plant <- function(x) {
+  # Within one component, a numeric leaf is preferred, so a data frame of
+  # replicates is nudged in `estimate`, not in its `parameter` labels.
+  if (is.list(x) && is_num_leaf(x)) {
+    for (i in seq_along(x)) {
+      if (!is_num_leaf(x[[i]])) next
+      r <- plant(x[[i]])
+      if (r$done) {
+        x[[i]] <- r$value
+        return(list(value = x, done = TRUE))
+      }
+    }
+  }
   if (is.list(x)) {
     for (i in seq_along(x)) {
       r <- plant(x[[i]])
@@ -488,22 +528,41 @@ plant <- function(x) {
 }
 
 say("## Planted perturbations (the comparator proving it sees a 4-ulp change)")
+# One perturbation PER COMPARED COMPONENT, and compare_probe() must name that
+# component. A single plant on the first leaf found only `kind`, a string
+# tag, so the self-test proved nothing about theta, se or the objective.
+# Numeric probes must have at least one numeric component perturbed; only a
+# probe of kind "chr" may be all text.
+is_num_leaf <- function(x) {
+  if (is.list(x)) return(any(vapply(x, is_num_leaf, logical(1))))
+  (is.double(x) || is.integer(x)) && any(!is.na(x))
+}
 compared <- c("IDENTICAL", "DIFFERS", "IDENTICAL-GATED", "DIFFERS-GATED")
 plant_n <- 0L
 plant_fail <- character()
 for (r in Filter(function(r) r$outcome %in% compared, rows)) {
   for (side in c("old", "new")) {
-    p <- if (side == "old") old$results[[r$name]]$probe else new$results[[r$name]]$probe
-    pl <- plant(drop_side(p))
-    plant_n <- plant_n + 1L
-    if (!pl$done) {
-      plant_fail <- c(plant_fail, paste0(r$name, " (", side, "): no leaf to perturb"))
-    } else if (!length(compare_probe(p, pl$value))) {
-      plant_fail <- c(plant_fail, paste0(r$name, " (", side, "): perturbation missed"))
+    p <- drop_side(if (side == "old") old$results[[r$name]]$probe else new$results[[r$name]]$probe)
+    n_num <- 0L
+    for (k in setdiff(names(p), "kind")) {
+      pl <- plant(p[[k]])
+      if (!pl$done) next
+      p2 <- p
+      p2[[k]] <- pl$value
+      plant_n <- plant_n + 1L
+      if (is_num_leaf(p[[k]])) n_num <- n_num + 1L
+      if (!k %in% compare_probe(p, p2)) {
+        plant_fail <- c(plant_fail, paste0(r$name, " (", side, "): change to `",
+                                           k, "` missed"))
+      }
+    }
+    if (!identical(p$kind, "chr") && n_num == 0L) {
+      plant_fail <- c(plant_fail, paste0(r$name, " (", side,
+                                         "): no numeric component to perturb"))
     }
   }
 }
-say("  probes perturbed: ", plant_n, "  missed or unperturbable: ",
+say("  components perturbed: ", plant_n, "  missed or unperturbable: ",
     length(plant_fail))
 if (!plant_n) {
   say("  FAIL: no compared probe to perturb. An empty comparison is not a pass.")
@@ -516,7 +575,7 @@ if (length(plant_fail)) {
   close(con)
   quit(status = 1L, save = "no")
 }
-say("  PASS: every compared probe flagged its planted perturbation.")
+say("  PASS: every compared component flagged its planted perturbation.")
 say("")
 
 # What a known positive's NEW side must show (`kp_expect`, census-cases.R).
@@ -568,7 +627,16 @@ kp_unmet <- function(name, expect) {
 # ---------------------------------------------------------------------------
 
 say("## Known positives (the census proving it can detect a change)")
-kp_rows <- Filter(function(r) !is.null(r[["kp"]]), rows)
+# Known positives come from the DECLARATION. A run record that lost or
+# never carried its `kp` cannot drop a positive from this check.
+kp_rows <- Filter(function(r) r$name %in% declared_kp, rows)
+if (!setequal(vapply(kp_rows, function(r) r$name, ""), declared_kp)) {
+  say("  FAIL: declared known positives without a compared row: ",
+      paste(setdiff(declared_kp, vapply(kp_rows, function(r) r$name, "")),
+            collapse = ", "))
+  close(con)
+  quit(status = 1L, save = "no")
+}
 if (!length(kp_rows)) {
   say("  FAIL: no known-positive case is declared. A census with no planted")
   say("  detection is a hollow result and this script will not certify it.")
@@ -583,8 +651,11 @@ for (r in kp_rows) {
   if (is.null(expect)) expect <- new$results[[r$name]][["kp_expect"]]
   unmet <- kp_unmet(r$name, expect)
   hit <- r$outcome %in% detected && !length(unmet)
+  if (is.null(expect)) unmet <- "no kp_expect declared: a known positive must say what it expects"
+  hit <- r$outcome %in% detected && !length(unmet)
   say(sprintf("  %-24s %-8s %-14s %s", r$name,
-              if (hit) "DETECTED" else "NOT SEEN", r$outcome, r[["kp"]]))
+              if (hit) "DETECTED" else "NOT SEEN", r$outcome,
+              format(r[["kp"]])))
   if (length(unmet)) say("      unmet on the new side: ", paste(unmet, collapse = "; "))
   if (!hit) kp_fail <- c(kp_fail, r$name)
 }
@@ -763,8 +834,42 @@ if (!length(nd)) {
 }
 say("")
 
+# Identical bootstraps are not clean bootstraps: two versions that both
+# return the same repeated fit agree perfectly. Each side is read on its own.
+say("## Bootstrap spread (read per side, whatever the verdict)")
+spread_bad <- character()
+for (nm in all_names) {
+  for (side in c("old", "new")) {
+    rec <- if (side == "old") old$results[[nm]] else new$results[[nm]]
+    p <- rec$probe
+    if (!identical(rec$status, "ok") || !identical(p$kind, "boot")) next
+    ns <- p$n_success
+    why <- if (!is.numeric(ns) || !isTRUE(ns >= 2)) {
+      paste0("TOO FEW REPLICATES (n_success ", format(ns), "): spread not measurable")
+    } else if (isTRUE(p$spread_is_zero)) {
+      paste0("ZERO SPREAD on free parameter(s) ",
+             paste(p$zero_spread_free, collapse = ", "),
+             ": the replicates do not vary")
+    } else if (is.null(p$zero_spread_free)) {
+      "spread not recorded by this probe"
+    }
+    if (!is.null(why)) {
+      spread_bad <- c(spread_bad, nm)
+      say("  !! ", nm, " (", side, "): ", why)
+    }
+  }
+}
+spread_bad <- unique(spread_bad)
+if (!length(spread_bad)) say("  every bootstrap varies on every free parameter, on both sides")
+say("")
+
 say("## Identical cases (no behavioural change across the release)")
-idn <- names(Filter(function(r) r$outcome == "IDENTICAL", rows))
+idn_all <- names(Filter(function(r) r$outcome == "IDENTICAL", rows))
+idn <- setdiff(idn_all, spread_bad)
+if (length(intersect(spread_bad, idn_all))) {
+  say("  (IDENTICAL but listed under Bootstrap spread, so not counted here: ",
+      paste(intersect(spread_bad, idn_all), collapse = ", "), ")")
+}
 say("  ", length(idn), " of ", length(rows), ": ",
     paste(idn, collapse = ", "))
 say("")
