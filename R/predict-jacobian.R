@@ -70,8 +70,9 @@ hzr_jacobian <- function(object) {
   # `[` names a repeated row "2.1", "2.2"; it came from row "2".
   rep_row <- is.na(idx)
   idx[rep_row] <- match(sub("\\.[0-9]+$", "", rn[rep_row]), jr)
-  same <- function(a, b) (a == b & !is.na(a) & !is.na(b)) |
-    (is.na(a) & is.na(b))
+  same <- function(a, b) {
+    (a == b & !is.na(a) & !is.na(b)) | (is.na(a) & is.na(b))
+  }
   ok <- !is.na(idx)
   ok[ok] <- same(object$fit[ok], jac$fit[idx[ok]]) &
     same(object$se.fit[ok], jac$se.fit[idx[ok]])
