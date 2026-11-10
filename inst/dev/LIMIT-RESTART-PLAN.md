@@ -1304,6 +1304,46 @@ git commit -m "Stepwise and bootstrap tally a limit refusal by one reason (#683)
 - Modify: `tests/testthat/test-sas-parity.R:205-300`
 - Create (not committed): `$SCRATCH/fp-gate.R`
 
+**Amendment, 2026-11-10, after Task 5.** The maintainer chose to keep refusing on hard
+triggers and to fix the fixtures. After Task 5 fix 1 (`60217a63`), 16 tests fail, all
+`hzr_limit_refusal` on small fixtures:
+
+- **nu -> 0, a step:**
+  - `test-boundary-phase-discontinuity.R` (2)
+  - `test-coe-objective-consistency.R` (2)
+  - `test-boundary-step-detail.R` (1)
+  - `test-hazard-api.R` (#231) (1)
+  - `test-multiphase-theta-length.R` (1)
+  - `test-stepwise-vector-interface.R` (1)
+- **t_half past the data:**
+  - `test-sas-translate-fits.R` (3)
+  - `test-sas-render-sim.R` (2)
+  - `test-stepwise-backward-name-collision.R` (1)
+  - `test-sas-translate-corpus.R` (1, `hm.death.AVC.deciles`)
+- **t_half below the first time:** `test-unbounded-phase.R` (6)
+- **Other:**
+  - `test-coe-total-gradient.R` (1, a refusal inside its `.coe_optimizer_inputs` helper)
+  - `test-score-row-order.R` (1, the warm refit now refuses and reads NA)
+
+**Rule for a test of ANOTHER feature** (any file not about boundaries): change the fixture
+so it doesn't run to a limit.
+- Use starting values (`theta`) taken from the original fit's interior, a fixed shape, or
+  data where the phase is identified.
+- Keep every assertion about the feature under test, and assert that the fit's
+  `$fit$limit` is `NULL`. That proves the fixture is clean, instead of passing because it
+  happened to stay clean.
+- Never add `limit_restart = FALSE` (it refuses a hard trigger), and never wrap a fixture
+  in `tryCatch`.
+
+**`test-score-row-order.R`:** read why the warm refit refuses before changing anything.
+A stepwise candidate refit that refuses is Task 7's territory, and the test may be showing
+a real behaviour change in `.hzr_refit_best_start()`.
+
+**Translate and corpus jobs:** these run translated SAS jobs on test data. That isn't the
+study data, so the log-likelihoods (about -33) can't be compared with SAS's listing
+(about -170 to -181). Record in the PR that the refusal happens on the test data, and that
+SAS's own `hm.death.AVC` fit has THALF 0.151 inside its data.
+
 - [ ] **Step 1: Migrate each failing boundary test by what it asserted**
 
 The rule is that **the record is still asserted, now where it lives**. It was on the
@@ -1392,6 +1432,41 @@ test, which must fire exactly once.
 git add tests/testthat/
 git commit -m "Migrate boundary tests to the limit layer; blind-start hm.death.patient (#683, #729)"
 ```
+
+---
+
+### Task 8b: Docs sweep (added 2026-11-10)
+
+Read every user-facing text the change touches against what the code now does.
+
+**Files:**
+- `vignettes/*.qmd`: every chunk that fits a multiphase model;
+- `vignettes/sas-to-r-migration.qmd`;
+- `inst/extdata/vignette-fit-step.rds`, rebuilt by `data-raw/vignette-fit-step.R`;
+- `README.md`: the text only. Its figures are another session's work, so do not touch
+  `man/figures/` or `inst/dev/generate-readme-figures.R`.
+
+- [ ] **Step 1: Find every vignette fit.** Knit each vignette with `quarto render` into the
+  scratch directory, never into `vignettes/`. Read every multiphase fit's output.
+  - Each must show its `Limit check` line.
+  - A fit that now restarts or refuses is a finding. Fix the vignette fit so it doesn't
+    run to a limit, with a sentence on why. Never hide it with `suppressWarnings()`.
+- [ ] **Step 2: Regenerate the stored fit.** Run `data-raw/vignette-fit-step.R`, then run
+  `test-vignette-fit-step.R`. It must pass against the new RDS.
+- [ ] **Step 3: `sas-to-r-migration.qmd`.** Add a short paragraph for the SAS reader:
+  - HAZARD never detects a limit, and the analyst fixes the parameter (FIXNU, FIXTHALF);
+  - `hazard()` now restarts, or refuses naming the parameter;
+  - the R counterpart of FIXNU is `hzr_phase(..., fixed = "nu")`.
+
+  Write it in the house voice: apply the `ehrlinger-writing` skill, persona (c).
+- [ ] **Step 4: Grep the prose** in `README.md`, `vignettes/` and roxygen in `R/` for
+  claims the change makes false:
+  - "returns the fit", "converged" or "weak" wording near multiphase examples;
+  - any sentence saying a boundary finding only warns.
+
+  List each hit, with its fix or why it stands.
+- [ ] **Step 5: Spell-check, commit.** Run `spelling::spell_check_package()`, then commit
+  with the message "Docs sweep for the limit layer (#683)".
 
 ---
 
