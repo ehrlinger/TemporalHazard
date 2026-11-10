@@ -102,6 +102,10 @@ NULL
                                        time_lower = time_lower,
                                        time_upper = time_upper)
     if (!is.null(step_rec)) found[[length(found) + 1L]] <- step_rec
+    # #683: the mirror of the unbounded record below, a rise past the data.
+    beyond_rec <- .hzr_phase_beyond_data_record(nm, phases[[k]]$type, theta,
+                                                t_obs = t_ok)
+    if (!is.null(beyond_rec)) found[[length(found) + 1L]] <- beyond_rec
     if (!.hzr_phase_type_unbounded(phases[[k]]$type)) next
     key <- paste0(nm, ".log_t_half")
     if (!key %in% names(theta)) next
@@ -188,6 +192,7 @@ NULL
   # collapsed to a step inside the data; saying so would name the wrong cause.
   lead <- c(unbounded_phase = "fitted outside the observed support: ",
             phase_discontinuity = "phase collapsed to a step: ",
+            phase_beyond_data = "phase rises after the data ends: ",
             g3_alpha_one = "shape parameters held at setup: ",
             g3_fixge2_alpha_start = "starting value moved at setup: ")
   paste(vapply(records, function(r) {
