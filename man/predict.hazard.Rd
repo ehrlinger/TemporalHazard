@@ -140,7 +140,9 @@ gradients, so it allows for the errors of different rows being
 correlated. Averaging the rows' own \code{lower} and \code{upper} instead treats
 them as perfectly correlated and gives a band that is too wide. Needs
 \code{se.fit = TRUE} and \code{type = "survival"} or \code{"cumulative_hazard"}, and
-cannot be combined with \code{decompose = TRUE}. Survival limits are built on
+cannot be combined with \code{decompose = TRUE}. \code{newdata} is required: give
+it one row for each patient at each prediction time, the patient's
+covariates repeated once per time. Survival limits are built on
 \code{Sbar} through \code{conf.type}, so a single row gives exactly its own
 limits. Default \code{FALSE}.}
 
@@ -173,10 +175,15 @@ any linear combination of the predictions has standard error
 \code{sqrt(t(g) \%*\% vcov \%*\% g)} with \code{g = colSums(w * J)} for weights \code{w}:
 the expected count of events in a cohort, for instance, is the sum of the
 cumulative hazards at each patient's own time. The columns are the
-parameters the standard errors used. A parameter held fixed in the fit,
-or one the prediction does not depend on, is left out. A Weibull fit's
-first column is \code{log(mu)}, not \code{mu}. When the standard errors are \code{NA}
-there is no attribute, and a \code{decompose = TRUE} result has none.
+parameters the standard errors used. A parameter held fixed in the fit
+without a variance, or one the prediction does not depend on (such as a
+coefficient whose covariate is 0 in every row), is left out, so the
+columns can differ between calls: combine two results by \code{names}. A
+Weibull fit's first column is \code{log(mu)}, not \code{mu}. The rows of \code{J} carry
+the result's row names; after selecting or reordering rows of the
+result, select the same rows of \code{J} with \code{J[rownames(res), ]}. When the
+standard errors are \code{NA} there is no attribute, and a \code{decompose = TRUE}
+result has none.
 }
 \description{
 Produces prediction outputs from a \code{hazard} object. Supports multiple prediction

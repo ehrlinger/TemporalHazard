@@ -772,6 +772,9 @@ NULL
 # over the parameters the sandwich used, that sandwich's vcov block, and
 # their names. Attached only where a standard error was computed.
 .hzr_with_jacobian <- function(res, J_fit, vcov_use) {
+  # Selecting or reordering the result's rows keeps the attribute as it is,
+  # so J carries the result's row names to be realigned by (#731 review).
+  rownames(J_fit) <- rownames(res)
   attr(res, "jacobian") <- list(J = J_fit, vcov = vcov_use,
                                 names = colnames(J_fit))
   res
@@ -813,7 +816,9 @@ NULL
   dimnames(G) <- list(NULL, colnames(J_fit))
   se_bar <- .hzr_predict_se_from_jacobian(G, vcov_use)
   res <- if (type == "survival") {
-    r <- .hzr_predict_cl_from_se(fbar, se_bar / fbar, level, surv_scale)
+    # se(H*) = se(Sbar) / Sbar has no value where Sbar underflowed to 0.
+    se_h <- ifelse(fbar > 0, se_bar / fbar, NA_real_)
+    r <- .hzr_predict_cl_from_se(fbar, se_h, level, surv_scale)
     r$se.fit <- se_bar
     r
   } else {

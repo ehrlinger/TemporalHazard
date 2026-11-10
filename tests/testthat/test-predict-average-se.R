@@ -117,7 +117,7 @@ for (dist in c("weibull", "multiphase")) {
     expect_equal(dim(j$vcov), rep(length(j$names), 2L))
     expect_equal(colnames(j$J), j$names)
     # The per-row SE is the attribute's own sandwich.
-    expect_equal(sqrt(rowSums((j$J %*% j$vcov) * j$J)), res$se.fit,
+    expect_equal(unname(sqrt(rowSums((j$J %*% j$vcov) * j$J))), res$se.fit,
                  tolerance = 1e-12)
     g <- colSums(j$J)
     se_e <- sqrt(drop(t(g) %*% j$vcov %*% g))
@@ -163,7 +163,7 @@ test_that("an averaged result carries one Jacobian row per time", {
   avg <- predict(fit, nd, type = "survival", se.fit = TRUE, average = TRUE)
   j <- attr(avg, "jacobian")
   expect_equal(nrow(j$J), 2L)
-  expect_equal(sqrt(rowSums((j$J %*% j$vcov) * j$J)), avg$se.fit,
+  expect_equal(unname(sqrt(rowSums((j$J %*% j$vcov) * j$J))), avg$se.fit,
                tolerance = 1e-12)
 })
 
@@ -201,3 +201,51 @@ test_that("average = TRUE refuses what it cannot average", {
                        type = "cumulative_hazard", se.fit = TRUE,
                        decompose = TRUE, average = TRUE), "decompose")
 })
+
+test_that("J rows carry the result's row names, for realignment", {
+  fit <- fit_weibull()
+  nd <- data.frame(time = c(0.5, 1, 2, 4), x = c(-1, 0.2, 0.9, 1.6))
+  res <- predict(fit, nd, type = "cumulative_hazard", se.fit = TRUE)
+  J <- attr(res, "jacobian")$J
+  expect_equal(rownames(J), rownames(res))
+  sub <- res[c(4, 2), ]
+  Js <- J[rownames(sub), , drop = FALSE]
+  V <- attr(res, "jacobian")$vcov
+  expect_equal(unname(sqrt(rowSums((Js %*% V) * Js))), sub$se.fit, tolerance = 1e-12)
+})
+
+test_that("average = TRUE needs newdata", {
+  fit <- fit_weibull()
+  expect_error(predict(fit, type = "survival", se.fit = TRUE, average = TRUE),
+               "needs 'newdata'")
+})
+
+test_that("an underflowed mean survival has NA limits, not NaN", {
+  fit <- fit_weibull()
+  nd <- data.frame(time = c(1e4, 1e4), x = c(3, 3))
+  avg <- predict(fit, nd, type = "survival", se.fit = TRUE, average = TRUE)
+  expect_equal(avg$fit, 0)
+  expect_true(is.na(avg$lower) && !is.nan(avg$lower))
+  expect_true(is.na(avg$upper) && !is.nan(avg$upper))
+})
+
+# The numeric-Jacobian families, checked against the same reference.
+for (dist in c("exponential", "loglogistic", "lognormal")) {
+  test_that(paste(dist, "- averaged SE matches the numerical gradient"), {
+    theta0 <- switch(dist, exponential = c(-1, 0),
+                     loglogistic = c(-1, 0, 0), lognormal = c(1, 0, 0))
+    fit <- hazard(survival::Surv(time, status) ~ x, data = avg_toy(),
+                  dist = dist, theta = theta0, fit = TRUE)
+    nd <- hetero_nd(c(0.5, 2, 5))
+    for (type in c("survival", "cumulative_hazard")) {
+      avg <- predict(fit, nd, type = type, se.fit = TRUE, average = TRUE)
+      expect_equal(sum(avg$n), nrow(nd))
+      for (k in seq_along(avg$time)) {
+        at <- nd$time == avg$time[k]
+        ref <- numeric_se(fit, nd[at, ], type, mean)
+        expect_gt(ref, 0)
+        expect_equal(avg$se.fit[k] / ref, 1, tolerance = 1e-5)
+      }
+    }
+  })
+}

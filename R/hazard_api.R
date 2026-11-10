@@ -2276,7 +2276,9 @@ hazard <- function(formula = NULL,
 #'   correlated. Averaging the rows' own `lower` and `upper` instead treats
 #'   them as perfectly correlated and gives a band that is too wide. Needs
 #'   `se.fit = TRUE` and `type = "survival"` or `"cumulative_hazard"`, and
-#'   cannot be combined with `decompose = TRUE`. Survival limits are built on
+#'   cannot be combined with `decompose = TRUE`. `newdata` is required: give
+#'   it one row for each patient at each prediction time, the patient's
+#'   covariates repeated once per time. Survival limits are built on
 #'   `Sbar` through `conf.type`, so a single row gives exactly its own
 #'   limits. Default `FALSE`.
 #' @param ... Unused; included for S3 compatibility.
@@ -2365,10 +2367,15 @@ hazard <- function(formula = NULL,
 #'   `sqrt(t(g) %*% vcov %*% g)` with `g = colSums(w * J)` for weights `w`:
 #'   the expected count of events in a cohort, for instance, is the sum of the
 #'   cumulative hazards at each patient's own time. The columns are the
-#'   parameters the standard errors used. A parameter held fixed in the fit,
-#'   or one the prediction does not depend on, is left out. A Weibull fit's
-#'   first column is `log(mu)`, not `mu`. When the standard errors are `NA`
-#'   there is no attribute, and a `decompose = TRUE` result has none.
+#'   parameters the standard errors used. A parameter held fixed in the fit
+#'   without a variance, or one the prediction does not depend on (such as a
+#'   coefficient whose covariate is 0 in every row), is left out, so the
+#'   columns can differ between calls: combine two results by `names`. A
+#'   Weibull fit's first column is `log(mu)`, not `mu`. The rows of `J` carry
+#'   the result's row names; after selecting or reordering rows of the
+#'   result, select the same rows of `J` with `J[rownames(res), ]`. When the
+#'   standard errors are `NA` there is no attribute, and a `decompose = TRUE`
+#'   result has none.
 #' @examples
 #' # -- Basic predictions ------------------------------------------------
 #' set.seed(1)
@@ -2523,6 +2530,13 @@ predict.hazard <- function(object, newdata = NULL,
     }
     if (decompose && identical(object$spec$dist, "multiphase")) {
       stop("'average = TRUE' cannot be combined with 'decompose = TRUE'.",
+           call. = FALSE)
+    }
+    # Without newdata each fitted row is predicted at its own time, so the
+    # "average" is one row per subject and no cohort's curve (#731 review).
+    if (is.null(newdata)) {
+      stop("'average = TRUE' needs 'newdata': give each patient of the ",
+           "cohort at each prediction time, one row per patient and time.",
            call. = FALSE)
     }
   }
