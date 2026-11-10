@@ -152,6 +152,9 @@
 # not a control element, so no user setting can turn the check off.
 .hzr_limit_state <- new.env(parent = emptyenv())
 .hzr_limit_state$inner <- FALSE
+# The grid start and control for the next inner call, read and cleared at its
+# entry: a restart re-evaluates the user's call as written.
+.hzr_limit_state$restart <- NULL
 
 #' Evaluate a hazard() call as the limit layer's inner call
 #'
@@ -159,13 +162,18 @@
 #' user as if they described the result) and its error is returned, not
 #' raised.
 #' @param cl A `hazard()` call. @param env Where to evaluate it.
+#' @param restart `NULL`, or `list(theta, control)` to replace the call's own.
 #' @return `list(value, warnings)`; `value` is a fit or an error condition.
 #' @keywords internal
 #' @noRd
-.hzr_limit_capture <- function(cl, env) {
+.hzr_limit_capture <- function(cl, env, restart = NULL) {
   old <- .hzr_limit_state$inner
   .hzr_limit_state$inner <- TRUE
-  on.exit(.hzr_limit_state$inner <- old, add = TRUE)
+  .hzr_limit_state$restart <- restart
+  on.exit({
+    .hzr_limit_state$inner <- old
+    .hzr_limit_state$restart <- NULL
+  }, add = TRUE)
   caught <- list()
   value <- tryCatch(
     withCallingHandlers(eval(cl, env), warning = function(w) {
@@ -246,13 +254,13 @@
 
 #' hazard()'s limit layer: fit, check, restart or refuse
 #'
-#' @param cl `match.call()` of the user's `hazard()` call.
+#' @param cl `sys.call()` of the user's `hazard()` call.
 #' @param env Its `parent.frame()`.
-#' @param control The call's evaluated `control`.
+#' @param theta,control The call's evaluated `theta` and `control`.
 #' @return A `hazard` object; or an error is raised.
 #' @keywords internal
 #' @noRd
-.hzr_limit_fit <- function(cl, env, control) {
+.hzr_limit_fit <- function(cl, env, theta, control) {
   restart <- control$limit_restart %||% TRUE
   if (!(isTRUE(restart) || isFALSE(restart))) {
     stop("control$limit_restart must be TRUE or FALSE.", call. = FALSE)
@@ -287,11 +295,8 @@
   prep <- .hzr_evaluate_prepare(fit0)
   # The user's start: their theta if they gave one, else the phase specs'
   # default, assembled as the optimizer assembles it.
-  # cl$theta is an unevaluated call, so test its VALUE: a symbol that
-  # evaluates to NULL means no theta was given.
-  theta_given <- if (is.null(cl$theta)) NULL else eval(cl$theta, env)
-  start <- if (!is.null(theta_given)) {
-    stats::setNames(theta_given, prep$names)
+  start <- if (!is.null(theta)) {
+    stats::setNames(theta, prep$names)
   } else {
     stats::setNames(unlist(lapply(names(prep$phases), function(nm) {
       .hzr_phase_start(prep$phases[[nm]],
@@ -306,10 +311,7 @@
   ctrl <- control
   ctrl$n_starts <- 1L   # the grid IS the multi-start; 9 x n_starts is waste
   runs <- lapply(grid, function(s) {
-    cl_i <- cl
-    cl_i$theta <- s
-    cl_i$control <- ctrl
-    .hzr_limit_capture(cl_i, env)
+    .hzr_limit_capture(cl, env, restart = list(theta = s, control = ctrl))
   })
   rows <- data.frame(
     start = seq_along(runs),

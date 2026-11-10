@@ -953,10 +953,25 @@ hazard <- function(formula = NULL,
 
   # #683: a multiphase fit is checked for a shape parameter at a limit, and
   # restarted or refused. The layer re-evaluates this very call (inner),
-  # so everything below runs unchanged for it.
+  # so everything below runs unchanged for it. sys.call(), not match.call():
+  # evaluated in parent.frame(), sys.call() IS the call R just made, so a
+  # `...` in it hands the inner call the caller's own promises, and the
+  # substitute() reads below (weights, time, status) see the expressions the
+  # user wrote. match.call() names them `..1`, `..2`, which no data mask can
+  # resolve. Both are read here, eagerly: they look at the stack when forced.
   if (isTRUE(fit) && identical(unname(dist), "multiphase") &&
         !.hzr_limit_state$inner) {
-    return(.hzr_limit_fit(match.call(), parent.frame(), control))
+    cl <- sys.call()
+    env <- parent.frame()
+    return(.hzr_limit_fit(cl, env, theta, control))
+  }
+  # A restart start: the layer re-evaluates the user's call unchanged and
+  # hands over the grid start and control here, since `theta` and `control`
+  # may sit anywhere in that call, `...` included.
+  if (!is.null(.hzr_limit_state$restart)) {
+    theta <- .hzr_limit_state$restart$theta
+    control <- .hzr_limit_state$restart$control
+    .hzr_limit_state$restart <- NULL
   }
 
   objective <- match.arg(objective)

@@ -155,3 +155,127 @@ test_that("the refusal message counts restarts that ended in an error", {
   without <- .hzr_limit_refusal(trig, -100, 9L, n_errored = 0L)
   expect_no_match(conditionMessage(without), "ended in an error")
 })
+
+# The layer re-evaluates the user's call. It must accept every call hazard()
+# accepted without it, and give the same answer: through `...` wrappers,
+# do.call(), local variables, and with weights named as a column of `data`.
+wrap_data <- function() {
+  set.seed(1)
+  data.frame(stop = stats::rexp(60), event = stats::rbinom(60, 1, 0.7),
+             w = stats::runif(60, 0.5, 1.5))
+}
+wrap_const <- function(...) {
+  hazard(..., dist = "multiphase",
+         phases = list(constant = hzr_phase("constant")), fit = TRUE)
+}
+
+test_that("a `...` wrapper with weights named as a column fits as the direct call", {
+  d <- wrap_data()
+  for (lr in c(TRUE, FALSE)) {
+    direct <- hazard(survival::Surv(stop, event) ~ 1, data = d, weights = w,
+                     dist = "multiphase",
+                     phases = list(constant = hzr_phase("constant")),
+                     fit = TRUE, control = list(limit_restart = lr))
+    wrapped <- wrap_const(survival::Surv(stop, event) ~ 1, data = d,
+                          weights = w, control = list(limit_restart = lr))
+    expect_equal(wrapped$fit$objective / direct$fit$objective, 1,
+                 tolerance = 1e-10)
+    # The weights were used: an unweighted fit differs.
+    unweighted <- wrap_const(survival::Surv(stop, event) ~ 1, data = d)
+    expect_gt(abs(unweighted$fit$objective - direct$fit$objective), 1e-3)
+  }
+})
+
+test_that("do.call() and a wrapper's local variables fit as the direct call", {
+  d <- wrap_data()
+  direct <- hazard(survival::Surv(stop, event) ~ 1, data = d, weights = w,
+                   dist = "multiphase",
+                   phases = list(constant = hzr_phase("constant")), fit = TRUE)
+  same <- function(fit) {
+    expect_equal(fit$fit$objective / direct$fit$objective, 1, tolerance = 1e-10)
+  }
+  args <- list(formula = survival::Surv(stop, event) ~ 1, data = d,
+               weights = quote(w))
+  same(do.call(hazard, c(args, list(dist = "multiphase",
+    phases = list(constant = hzr_phase("constant")), fit = TRUE))))
+  same(do.call(wrap_const, args))
+  # Data local to the calling function, weights named as its column. (A
+  # weights VECTOR local to that function is not found through a wrapper,
+  # with or without the layer: hazard() evaluates it in its own caller.)
+  local_wrap <- function() {
+    dd <- wrap_data()
+    wrap_const(survival::Surv(stop, event) ~ 1, data = dd, weights = w)
+  }
+  same(local_wrap())
+  # Data and weights local to the wrapper itself.
+  inner_wrap <- function(...) {
+    dd <- wrap_data()
+    hazard(..., data = dd, weights = w, dist = "multiphase",
+           phases = list(constant = hzr_phase("constant")), fit = TRUE)
+  }
+  same(inner_wrap(survival::Surv(stop, event) ~ 1))
+})
+
+test_that("the vector interface fits through a `...` wrapper", {
+  d <- wrap_data()
+  direct <- hazard(time = d$stop, status = d$event, weights = d$w,
+                   dist = "multiphase",
+                   phases = list(constant = hzr_phase("constant")), fit = TRUE)
+  vec_wrap <- function(dd) {
+    wrap_const(time = stop, status = event, weights = w, data = dd)
+  }
+  expect_equal(vec_wrap(d)$fit$objective / direct$fit$objective, 1,
+               tolerance = 1e-10)
+})
+
+test_that("a hard trigger through a `...` wrapper refuses as the direct call", {
+  data(avc, package = "TemporalHazard", envir = environment())
+  k <- is.finite(avc$int_dead) & is.finite(avc$dead) & avc$int_dead > 0
+  dd <- data.frame(tt = avc$int_dead[k], st = avc$dead[k])
+  ph <- list(early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m"),
+             late = hzr_phase("g3", tau = 5, gamma = 1, alpha = 1, eta = 1,
+                              constraint = "alpha_gamma_eta"))
+  wrap_448 <- function(...) {
+    hazard(..., dist = "multiphase", phases = ph, fit = TRUE,
+           control = list(n_starts = 1L))
+  }
+  refuse <- function(expr) {
+    tryCatch(suppressWarnings(expr), hzr_limit_refusal = function(e) e)
+  }
+  direct <- refuse(hazard(time = tt, status = st, data = dd,
+                          dist = "multiphase", phases = ph, fit = TRUE,
+                          control = list(n_starts = 1L)))
+  wrapped <- refuse(wrap_448(time = tt, status = st, data = dd))
+  expect_s3_class(direct, "hzr_limit_refusal")
+  expect_s3_class(wrapped, "hzr_limit_refusal")
+  expect_identical(wrapped$parameter, direct$parameter)
+  expect_equal(wrapped$best_objective / direct$best_objective, 1,
+               tolerance = 1e-10)
+})
+
+test_that("a #729 restart through a `...` wrapper returns the direct call's fit", {
+  d <- valves_729()
+  d$one <- 1
+  ph <- list(early = hzr_phase("cdf", t_half = 10, nu = 0.2, m = 1, fixed = "m",
+                               formula = ~ age_cop + nyha + mv_nyha + double_ +
+                                 ao_pinc),
+             constant = hzr_phase("constant", formula = ~ age_cop + black + i_path))
+  ctl <- list(n_starts = 1L, maxit = 2000, conserve = TRUE)
+  wrap_729 <- function(...) {
+    hazard(..., dist = "multiphase", phases = ph, fit = TRUE, control = ctl)
+  }
+  # Weights named as a column, so every grid start re-evaluates it too.
+  expect_warning(direct <- hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+                                  weights = one, dist = "multiphase",
+                                  phases = ph, fit = TRUE, control = ctl),
+                 class = "hzr_limit_restarted")
+  expect_warning(wrapped <- wrap_729(survival::Surv(int_dead, dead) ~ 1,
+                                     data = d, weights = one),
+                 class = "hzr_limit_restarted")
+  expect_identical(direct$fit$limit$outcome, "restarted")
+  expect_identical(wrapped$fit$limit$outcome, "restarted")
+  expect_identical(wrapped$fit$limit$winner, direct$fit$limit$winner)
+  expect_equal(wrapped$fit$objective / direct$fit$objective, 1,
+               tolerance = 1e-10)
+  expect_equal(direct$fit$objective / sas_ll_729, 1, tolerance = 1e-5)
+})
