@@ -551,7 +551,7 @@ test_that("predict.hzr_outhaz() takes predict.hazard()'s arguments in order", {
   fh <- formals(predict.hazard)
   expect_equal(names(fo),
                c("object", "newdata", "type", "decompose", "se.fit",
-                 "level", "conf.type", "..."))
+                 "level", "conf.type", "average", "..."))
   expect_equal(names(fo), names(fh))
   # Same default type, so an unnamed `type` means the same thing in both.
   expect_equal(eval(fo$type)[[1L]], eval(fh$type)[[1L]])

@@ -47,6 +47,7 @@ reference:
       - hazard
       - summary.hazard
       - predict.hazard
+      - hzr_jacobian
       - coef.hazard
       - vcov.hazard
   - title: Multiphase phases

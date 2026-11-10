@@ -14,7 +14,8 @@
   phases = NULL,
   level = 0.95,
   diff_fn,
-  conf_type = c("log-log", "logit")
+  conf_type = c("log-log", "logit"),
+  average = FALSE
 )
 }
 \arguments{
@@ -45,9 +46,14 @@ fallback in exp / loglogistic / lognormal.}
 \item{conf_type}{Survival CL transform: \code{"log-log"} (default, on
 \verb{log(-log S)}) or \code{"logit"} (on \code{logit(1 - S)}, HAZPRED-compatible).
 Only consulted when \code{type == "survival"}.}
+
+\item{average}{Logical; \code{TRUE} averages the rows at each distinct \code{time}
+(#731). The caller has checked \code{type} and \code{time}.}
 }
 \value{
-data.frame with columns \code{fit}, \code{se.fit}, \code{lower}, \code{upper}.
+data.frame with columns \code{fit}, \code{se.fit}, \code{lower}, \code{upper} (with
+\code{time} and \code{n} first when \code{average}), and the "jacobian" attribute when
+the standard errors could be computed.
 }
 \description{
 Dispatched from predict.hazard() when \code{se.fit = TRUE}.

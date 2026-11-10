@@ -2267,6 +2267,24 @@ hazard <- function(formula = NULL,
 #'   reproducing SAS HAZARD's `HAZPRED` survival limits. Other types are
 #'   unaffected (hazard/cumulative-hazard use a log scale that already matches
 #'   HAZPRED). Only used when `se.fit = TRUE`.
+#' @param average **Experimental.** Logical; if `TRUE`, average the
+#'   predictions of all rows that share a `time` and return one row per
+#'   distinct time, sorted. Use it for the expected survival curve of a
+#'   cohort, `Sbar(t) = mean S(t | x_i)`, scored through the fit. The
+#'   standard error is the delta-method standard error of that mean,
+#'   `sqrt(g' V g)` with `g` the mean of the rows' gradients, so it allows for
+#'   the errors of different rows being correlated. It is never larger than
+#'   the mean of the rows' own `se.fit`. The limits are those of the mean, not
+#'   the average of the rows' own `lower` and `upper`. That average is a
+#'   different quantity: after the `conf.type` transform it can lie inside or
+#'   outside these limits, at either end. Needs
+#'   `se.fit = TRUE` and `type = "survival"` or `"cumulative_hazard"`, and
+#'   cannot be combined with `decompose = TRUE`. `newdata` is required: give
+#'   it one row for each patient at each prediction time, the patient's
+#'   covariates repeated once per time. Survival limits are built on
+#'   `Sbar` through `conf.type`, so a single row gives exactly its own
+#'   limits. The argument and its return shape may change in a later
+#'   release. Default `FALSE`.
 #' @param ... Unused; included for S3 compatibility.
 #'
 #' @details
@@ -2339,6 +2357,19 @@ hazard <- function(formula = NULL,
 #'   `decompose = TRUE`, a long data frame (`time`, `component`, `fit`,
 #'   `se.fit`, `lower`, `upper`); with `decompose = TRUE` and `se.fit = FALSE`,
 #'   a wide data frame of per-phase contributions.
+#'
+#'   With `average = TRUE`, a data frame with columns `time`, `n` (the number
+#'   of rows averaged at that time), `fit`, `se.fit`, `lower` and `upper`.
+#'
+#'   **Experimental.** A `se.fit = TRUE` result whose standard errors could
+#'   be computed carries the derivatives behind them, from which any weighted
+#'   sum of the predictions has a standard error. Read them with
+#'   [hzr_jacobian()], which matches them to the rows you hold after
+#'   selecting, reordering or repeating rows, and refuses rows it cannot
+#'   match. They are stored in the attribute `"jacobian"`, whose contents may
+#'   change in a later release; R keeps that attribute unchanged through
+#'   `[` and `rbind()`, so do not read it directly. When the standard errors
+#'   are `NA` there are none, and a `decompose = TRUE` result has none.
 #' @examples
 #' # -- Basic predictions ------------------------------------------------
 #' set.seed(1)
@@ -2463,7 +2494,8 @@ predict.hazard <- function(object, newdata = NULL,
                                     "survival", "cumulative_hazard"),
                            decompose = FALSE,
                            se.fit = FALSE, level = 0.95,
-                           conf.type = c("log-log", "logit"), ...) {
+                           conf.type = c("log-log", "logit"),
+                           average = FALSE, ...) {
   type <- match.arg(type)
   # `conf.type` is validated lazily inside the se.fit survival path (it only
   # affects survival CLs); validating here would error on an otherwise-ignored
@@ -2477,6 +2509,30 @@ predict.hazard <- function(object, newdata = NULL,
 
   if (!is.logical(se.fit) || length(se.fit) != 1L || is.na(se.fit)) {
     stop("'se.fit' must be TRUE or FALSE.", call. = FALSE)
+  }
+  if (!is.logical(average) || length(average) != 1L || is.na(average)) {
+    stop("'average' must be TRUE or FALSE.", call. = FALSE)
+  }
+  if (average) {
+    if (!se.fit) {
+      stop("'average = TRUE' needs 'se.fit = TRUE': it returns the mean ",
+           "prediction with its standard error.", call. = FALSE)
+    }
+    if (!type %in% c("survival", "cumulative_hazard")) {
+      stop("'average = TRUE' is only supported for type = \"survival\" or ",
+           "\"cumulative_hazard\". Got type = \"", type, "\".", call. = FALSE)
+    }
+    if (decompose && identical(object$spec$dist, "multiphase")) {
+      stop("'average = TRUE' cannot be combined with 'decompose = TRUE'.",
+           call. = FALSE)
+    }
+    # Without newdata each fitted row is predicted at its own time, so the
+    # "average" is one row per subject and no cohort's curve (#731 review).
+    if (is.null(newdata)) {
+      stop("'average = TRUE' needs 'newdata': give each patient of the ",
+           "cohort at each prediction time, one row per patient and time.",
+           call. = FALSE)
+    }
   }
   # A multiphase model built with fit = FALSE has no per-phase designs: they
   # are resolved at fit time, and without them .hzr_split_theta() looked up a
@@ -2831,7 +2887,8 @@ predict.hazard <- function(object, newdata = NULL,
         return(.hzr_predict_with_se(
           object = object, type = type, time = pred_time,
           x_list = x_list, cov_counts = cov_counts, phases = phases,
-          level = level, diff_fn = diff_fn, conf_type = conf.type
+          level = level, diff_fn = diff_fn, conf_type = conf.type,
+          average = average
         ))
       }
 
@@ -2966,7 +3023,8 @@ predict.hazard <- function(object, newdata = NULL,
     if (se.fit) {
       return(.hzr_predict_with_se(
         object = object, type = type, time = time, x = x,
-        level = level, diff_fn = cumhaz_of, conf_type = conf.type
+        level = level, diff_fn = cumhaz_of, conf_type = conf.type,
+        average = average
       ))
     }
 

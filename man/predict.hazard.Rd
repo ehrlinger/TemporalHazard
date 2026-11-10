@@ -12,6 +12,7 @@
   se.fit = FALSE,
   level = 0.95,
   conf.type = c("log-log", "logit"),
+  average = FALSE,
   ...
 )
 }
@@ -130,6 +131,25 @@ reproducing SAS HAZARD's \code{HAZPRED} survival limits. Other types are
 unaffected (hazard/cumulative-hazard use a log scale that already matches
 HAZPRED). Only used when \code{se.fit = TRUE}.}
 
+\item{average}{\strong{Experimental.} Logical; if \code{TRUE}, average the
+predictions of all rows that share a \code{time} and return one row per
+distinct time, sorted. Use it for the expected survival curve of a
+cohort, \verb{Sbar(t) = mean S(t | x_i)}, scored through the fit. The
+standard error is the delta-method standard error of that mean,
+\verb{sqrt(g' V g)} with \code{g} the mean of the rows' gradients, so it allows for
+the errors of different rows being correlated. It is never larger than
+the mean of the rows' own \code{se.fit}. The limits are those of the mean, not
+the average of the rows' own \code{lower} and \code{upper}. That average is a
+different quantity: after the \code{conf.type} transform it can lie inside or
+outside these limits, at either end. Needs
+\code{se.fit = TRUE} and \code{type = "survival"} or \code{"cumulative_hazard"}, and
+cannot be combined with \code{decompose = TRUE}. \code{newdata} is required: give
+it one row for each patient at each prediction time, the patient's
+covariates repeated once per time. Survival limits are built on
+\code{Sbar} through \code{conf.type}, so a single row gives exactly its own
+limits. The argument and its return shape may change in a later
+release. Default \code{FALSE}.}
+
 \item{...}{Unused; included for S3 compatibility.}
 }
 \value{
@@ -145,6 +165,19 @@ For multiphase \code{type = "cumulative_hazard"} with
 \code{decompose = TRUE}, a long data frame (\code{time}, \code{component}, \code{fit},
 \code{se.fit}, \code{lower}, \code{upper}); with \code{decompose = TRUE} and \code{se.fit = FALSE},
 a wide data frame of per-phase contributions.
+
+With \code{average = TRUE}, a data frame with columns \code{time}, \code{n} (the number
+of rows averaged at that time), \code{fit}, \code{se.fit}, \code{lower} and \code{upper}.
+
+\strong{Experimental.} A \code{se.fit = TRUE} result whose standard errors could
+be computed carries the derivatives behind them, from which any weighted
+sum of the predictions has a standard error. Read them with
+\code{\link[=hzr_jacobian]{hzr_jacobian()}}, which matches them to the rows you hold after
+selecting, reordering or repeating rows, and refuses rows it cannot
+match. They are stored in the attribute \code{"jacobian"}, whose contents may
+change in a later release; R keeps that attribute unchanged through
+\code{[} and \code{rbind()}, so do not read it directly. When the standard errors
+are \code{NA} there are none, and a \code{decompose = TRUE} result has none.
 }
 \description{
 Produces prediction outputs from a \code{hazard} object. Supports multiple prediction
