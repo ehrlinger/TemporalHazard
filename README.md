@@ -35,10 +35,12 @@ three regimes simultaneously.
 
 The figure below fits that model to the 5,880 coronary bypass patients in the
 `cabgkul` dataset. Each colored curve is one phase, and the dashed curve is
-their sum: at any time after surgery, the total risk is the early risk plus the
-constant risk plus the late risk. Here the early phase dominates for only the
-first two months or so, the constant phase holds near 0.9% a year, and the late
-phase overtakes it about five years out.
+their sum: at any time after surgery, the total hazard is the early hazard plus
+the constant hazard plus the late hazard. These are instantaneous rates, not
+the chance of dying within the next year, and it is the rates that add. Here
+the early phase dominates for only the first two months or so, the constant
+phase holds at a rate near 0.9% per year, and the late phase overtakes it about
+five years out.
 
 <img src="man/figures/readme-hazard-phases.png" width="100%" alt="Early, constant and late hazard phases, in percent per year over 15 years after CABG, with a dashed total curve equal to their sum (CABGKUL, n=5,880)" />
 
@@ -49,7 +51,7 @@ first decade and sits above it past twelve years, where fewer than 170 patients
 remain at risk. As a smooth parametric curve it supports covariate adjustment,
 prediction, and extrapolation.
 
-<img src="man/figures/readme-survival.png" width="100%" alt="Multiphase survival curve with the Kaplan-Meier estimate drawn over it, shaded where the early and late phases carry more risk than the constant phase (CABGKUL, n=5,880)" />
+<img src="man/figures/readme-survival.png" width="100%" alt="Multiphase survival curve with the Kaplan-Meier estimate drawn over it, shaded where the early and late phase hazards exceed the constant phase (CABGKUL, n=5,880)" />
 
 ## Key capabilities
 

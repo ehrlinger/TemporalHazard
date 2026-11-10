@@ -101,7 +101,7 @@ p1 <- ggplot(h_long, aes(years, hazard, colour = Phase, linetype = Phase)) +
                   expand = FALSE, clip = "on") +
   scale_x_continuous(breaks = seq(0, max_years, 5)) +
   labs(x = "Years after CABG",
-       y = "Risk of death per year (%)",
+       y = "Hazard rate (% per year)",
        title = "Three phases add up",
        subtitle = "Multiphase hazard fitted to CABGKUL (n = 5,880)") +
   theme_minimal(base_size = 13) +
@@ -114,7 +114,7 @@ ggsave("man/figures/readme-hazard-phases.png", p1,
        width = 7, height = 4.5, dpi = 150, bg = "white")
 
 # -- Figure 2: one survival curve, with Kaplan-Meier -------------------------
-# Shade where a phase carries more risk than the constant phase: the early
+# Shade where a phase hazard exceeds the constant phase hazard: the early
 # phase until it drops below it, the late phase once it rises above it.
 early_end  <- years[which(pct_yr[, "early"] < pct_yr[, "constant"])[1]]
 late_start <- years[which(pct_yr[, "late"] > pct_yr[, "constant"])[1]]
