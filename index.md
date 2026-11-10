@@ -24,17 +24,29 @@ background rate (constant phase), and eventually rises again as patients
 age (late phase). A single Weibull curve forces a monotone shape; a
 multiphase model captures all three regimes simultaneously.
 
-![Additive phase decomposition showing early, constant, and late hazard
-components summing to the total hazard curve (CABGKUL,
+The figure below fits that model to the 5,880 coronary bypass patients
+in the `cabgkul` dataset. Each colored curve is one phase, and the
+dashed curve is their sum: at any time after surgery, the total hazard
+is the early hazard plus the constant hazard plus the late hazard. These
+are instantaneous rates, not the chance of dying within the next year,
+and it is the rates that add. Here the early phase dominates for only
+the first two months or so, the constant phase holds at a rate near 0.9%
+per year, and the late phase overtakes it about five years out.
+
+![Early, constant and late hazard phases, in percent per year over 15
+years after CABG, with a dashed total curve equal to their sum (CABGKUL,
 n=5,880)](reference/figures/readme-hazard-phases.png)
 
-The resulting survival curve closely tracks the nonparametric
-Kaplan-Meier estimate, and as a smooth parametric curve it supports
-covariate adjustment, prediction, and extrapolation.
+Each phase leaves its mark on the survival curve: a quick drop in the
+first weeks, a long steady decline, then a bend downward once the late
+phase takes over. The fitted curve tracks the nonparametric Kaplan-Meier
+estimate for the first decade and sits above it past twelve years, where
+fewer than 170 patients remain at risk. As a smooth parametric curve it
+supports covariate adjustment, prediction, and extrapolation.
 
-![Multiphase parametric survival curve overlaid on the Kaplan-Meier
-estimate from the CABGKUL dataset
-(n=5,880)](reference/figures/readme-survival.png)
+![Multiphase survival curve with the Kaplan-Meier estimate drawn over
+it, shaded where the early and late phase hazards exceed the constant
+phase (CABGKUL, n=5,880)](reference/figures/readme-survival.png)
 
 ## Key capabilities
 
