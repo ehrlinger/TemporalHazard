@@ -952,27 +952,82 @@ hazard <- function(formula = NULL,
                    ...) {
 
   # #683: a multiphase fit is checked for a shape parameter at a limit, and
-  # restarted or refused. The layer re-evaluates this very call (inner),
-  # so everything below runs unchanged for it. sys.call(), not match.call():
-  # evaluated in parent.frame(), sys.call() IS the call R just made, so a
-  # `...` in it hands the inner call the caller's own promises, and the
-  # substitute() reads below (weights, time, status) see the expressions the
-  # user wrote. match.call() names them `..1`, `..2`, which no data mask can
-  # resolve. Both are read here, eagerly: they look at the stack when forced.
+  # restarted or refused. The layer fits this call once (inner), and again
+  # from each grid start, so everything below runs unchanged for each fit.
+  #
+  # Every argument is evaluated ONCE, here (#683 review). Re-evaluating the
+  # user's call for each inner fit ran each argument up to ten times: a
+  # `data = d[sample(...), ]` gave every start its own resample, the layer
+  # compared objectives across different datasets, and the user's RNG stream
+  # advanced. So the ordinary arguments are forced in this frame, where their
+  # promises live, and each inner fit is the call below, evaluated in this
+  # frame: its arguments are these promises, already forced, so every inner
+  # fit sees the same values. The arguments read by non-standard evaluation
+  # (`time`, `status`, `time_lower`, `time_upper`, `weights` as column names,
+  # and `data` for the ambiguity warning's wording) keep the expressions the
+  # user wrote, captured here by substitute(), and are resolved by the body
+  # below against the same `data` value and the same calling frame, once
+  # (.hzr_mask_eval()). Under a `...` wrapper, substitute() reads the
+  # caller's own promise, so the expression is the one the user wrote, not
+  # `..1` (fa519b88). The stored $call and $call_env are the user's.
+  arg_exprs <- list(data = substitute(data), time = substitute(time),
+                    status = substitute(status),
+                    time_lower = substitute(time_lower),
+                    time_upper = substitute(time_upper),
+                    weights = substitute(weights))
   if (isTRUE(fit) && identical(unname(dist), "multiphase") &&
         !.hzr_limit_state$inner) {
-    cl <- sys.call()
-    env <- parent.frame()
-    return(.hzr_limit_fit(cl, env, theta, control))
+    inputs <- list(
+      exprs = arg_exprs,
+      env = parent.frame(),
+      call = match.call(),
+      cache = new.env(parent = emptyenv()))
+    # The body forces these on every multiphase fit. `x`, and the five above
+    # on the vector path without `data`, are ordinary arguments only on some
+    # paths, so they are forced only on those, as the body would.
+    force(objective)
+    force(data)
+    force(formula)
+    force(time_windows)
+    force(phases)
+    force(theta)
+    force(control)
+    list(...)
+    if (is.null(formula)) {
+      force(x)
+      if (is.null(data)) {
+        force(time)
+        force(status)
+        force(time_lower)
+        force(time_upper)
+        force(weights)
+      }
+    }
+    inputs$call_env <- .hzr_capture_call_env(inputs$call, inputs$env)
+    inner <- quote(hazard(formula = formula, data = data, time = time,
+                          status = status, time_lower = time_lower,
+                          time_upper = time_upper, x = x,
+                          time_windows = time_windows, theta = theta,
+                          dist = dist, phases = phases, fit = fit,
+                          weights = weights, control = control,
+                          objective = objective, ...))
+    return(.hzr_limit_fit(inner, environment(), inputs, theta, control))
   }
-  # A restart start: the layer re-evaluates the user's call unchanged and
-  # hands over the grid start and control here, since `theta` and `control`
-  # may sit anywhere in that call, `...` included.
+  # A restart start: the layer hands over the grid start and control here.
   if (!is.null(.hzr_limit_state$restart)) {
     theta <- .hzr_limit_state$restart$theta
     control <- .hzr_limit_state$restart$control
     .hzr_limit_state$restart <- NULL
   }
+  # An inner fit: the argument expressions, calling frame and call the
+  # layer captured from the user's call, read and cleared at entry.
+  inputs <- .hzr_limit_state$inputs
+  .hzr_limit_state$inputs <- NULL
+  if (is.null(inputs)) {
+    inputs <- list(exprs = arg_exprs, env = parent.frame())
+  }
+  arg_exprs <- inputs$exprs
+  caller_env <- inputs$env
 
   objective <- match.arg(objective)
   # A named scalar such as c(model = "multiphase") is a valid `dist`, but
@@ -981,7 +1036,7 @@ hazard <- function(formula = NULL,
   dist <- unname(dist)
   # The caller's own `data` expression, captured before `data` is reassigned:
   # the ambiguity warning names it in its advice (#401).
-  data_arg <- substitute(data)
+  data_arg <- arg_exprs$data
 
   # `objective` is a top-level argument rather than a `control` element on
   # purpose: it changes the estimand, and burying that among convergence
@@ -1102,10 +1157,10 @@ hazard <- function(formula = NULL,
     # column and in the calling frame silently read the calling frame's
     # vector. stats::lm() also looks in `data` first, but falls back to the
     # formula's environment, not the calling frame.
-    .hzr_warn_masked_ambiguity(list(weights = substitute(weights)), data,
-                               parent.frame(), interface = "formula",
+    .hzr_warn_masked_ambiguity(arg_exprs["weights"], data,
+                               caller_env, interface = "formula",
                                data_arg = data_arg)
-    weights <- eval(substitute(weights), data, parent.frame())
+    weights <- .hzr_mask_eval("weights", arg_exprs, data, inputs)
   }
 
   # Data masking on the vector path. `data` used to be consulted only by the
@@ -1120,19 +1175,15 @@ hazard <- function(formula = NULL,
     if (!is.data.frame(data) && !is.list(data)) {
       stop("'data' must be a data frame or a list.", call. = FALSE)
     }
-    mask_env <- parent.frame()
     .hzr_warn_masked_ambiguity(
-      list(time = substitute(time), status = substitute(status),
-           time_lower = substitute(time_lower),
-           time_upper = substitute(time_upper),
-           weights = substitute(weights)),
-      data, mask_env, data_arg = data_arg
+      arg_exprs[c("time", "status", "time_lower", "time_upper", "weights")],
+      data, caller_env, data_arg = data_arg
     )
-    time <- eval(substitute(time), data, mask_env)
-    status <- eval(substitute(status), data, mask_env)
-    time_lower <- eval(substitute(time_lower), data, mask_env)
-    time_upper <- eval(substitute(time_upper), data, mask_env)
-    weights <- eval(substitute(weights), data, mask_env)
+    time <- .hzr_mask_eval("time", arg_exprs, data, inputs)
+    status <- .hzr_mask_eval("status", arg_exprs, data, inputs)
+    time_lower <- .hzr_mask_eval("time_lower", arg_exprs, data, inputs)
+    time_upper <- .hzr_mask_eval("time_upper", arg_exprs, data, inputs)
+    weights <- .hzr_mask_eval("weights", arg_exprs, data, inputs)
   }
 
   # After formula dispatch, require time and status
@@ -2069,8 +2120,15 @@ hazard <- function(formula = NULL,
   # into any saved model. Copy only the symbols the call actually references.
   # Computed here, not inside list(), so parent.frame() unambiguously resolves
   # to hazard()'s caller.
-  captured_call <- match.call()
-  captured_env <- .hzr_capture_call_env(captured_call, parent.frame())
+  # An inner fit stores the user's call, which the layer captured: its own
+  # call is the layer's, over this function's frame.
+  if (is.null(inputs$call)) {
+    captured_call <- match.call()
+    captured_env <- .hzr_capture_call_env(captured_call, parent.frame())
+  } else {
+    captured_call <- inputs$call
+    captured_env <- inputs$call_env
+  }
 
   # Assemble the hazard S3 object.
   # $call       -- captured call for reproducibility / print

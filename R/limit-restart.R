@@ -153,8 +153,44 @@
 .hzr_limit_state <- new.env(parent = emptyenv())
 .hzr_limit_state$inner <- FALSE
 # The grid start and control for the next inner call, read and cleared at its
-# entry: a restart re-evaluates the user's call as written.
+# entry.
 .hzr_limit_state$restart <- NULL
+# The user's argument expressions, calling frame, call and its captured
+# bindings, and a cache of the masked evaluations, for the next inner call;
+# read and cleared at its entry (#683 review).
+.hzr_limit_state$inputs <- NULL
+
+#' Evaluate one masked argument of hazard(), once per hazard() call
+#'
+#' `time`, `status`, `time_lower`, `time_upper` and `weights` may name
+#' columns of `data`, so hazard() evaluates the expression the user wrote
+#' with `data` masking the calling frame. Under the limit layer each inner
+#' fit would evaluate it again; `inputs$cache` holds the first evaluation
+#' and its warnings, so the expression runs once and every inner fit reads
+#' the same value, with the same warnings (#683 review). Every inner fit
+#' sees the same `data` value, so the cached value is the one it would
+#' compute. Outside the layer there is no cache and this is a plain eval().
+#' @param name Argument name. @param exprs Named list of the expressions.
+#' @param data The (masking) data. @param inputs `list(env, cache)`.
+#' @return The argument's value.
+#' @keywords internal
+#' @noRd
+.hzr_mask_eval <- function(name, exprs, data, inputs) {
+  cache <- inputs$cache
+  if (!is.null(cache) && exists(name, envir = cache, inherits = FALSE)) {
+    hit <- cache[[name]]
+    for (w in hit$warnings) warning(w)
+    return(hit$value)
+  }
+  caught <- list()
+  value <- withCallingHandlers(
+    eval(exprs[[name]], data, inputs$env),
+    warning = function(w) caught[[length(caught) + 1L]] <<- w)
+  if (!is.null(cache)) {
+    assign(name, list(value = value, warnings = caught), envir = cache)
+  }
+  value
+}
 
 #' Evaluate a hazard() call as the limit layer's inner call
 #'
@@ -162,17 +198,21 @@
 #' user as if they described the result) and its error is returned, not
 #' raised.
 #' @param cl A `hazard()` call. @param env Where to evaluate it.
+#' @param inputs `NULL` (evaluate `cl` as written), or the user's argument
+#'   expressions and call that the layer captured (see hazard()).
 #' @param restart `NULL`, or `list(theta, control)` to replace the call's own.
 #' @return `list(value, warnings)`; `value` is a fit or an error condition.
 #' @keywords internal
 #' @noRd
-.hzr_limit_capture <- function(cl, env, restart = NULL) {
+.hzr_limit_capture <- function(cl, env, inputs = NULL, restart = NULL) {
   old <- .hzr_limit_state$inner
   .hzr_limit_state$inner <- TRUE
   .hzr_limit_state$restart <- restart
+  .hzr_limit_state$inputs <- inputs
   on.exit({
     .hzr_limit_state$inner <- old
     .hzr_limit_state$restart <- NULL
+    .hzr_limit_state$inputs <- NULL
   }, add = TRUE)
   caught <- list()
   value <- tryCatch(
@@ -254,18 +294,19 @@
 
 #' hazard()'s limit layer: fit, check, restart or refuse
 #'
-#' @param cl `sys.call()` of the user's `hazard()` call.
-#' @param env Its `parent.frame()`.
+#' @param cl The inner `hazard()` call, over the outer call's own arguments.
+#' @param env The outer `hazard()` frame, whose arguments are already forced.
+#' @param inputs The user's argument expressions, calling frame and call.
 #' @param theta,control The call's evaluated `theta` and `control`.
 #' @return A `hazard` object; or an error is raised.
 #' @keywords internal
 #' @noRd
-.hzr_limit_fit <- function(cl, env, theta, control) {
+.hzr_limit_fit <- function(cl, env, inputs, theta, control) {
   restart <- control$limit_restart %||% TRUE
   if (!(isTRUE(restart) || isFALSE(restart))) {
     stop("control$limit_restart must be TRUE or FALSE.", call. = FALSE)
   }
-  first <- .hzr_limit_capture(cl, env)
+  first <- .hzr_limit_capture(cl, env, inputs)
   emit <- function(r) for (w in r$warnings) warning(w)
   if (inherits(first$value, "condition")) {
     emit(first)
@@ -311,7 +352,8 @@
   ctrl <- control
   ctrl$n_starts <- 1L   # the grid IS the multi-start; 9 x n_starts is waste
   runs <- lapply(grid, function(s) {
-    .hzr_limit_capture(cl, env, restart = list(theta = s, control = ctrl))
+    .hzr_limit_capture(cl, env, inputs,
+                       restart = list(theta = s, control = ctrl))
   })
   rows <- data.frame(
     start = seq_along(runs),

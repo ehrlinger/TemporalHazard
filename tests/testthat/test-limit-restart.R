@@ -279,3 +279,98 @@ test_that("a #729 restart through a `...` wrapper returns the direct call's fit"
                tolerance = 1e-10)
   expect_equal(direct$fit$objective / sas_ll_729, 1, tolerance = 1e-5)
 })
+
+# #683 review: the layer used to re-evaluate the user's call for every inner
+# fit, so an argument written in the call ran once per grid start (ten times
+# here) and a resampling `data =` gave each start a different dataset. Every
+# argument is now evaluated once, and every inner fit sees those values. The
+# #448 fixture is a hard trigger that runs the whole grid and refuses.
+avc_448 <- function() {
+  data(avc, package = "TemporalHazard", envir = environment())
+  k <- is.finite(avc$int_dead) & is.finite(avc$dead) & avc$int_dead > 0
+  data.frame(tt = avc$int_dead[k], st = avc$dead[k], one = 1)
+}
+# alpha = 1 is replaced by the value the constraint derives, with a warning.
+ph_448 <- suppressWarnings(list(
+  early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m"),
+  late = hzr_phase("g3", tau = 5, gamma = 1, alpha = 1, eta = 1,
+                   constraint = "alpha_gamma_eta")))
+refuse_448 <- function(expr) {
+  tryCatch(suppressWarnings(expr), hzr_limit_refusal = function(e) e)
+}
+# The grid ran: a refusal that tried no restart would make "once" trivial.
+expect_grid_ran <- function(err) {
+  expect_s3_class(err, "hzr_limit_refusal")
+  expect_match(conditionMessage(err), "None of [1-9][0-9]* restarts")
+}
+
+test_that("an argument written in the call is evaluated once (#683 review)", {
+  dd <- avc_448()
+  n <- 0L
+  err <- refuse_448(hazard(time = tt, status = st,
+                           data = {
+                             n <- n + 1L
+                             dd
+                           },
+                           dist = "multiphase", phases = ph_448, fit = TRUE,
+                           control = list(n_starts = 1L)))
+  expect_grid_ran(err)
+  expect_identical(n, 1L)
+  # A column-name argument holding user code runs once too, in the data mask.
+  m <- 0L
+  err <- refuse_448(hazard(time = tt, status = st, data = dd,
+                           weights = {
+                             m <<- m + 1L
+                             one
+                           },
+                           dist = "multiphase", phases = ph_448, fit = TRUE,
+                           control = list(n_starts = 1L)))
+  expect_grid_ran(err)
+  expect_identical(m, 1L)
+})
+
+test_that("a resampling data argument draws one resample (#683 review)", {
+  dd <- avc_448()
+  set.seed(1)
+  one_draw <- dd[sample(nrow(dd), replace = TRUE), ]
+  seed_after_one <- get(".Random.seed", envir = globalenv())
+  ref <- refuse_448(hazard(time = tt, status = st, data = one_draw,
+                           dist = "multiphase", phases = ph_448, fit = TRUE,
+                           control = list(n_starts = 1L)))
+  set.seed(1)
+  got <- refuse_448(hazard(time = tt, status = st,
+                           data = dd[sample(nrow(dd), replace = TRUE), ],
+                           dist = "multiphase", phases = ph_448, fit = TRUE,
+                           control = list(n_starts = 1L)))
+  # The layer drew nothing: the stream is where one sample() leaves it.
+  # (expect_true: testthat's diff of two seeds overflows an integer.)
+  expect_true(identical(get(".Random.seed", envir = globalenv()),
+                        seed_after_one))
+  # Every inner fit saw that one resample: the outcome is the fixed data's.
+  expect_identical(class(got), class(ref))
+  if (inherits(ref, "hzr_limit_refusal")) {
+    expect_grid_ran(got)
+    expect_identical(got$best_objective, ref$best_objective)
+  } else {
+    expect_identical(got$fit$objective, ref$fit$objective)
+    expect_identical(got$data$time, ref$data$time)
+  }
+})
+
+test_that("the vector interface is evaluated once on a triggering fit", {
+  dd <- avc_448()
+  n <- 0L
+  err <- refuse_448(hazard(time = {
+                             n <- n + 1L
+                             dd$tt
+                           },
+                           status = dd$st, weights = dd$one,
+                           dist = "multiphase", phases = ph_448, fit = TRUE,
+                           control = list(n_starts = 1L)))
+  expect_grid_ran(err)
+  expect_identical(n, 1L)
+  direct <- refuse_448(hazard(time = dd$tt, status = dd$st,
+                              dist = "multiphase", phases = ph_448, fit = TRUE,
+                              control = list(n_starts = 1L)))
+  expect_identical(err$best_objective, direct$best_objective)
+})
