@@ -49,10 +49,13 @@
 #' choice, as FIXNU is in SAS.
 #'
 #' @param object A `hazard` object, or a list with `$spec$phases` and `$fit`.
+#' @param unusable Whether an NA `$weak` from an unusable Hessian triggers.
+#'   `FALSE` reads it as before #734; `.hzr_limit_fit()` judges a hard or
+#'   flat-direction trigger's grid starts that way.
 #' @return `NULL`, or a list of `list(phase, parameter, limit, source)`.
 #' @keywords internal
 #' @noRd
-.hzr_limit_trigger <- function(object) {
+.hzr_limit_trigger <- function(object, unusable = TRUE) {
   phases <- object$spec$phases
   fs <- object$fit
   if (!length(phases)) return(NULL)
@@ -101,8 +104,10 @@
   # An NA reading on a fitted fit whose Hessian was unusable (#734): the
   # check could not look, and every measured drift into the m < 0 joint
   # limit ended there. It names no parameter, so each free G1 t_half is
-  # named; the grid varies t_half and nu in that phase.
-  if (.hzr_limit_weak_unusable(object)) {
+  # named; the grid varies t_half and nu in that phase. Only on a fit nothing
+  # else triggers on, so a hard trigger's grid, refusal and rescue are what
+  # they were.
+  if (unusable && !length(hits) && .hzr_limit_weak_unusable(object)) {
     for (ph in names(phases)) {
       if (!phases[[ph]]$type %in% c("cdf", "hazard") || ph %in% vanished) next
       if (!paste0(ph, ".log_t_half") %in% theta_names) next
@@ -405,13 +410,20 @@
     .hzr_limit_capture(cl, env, inputs,
                        restart = list(theta = s, control = ctrl))
   })
+  # A grid start is clean when it does not trigger. Under an unusable-Hessian
+  # trigger, a start whose Hessian is unusable too is in the same unchecked
+  # state, not a rescue (#734: on the #551 seed-15 fixture every start drifted
+  # to the same limit, one 0.0017 above the original). Every other trigger
+  # judges its starts as before #734.
+  strict <- all(vapply(trigger, `[[`, "", "source") == "weak_na")
   rows <- data.frame(
     start = seq_along(runs),
     objective = vapply(runs, function(r) {
       if (.hzr_limit_usable(r$value)) r$value$fit$objective else NA_real_
     }, numeric(1)),
     triggered = vapply(runs, function(r) {
-      .hzr_limit_usable(r$value) && !is.null(.hzr_limit_trigger(r$value))
+      .hzr_limit_usable(r$value) &&
+        !is.null(.hzr_limit_trigger(r$value, unusable = strict))
     }, logical(1)),
     error = vapply(runs, function(r) {
       if (inherits(r$value, "condition")) conditionMessage(r$value) else NA_character_

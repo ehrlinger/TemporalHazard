@@ -190,7 +190,11 @@ test_that("a lookup-only `data` of another length is checked by time (#487)", {
   expect_identical(.hzr_limit_reason(warm),
                    "limit: early.t_half ran to Inf (the rise lies past the data)")
   expect_equal(warm$best_objective, -553.21243263, tolerance = 1e-6)
-  expect_null(cap$starts[[1L]]$default$fit$limit)
+  # The default start's Hessian is unusable, so the limit layer tried the grid
+  # (#734). No start was clean, so the fit is the one the default reached.
+  dflt <- cap$starts[[1L]]$default$fit
+  expect_identical(dflt$limit$outcome, "kept")
+  expect_identical(dflt$objective, dflt$limit$original$objective)
   expect_identical(r$sw$fit$refit_start, "default")
   expect_identical(is.na(r$sw$fit$refit_objectives),
                    c(warm = TRUE, default = FALSE))

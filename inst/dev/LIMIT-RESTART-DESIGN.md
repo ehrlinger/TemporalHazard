@@ -95,6 +95,13 @@ these:
     and the fixed mask apply as above. With two G1 phases, that is up to 18 refits.
   - `NA` triggers only on a **fitted** fit: converged, a finite objective, and no
     `fitting` entry on `$degraded`. That excludes `fit = FALSE` and imported fits.
+  - It adds records only to a fit that nothing else triggers on. A hard trigger's grid,
+    refusal text and rescue are unchanged.
+  - Under this trigger alone, a grid start whose Hessian is also unusable is not
+    clean, so it cannot be the rescue: it is in the same unchecked state. Every other
+    trigger judges its starts as before. The first suite run judged all of them
+    strictly, and turned 16 rescues into refusals. Those rescues are
+    starts with an unusable Hessian of their own, which is a question for #734.
   - It does not trigger when the cause recorded in `$degraded_causes` is that
     numDeriv is not installed. A missing Suggests says nothing about the fit, and the
     estimates must not depend on whether it is installed. `$weak` itself is unchanged.

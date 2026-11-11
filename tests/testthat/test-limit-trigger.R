@@ -206,11 +206,20 @@ test_that("the NA trigger names every free G1 t_half and nothing else", {
   expect_identical(vapply(tr, `[[`, "", "phase"), "mid")
 })
 
-test_that("a hard record and an NA weak stay hard", {
+test_that("a hard record leaves the NA reading out, so the hard path is unchanged", {
+  # The NA reading adds records only to a fit nothing else triggers on: a
+  # hard trigger's grid, refusal text and rescue are what they were (#734).
   tr <- .hzr_limit_trigger(mk_na(
     boundary = list(list(mechanism = "phase_discontinuity", phase = "early"))))
-  expect_identical(vapply(tr, `[[`, "", "source"), c("phase_discontinuity", "weak_na"))
+  expect_identical(vapply(tr, `[[`, "", "source"), "phase_discontinuity")
   expect_true(.hzr_limit_is_hard(tr))
+})
+
+test_that("unusable = FALSE reads an NA weak as before #734", {
+  # How a hard or flat-direction trigger judges its grid starts: a start with
+  # an unusable Hessian could rescue them before #734, and still can.
+  expect_null(.hzr_limit_trigger(mk_na(), unusable = FALSE))
+  expect_length(.hzr_limit_trigger(mk_na()), 1L)
 })
 
 test_that("an NA weak that is not an unusable Hessian does not trigger", {

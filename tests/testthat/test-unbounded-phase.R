@@ -193,7 +193,12 @@ test_that("only an unbounded phase type is checked", {
   f <- ub_fit(d, list(early = hzr_phase("cdf", t_half = 0.5, nu = 1, m = 0),
                       late  = hzr_phase("constant")),
               theta = c(log(0.1), log(min(d$t) / 1000), 1, 0, log(0.05)))
-  expect_null(f$fit$boundary)
+  # Its Hessian is unusable, so the limit layer tries the grid (#734) and a
+  # start 20 log-likelihood units better wins. Neither the fit it examined
+  # nor the one it returns carries an unbounded_phase record.
+  expect_identical(f$fit$limit$outcome, "restarted")
+  expect_length(ub_records(f$fit$limit$original$boundary), 0L)
+  expect_length(ub_records(f$fit$boundary), 0L)
   expect_false("boundary_check" %in% f$degraded)
 })
 
