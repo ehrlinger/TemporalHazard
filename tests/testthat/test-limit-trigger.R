@@ -206,6 +206,16 @@ test_that("the NA trigger names every free G1 t_half and nothing else", {
   expect_identical(vapply(tr, `[[`, "", "phase"), "mid")
 })
 
+test_that("a fixed t_half with nu and m free gets no NA record", {
+  # The NA reading names t_half, and a fixed t_half is the user's choice, so
+  # a phase whose only fixed shape is t_half is not named even though nu and
+  # m are free (#734).
+  ph <- list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 1),
+             constant = hzr_phase("constant"))
+  expect_length(.hzr_limit_trigger(mk_na(phases = ph)), 1L)
+  expect_null(.hzr_limit_trigger(mk_na(phases = ph, fixed = "early.log_t_half")))
+})
+
 test_that("a hard record leaves the NA reading out, so the hard path is unchanged", {
   # The NA reading adds records only to a fit nothing else triggers on: a
   # hard trigger's grid, refusal text and rescue are what they were (#734).

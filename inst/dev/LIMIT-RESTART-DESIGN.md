@@ -105,6 +105,12 @@ these:
   - It does not trigger when the cause recorded in `$degraded_causes` is that
     numDeriv is not installed. A missing Suggests says nothing about the fit, and the
     estimates must not depend on whether it is installed. `$weak` itself is unchanged.
+    The exclusion covers only the fit **without** numDeriv. A fit **with** numDeriv
+    can still trigger here and be restarted, so its estimates can still differ from
+    the same call without numDeriv.
+  - The edge case: under a `weak_na` trigger, a grid start whose analytic Hessian failed
+    with numDeriv absent records the numDeriv cause, so it does not trigger and reads as
+    clean, although its identification was not checked either.
   - The rest of the misses (G21's `NULL` reading just above the rcond gate, and the
     `nu -> 0` exponential decay with `m < 0`) stay open in #734.
 

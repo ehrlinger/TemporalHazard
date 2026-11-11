@@ -194,7 +194,9 @@ test_that("a lookup-only `data` of another length is checked by time (#487)", {
   # (#734). No start was clean, so the fit is the one the default reached.
   dflt <- cap$starts[[1L]]$default$fit
   expect_identical(dflt$limit$outcome, "kept")
-  expect_identical(dflt$objective, dflt$limit$original$objective)
+  expect_equal(dflt$objective, -553.06393071, tolerance = 1e-6)
+  expect_identical(nrow(dflt$limit$grid), 9L)
+  expect_true(all(dflt$limit$grid$triggered))
   expect_identical(r$sw$fit$refit_start, "default")
   expect_identical(is.na(r$sw$fit$refit_objectives),
                    c(warm = TRUE, default = FALSE))

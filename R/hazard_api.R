@@ -571,9 +571,16 @@ NULL
 #'   with an error of class `hzr_limit_refusal` naming the parameter. A flat
 #'   direction through a shape (the weak-identification reading) only tries
 #'   the grid: a better fit is returned if one is found, and otherwise the
-#'   original fit is returned unchanged. The original fit is recorded in
-#'   `fit$fit$limit`. With `FALSE` the grid is skipped: a limit found by the
-#'   boundary checks then refuses at once, and a flat direction returns the
+#'   original fit is returned unchanged. A fit whose Hessian cannot be used,
+#'   so that it has no standard errors and its identification cannot be
+#'   checked, also only tries the grid. A grid start replaces it only when its
+#'   objective is strictly better and its own identification can be checked
+#'   (`outcome = "restarted"`); otherwise the original is kept
+#'   (`outcome = "kept"`). This trigger never refuses on its own, and it does
+#'   not fire when the Hessian is unusable only because the numDeriv package
+#'   is not installed. The original fit is recorded in `fit$fit$limit`. With
+#'   `FALSE` the grid is skipped: a limit found by the boundary checks then
+#'   refuses at once, and a flat direction or an unusable Hessian returns the
 #'   original fit.
 #' - `phase_share_tol`: Threshold for the multiphase identifiability warning
 #'   (default 1e-8). A phase is reported as having left the model when it
@@ -930,9 +937,14 @@ NULL
 #'   \code{winner}, \code{outcome}), which also raises a warning of class
 #'   \code{"hzr_limit_restarted"}. A fit that cannot be rescued is not
 #'   returned: \code{hazard()} stops with class \code{"hzr_limit_refusal"}.
-#'   A fit whose only flag is a flat direction (a ridge) tries the same
-#'   restart, but is never refused: when no restart does better it is returned
-#'   unchanged, with \code{outcome = "kept"} and \code{winner = NA}.
+#'   A fit whose only flag is a flat direction (a ridge), or a Hessian that
+#'   cannot be used (no standard errors), tries the same restart but is never
+#'   refused: when no restart does better it is returned unchanged, with
+#'   \code{outcome = "kept"} and \code{winner = NA}. For an unusable Hessian,
+#'   a restart counts as better only when its objective is strictly higher and
+#'   its own identification can be checked. An unusable Hessian does not
+#'   trigger the restart when the cause is that the numDeriv package is not
+#'   installed.
 #' @export
 hazard <- function(formula = NULL,
                    data = NULL,
