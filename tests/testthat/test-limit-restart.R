@@ -523,6 +523,65 @@ test_that("user code in a phase formula runs as often as without the layer", {
   expect_identical(got$fit$theta, off$fit$theta)
 })
 
+test_that("a phase formula's warning reaches the user as often as without the layer", {
+  # The layer's setup rebuilt the first fit's phases and replayed the cached
+  # warning beside the first fit's own: twice, against once (#683 review).
+  dd <- avc_mal()
+  wf <- function(v) {
+    warning("planted phase-formula warning")
+    v
+  }
+  count <- function(limit_restart) {
+    k <- 0L
+    ph <- suppressWarnings(list(
+      early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m",
+                        formula = ~ wf(mal)),
+      late = hzr_phase("g3", tau = 5, gamma = 1, alpha = 1, eta = 1,
+                       constraint = "alpha_gamma_eta")))
+    fit <- withCallingHandlers(
+      hazard(survival::Surv(tt, st) ~ 1, data = dd, dist = "multiphase",
+             phases = ph, fit = TRUE,
+             control = list(n_starts = 1L, limit_restart = limit_restart)),
+      warning = function(w) {
+        if (grepl("planted phase-formula warning", conditionMessage(w),
+                  fixed = TRUE)) k <<- k + 1L
+        invokeRestart("muffleWarning")
+      })
+    list(fit = fit, k = k)
+  }
+  on <- count(TRUE)
+  expect_kept_grid(on$fit)
+  off <- count(FALSE)
+  expect_identical(off$k, 1L)
+  expect_identical(on$k, off$k)
+})
+
+test_that("the phase-design cache rebuilds for another formula or other rows", {
+  # The cache is keyed on the phase name, and an entry is reused only for an
+  # identical formula and data; anything else is built fresh, as without it.
+  dd <- avc_mal()
+  n <- 0L
+  cnt <- function(v) {
+    n <<- n + 1L
+    v
+  }
+  old <- .hzr_limit_state$cache
+  .hzr_limit_state$cache <- new.env(parent = emptyenv())
+  on.exit(.hzr_limit_state$cache <- old, add = TRUE)
+  f1 <- ~ cnt(mal)
+  a <- .hzr_phase_formula_design("early", f1, dd)
+  b <- .hzr_phase_formula_design("early", f1, dd)
+  expect_identical(n, 1L)
+  expect_identical(b, a)
+  f2 <- ~ I(2 * cnt(mal))
+  d2 <- .hzr_phase_formula_design("early", f2, dd)
+  expect_identical(n, 2L)
+  expect_equal(unname(d2$x[, 1L]), 2 * unname(a$x[, 1L]))
+  short <- .hzr_phase_formula_design("early", f1, dd[1:50, ])
+  expect_identical(n, 3L)
+  expect_identical(nrow(short$x), 50L)
+})
+
 test_that("a random term in a phase formula draws once (#683 review)", {
   dd <- avc_mal()
   # Multiplied by 0, so the design is `mal` and the fit stays on its trigger;

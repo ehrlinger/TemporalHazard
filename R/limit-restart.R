@@ -452,7 +452,9 @@
                             disabled = TRUE))
   }
   fit0 <- first$value
-  prep <- .hzr_evaluate_prepare(fit0)
+  # This rebuilds the first fit's phases, so any warning it raises is one the
+  # first fit raised, and emit(first) reports those (#683 review).
+  prep <- suppressWarnings(.hzr_evaluate_prepare(fit0))
   # The user's start: their theta if they gave one, else the phase specs'
   # default, assembled as the optimizer assembles it.
   start <- if (!is.null(theta)) {
