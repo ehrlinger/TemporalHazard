@@ -12,7 +12,7 @@ limit_trigger_hard <- function(phase) {
 # the layer refuses. Bases are built OUTSIDE this, so they exist.
 with_refusal <- function(code) {
   testthat::local_mocked_bindings(
-    .hzr_limit_trigger = function(object) {
+    .hzr_limit_trigger = function(object, unusable = TRUE) {
       limit_trigger_hard(names(object$spec$phases)[[1]])
     },
     .hzr_limit_grid = function(...) list(),
@@ -120,7 +120,7 @@ with_restart <- function(code) {
   state <- new.env()
   state$outer <- TRUE
   testthat::local_mocked_bindings(
-    .hzr_limit_trigger = function(object) {
+    .hzr_limit_trigger = function(object, unusable = TRUE) {
       hit <- state$outer
       state$outer <- !state$outer
       if (hit) limit_trigger_hard(names(object$spec$phases)[[1]])
