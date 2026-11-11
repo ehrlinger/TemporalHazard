@@ -2143,7 +2143,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     fails as a non-finite objective, not at the sentinel (#486).}
 #'   \item{failure_reasons}{Named integer vector counting why replicates
 #'     failed, most common first: the refit's error message (or
-#'     `"error with an empty message"`),
+#'     `"error with an empty message"`), except that a refit `hazard()`
+#'     refused because a shape parameter ran to a limit is counted under one
+#'     short reason such as `"limit: early.nu ran to 0"`,
 #'     `"refit returned a <class>, not a fit object"` (`"an <class>"` when the
 #'     class begins with a vowel; or `"... with no \code{fit}, not a fit
 #'     object"`), `"refit returned no parameter

@@ -205,6 +205,20 @@ fit <- hazard(
 > written there leaves `M` free, and `hazard()` warns that it never reads
 > `control$fix`.
 
+The fix keywords also carry the other half of the SAS workflow. HAZARD
+never checks whether a shape parameter has run to a limit, a `THALF` below
+the first observed time or a `NU` heading to 0 as the early phase collapses
+into a step. You spot that in the listing, then pin the parameter with
+`FIXNU` or `FIXTHALF` and refit. `hazard()` does the spotting for you. When
+a multiphase fit lands on a limit, it refits from a fixed grid of starts and
+returns the best start that stays clear of every limit, with a warning of
+class `hzr_limit_restarted`. When no start does, or a fit at the limit
+still beats every clean one, it stops with an error of
+class `hzr_limit_refusal` that names the parameter, and you make the
+`FIXNU` decision yourself: `hzr_phase(..., nu = <value>, fixed = "nu")` is
+`FIXNU`, and `fixed = "t_half"` is `FIXTHALF`. `print(fit)` always shows a
+`Limit check:` line, so a clean fit says so too.
+
 ---
 
 ### `EARLY` and `CONSTANT` covariate blocks

@@ -201,6 +201,15 @@ left- or interval-censored, the analytic Hessian declines and
 `numDeriv::hessian()` computes it numerically. `numDeriv` is a Suggests,
 so without it those fits have no standard errors.
 
+Above the optimizer, `hazard()` checks every fitted multiphase model for a
+free shape parameter at a limit (`R/limit-restart.R`). When it finds one it
+refits from a fixed grid of starts and returns the best start that stays
+clear of every limit, or stops with an error of class `hzr_limit_refusal`.
+A flat direction or an unusable Hessian tries the same grid but keeps the
+original fit when no start does better. `?hazard`, under
+`control$limit_restart`, has the rules, and `print()` reports the outcome on
+its `Limit check:` line.
+
 
 # Golden fixture system
 

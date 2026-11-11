@@ -38,7 +38,9 @@ NULL
 #' Find phases fitted outside the support their parameterisation can carry
 #'
 #' A DIAGNOSIS run after the optimizer returns, never a constraint: it does
-#' not move an estimate, and a fit that trips it still returns its fit. An
+#' not move an estimate. On a multiphase fit the limit layer
+#' (`R/limit-restart.R`) acts on what it records: it restarts the fit or
+#' refuses it. An
 #' unbounded phase type (`.hzr_phase_type_unbounded()`) whose fitted `t_half`
 #' lies below the first observed time has left the data, and `-log(1 - G)` is
 #' then evaluated where `G` is essentially 1 (#444).
@@ -902,11 +904,17 @@ NULL
 #'   \code{"hazard"} phase whose \code{t_half} is below the first observed
 #'   time; \code{"phase_discontinuity"}, a \code{"cdf"} or \code{"hazard"}
 #'   phase whose shape has collapsed to a step the observed times cannot
-#'   resolve (it can lie inside the data); and two made at setup, before the
+#'   resolve (it can lie inside the data); \code{"phase_beyond_data"}, a
+#'   \code{"cdf"} or \code{"hazard"} phase whose \code{t_half} lies past
+#'   the last observed time, where its \code{G} is still numerically 0 and
+#'   \code{t_half} is not identified. On a multiphase fit these three, on a
+#'   shape parameter left free, are the limits that trigger the restart
+#'   described under \code{fit$fit$limit} below, so a fit \code{hazard()}
+#'   returns does not carry one. Two more are made at setup, before the
 #'   fit: \code{"g3_alpha_one"} (a g3 phase with \code{alpha} fixed at 1,
 #'   re-expressed as PROC HAZARD does, see [hzr_phase()]) and
 #'   \code{"g3_fixge2_alpha_start"} (a free \code{alpha} start moved to 2/3
-#'   under \code{constraint = "eta_gamma"}); and two made after it.
+#'   under \code{constraint = "eta_gamma"}). Two more are made after it.
 #'   \code{"g3_corner_supremum"} is a g3 phase under
 #'   \code{constraint = "eta_gamma"} whose estimated \code{gamma} converged
 #'   below 1000 although the log-likelihood is higher at a much larger

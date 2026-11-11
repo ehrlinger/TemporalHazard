@@ -141,7 +141,9 @@ ends where the likelihood is not defined reports no objective, so it
 fails as a non-finite objective, not at the sentinel (#486).}
 \item{failure_reasons}{Named integer vector counting why replicates
 failed, most common first: the refit's error message (or
-\code{"error with an empty message"}),
+\code{"error with an empty message"}), except that a refit \code{hazard()}
+refused because a shape parameter ran to a limit is counted under one
+short reason such as \code{"limit: early.nu ran to 0"},
 \code{"refit returned a <class>, not a fit object"} (\code{"an <class>"} when the
 class begins with a vowel; or \code{"... with no \code{fit}, not a fit object"}), \code{"refit returned no parameter estimates"}, or
 \code{"non-finite objective (did not converge)"} (the reason for a
