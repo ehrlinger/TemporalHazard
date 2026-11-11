@@ -374,3 +374,46 @@ test_that("the vector interface is evaluated once on a triggering fit", {
                               control = list(n_starts = 1L)))
   expect_identical(err$best_objective, direct$best_objective)
 })
+
+test_that("#734: an unusable Hessian in the m < 0 joint limit is checked, and kept", {
+  # The #551 generator, seed 15: the early phase runs to t_half and nu near
+  # infinity with m < 0 (log t_half 512.9, nu 317.8, m -0.312), a power law.
+  # The Hessian is not positive definite there, so $weak is NA and, before
+  # #734, nothing triggered. Every grid start drifts to the same limit, so
+  # no clean start can win and the original is kept (measured 2026-11-11:
+  # 9 starts, all triggered, objectives -399.586 to -399.638).
+  set.seed(15)
+  n <- 300
+  x1 <- stats::rnorm(n)
+  x2 <- stats::rnorm(n)
+  early <- stats::runif(n) < 0.3
+  tt <- ifelse(early, stats::rexp(n, 8), stats::rexp(n, 0.2 * exp(1.5 * x1)))
+  cens <- stats::runif(n, 2, 15)
+  d <- data.frame(tt = pmin(tt, cens) + 0.001, ev = as.numeric(tt <= cens))
+  fit_551 <- function(limit_restart = TRUE) {
+    hazard(time = d$tt, status = d$ev, dist = "multiphase",
+           phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                         const = hzr_phase("constant")),
+           fit = TRUE, control = list(limit_restart = limit_restart))
+  }
+  fit <- suppressWarnings(fit_551())
+  expect_identical(fit$fit$weak, NA)
+  expect_gt(fit$fit$theta[["early.log_t_half"]], 100)
+  expect_lt(fit$fit$theta[["early.m"]], 0)
+  lim <- fit$fit$limit
+  expect_type(lim, "list")
+  expect_identical(lim$outcome, "kept")
+  expect_identical(lim$trigger, list(list(
+    phase = "early", parameter = "t_half",
+    limit = "no usable Hessian (identification not checked)", source = "weak_na")))
+  expect_identical(nrow(lim$grid), 9L)
+  expect_true(all(lim$grid$triggered))
+  expect_true(all(is.finite(lim$grid$objective)))
+  expect_match(paste(utils::capture.output(print(fit)), collapse = "\n"), paste0(
+    "Limit check: restart tried (early.t_half: no usable Hessian ",
+    "(identification not checked)); none better, original kept"), fixed = TRUE)
+  # Weak-only: with the layer off, the same fit and no record.
+  off <- suppressWarnings(fit_551(limit_restart = FALSE))
+  expect_null(off$fit$limit)
+  expect_identical(off$fit$theta, fit$fit$theta)
+})

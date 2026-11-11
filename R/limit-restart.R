@@ -43,7 +43,8 @@
 #' Does a fitted multiphase object show a shape parameter at a limit?
 #'
 #' Reads only what the object carries: `$fit$boundary` records whose
-#' mechanism is a limit, and a `$fit$weak` direction that names a shape.
+#' mechanism is a limit, a `$fit$weak` direction that names a shape, and a
+#' `$fit$weak` of NA from an unusable Hessian (#734).
 #' A parameter the user fixed never triggers: holding it there was their
 #' choice, as FIXNU is in SAS.
 #'
@@ -97,7 +98,54 @@
           "a flat direction (not identified)", "weak")
     }
   }
+  # An NA reading on a fitted fit whose Hessian was unusable (#734): the
+  # check could not look, and every measured drift into the m < 0 joint
+  # limit ended there. It names no parameter, so each free G1 t_half is
+  # named; the grid varies t_half and nu in that phase.
+  if (.hzr_limit_weak_unusable(object)) {
+    for (ph in names(phases)) {
+      if (!phases[[ph]]$type %in% c("cdf", "hazard") || ph %in% vanished) next
+      if (!paste0(ph, ".log_t_half") %in% theta_names) next
+      add(ph, "t_half", "no usable Hessian (identification not checked)",
+          "weak_na")
+    }
+  }
   if (!length(hits)) NULL else unname(hits)
+}
+
+#' Is `$weak` NA because the Hessian at a fitted optimum was unusable?
+#'
+#' `$weak` is NA for any reason the check could not look, and only some of
+#' those are about the fit (#734). Not one of them: an unfitted or imported
+#' object ("fitting" on the record), a fit that did not converge or has no
+#' objective (no optimum to take a Hessian at), and numDeriv not installed
+#' (a missing Suggests says nothing about the fit, and the estimates must not
+#' depend on it). The numDeriv reasons are the strings R/optimizer.R and
+#' .hzr_optim_multiphase() record; `$weak` itself is unchanged.
+#' @param object A `hazard` object.
+#' @return `TRUE` or `FALSE`.
+#' @keywords internal
+#' @noRd
+.hzr_limit_weak_unusable <- function(object) {
+  fs <- object$fit
+  if (!.hzr_is_na_scalar(fs$weak)) return(FALSE)
+  if ("fitting" %in% object$degraded) return(FALSE)
+  if (isFALSE(fs$converged) || !isTRUE(is.finite(fs$objective))) return(FALSE)
+  causes <- object$degraded_causes[c("standard_errors", "weak_direction_check")]
+  !any(grepl("numDeriv not installed", causes, fixed = TRUE))
+}
+
+#' Does a trigger hold a record that is not weak-only?
+#'
+#' A flat direction (`"weak"`) and an unusable Hessian (`"weak_na"`) try the
+#' grid and keep the original unless it does better; anything else restarts
+#' or refuses.
+#' @param trigger Output of `.hzr_limit_trigger()`.
+#' @return `TRUE` or `FALSE`.
+#' @keywords internal
+#' @noRd
+.hzr_limit_is_hard <- function(trigger) {
+  any(!vapply(trigger, `[[`, "", "source") %in% c("weak", "weak_na"))
 }
 
 # The grid's nu values. Spread across the sigmoid's usable range on the
@@ -226,7 +274,8 @@
 
 .hzr_limit_describe <- function(trigger) {
   paste(vapply(trigger, function(r) {
-    paste0(r$phase, ".", r$parameter, " ran to ", r$limit)
+    paste0(r$phase, ".", r$parameter,
+           if (identical(r$source, "weak_na")) ": " else " ran to ", r$limit)
   }, character(1)), collapse = "; ")
 }
 
@@ -317,10 +366,11 @@
     emit(first)
     return(first$value)
   }
-  # A weak-only trigger (a flat direction and nothing else) is an ordinary
-  # ridge, not a drift: it tries the grid, and keeps the original unless the
-  # grid does better. A hard trigger restarts or refuses.
-  hard <- any(vapply(trigger, function(r) !identical(r$source, "weak"), logical(1)))
+  # A weak-only trigger (a flat direction, or an unusable Hessian (#734), and
+  # nothing else) is an ordinary ridge, not a drift: it tries the grid, and
+  # keeps the original unless the grid does better. A hard trigger restarts
+  # or refuses.
+  hard <- .hzr_limit_is_hard(trigger)
   if (!restart && !hard) {
     emit(first)
     return(first$value)

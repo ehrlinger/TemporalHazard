@@ -84,6 +84,22 @@ these:
   - It is built beside the existing records in `hazard_api.R` (around lines 95-140),
     and reads every observed time, as #444 does.
   - Like #448, it thresholds no parameter and asks a question of the data.
+- **Amended 2026-11-11 (#734): `$weak` is `NA` because the Hessian was unusable.**
+  - On 10 of the 14 drifted fits measured for #734, the fit converged into the
+    `m < 0` joint limit (`nu` and `t_half` to infinity together, a power law). Its
+    Hessian was not positive definite, or missing, so `$weak` was `NA`. The trigger read
+    only a list, so nothing fired.
+  - Such a fit is now a **weak-only** trigger, with source `"weak_na"`. `NA` names no
+    parameter, so there is one record per free G1 (`cdf` or `hazard`) phase: `t_half`,
+    limit "no usable Hessian (identification not checked)". The vanished-phase exclusion
+    and the fixed mask apply as above. With two G1 phases, that is up to 18 refits.
+  - `NA` triggers only on a **fitted** fit: converged, a finite objective, and no
+    `fitting` entry on `$degraded`. That excludes `fit = FALSE` and imported fits.
+  - It does not trigger when the cause recorded in `$degraded_causes` is that
+    numDeriv is not installed. A missing Suggests says nothing about the fit, and the
+    estimates must not depend on whether it is installed. `$weak` itself is unchanged.
+  - The rest of the misses (G21's `NULL` reading just above the rcond gate, and the
+    `nu -> 0` exponential decay with `m < 0`) stay open in #734.
 
 ### Restart: `.hzr_limit_restart()`
 

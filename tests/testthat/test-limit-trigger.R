@@ -151,3 +151,98 @@ test_that("print() shows the limit line for a multiphase object", {
   expect_match(paste(utils::capture.output(print(summary(obj))), collapse = "\n"),
                "Limit check: not run", fixed = TRUE)
 })
+
+# #734: a fitted multiphase fit whose Hessian was unusable has $weak NA, and
+# that NA names no parameter. It triggers weak-only, once per free G1 t_half.
+mk_na <- function(phases = phases2, theta = NULL, fixed = NULL, boundary = NULL,
+                  weak_cause = "covariance is not positive definite",
+                  se_cause = NULL, converged = TRUE, objective = -10,
+                  degraded = c("standard_errors", "weak_direction_check")) {
+  th <- theta %||% c(early.log_mu = 0, early.log_t_half = 0, early.nu = 1,
+                     early.m = 1, constant.log_mu = 0, early.age = 0.1)
+  causes <- c(standard_errors = se_cause %||% "no finite positive variance for: early.m",
+              weak_direction_check = weak_cause)[degraded]
+  list(spec = list(dist = "multiphase", phases = phases),
+       fit = list(theta = th, boundary = boundary, weak = NA,
+                  converged = converged, objective = objective,
+                  fixed_mask = if (is.null(fixed)) NULL else names(th) %in% fixed),
+       degraded = degraded, degraded_causes = causes)
+}
+na_limit <- "no usable Hessian (identification not checked)"
+
+test_that("an unusable Hessian on a fitted fit triggers weak-only (#734)", {
+  for (cause in c("covariance is not positive definite",
+                  "Hessian not positive-definite at the optimum",
+                  "covariance has non-finite entries",
+                  "standard errors unavailable")) {
+    tr <- .hzr_limit_trigger(mk_na(weak_cause = cause))
+    expect_length(tr, 1L)
+    expect_identical(tr[[1]]$phase, "early")
+    expect_identical(tr[[1]]$parameter, "t_half")
+    expect_identical(tr[[1]]$limit, na_limit)
+    expect_identical(tr[[1]]$source, "weak_na")
+    expect_false(.hzr_limit_is_hard(tr))
+  }
+})
+
+test_that("the NA trigger names every free G1 t_half and nothing else", {
+  ph <- list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 1),
+             mid = hzr_phase("hazard", t_half = 1, nu = 1, m = 1),
+             constant = hzr_phase("constant"),
+             late = hzr_phase("g3", tau = 1, gamma = 1, alpha = 1, eta = 1))
+  th <- c(early.log_mu = 0, early.log_t_half = 0, early.nu = 1, early.m = 1,
+          mid.log_mu = 0, mid.log_t_half = 0, mid.nu = 1, mid.m = 1,
+          constant.log_mu = 0, late.log_mu = 0, late.log_tau = 0,
+          late.gamma = 1, late.alpha = 1, late.eta = 1)
+  tr <- .hzr_limit_trigger(mk_na(phases = ph, theta = th))
+  expect_identical(vapply(tr, `[[`, "", "phase"), c("early", "mid"))
+  expect_true(all(vapply(tr, `[[`, "", "parameter") == "t_half"))
+  # A fixed t_half is the user's choice, and a vanished phase is a different
+  # limit (#565): neither is named.
+  tr <- .hzr_limit_trigger(mk_na(phases = ph, theta = th, fixed = "mid.log_t_half"))
+  expect_identical(vapply(tr, `[[`, "", "phase"), "early")
+  van <- list(list(mechanism = "coe_phase_vanished", phase = "early"))
+  tr <- .hzr_limit_trigger(mk_na(phases = ph, theta = th, boundary = van))
+  expect_identical(vapply(tr, `[[`, "", "phase"), "mid")
+})
+
+test_that("a hard record and an NA weak stay hard", {
+  tr <- .hzr_limit_trigger(mk_na(
+    boundary = list(list(mechanism = "phase_discontinuity", phase = "early"))))
+  expect_identical(vapply(tr, `[[`, "", "source"), c("phase_discontinuity", "weak_na"))
+  expect_true(.hzr_limit_is_hard(tr))
+})
+
+test_that("an NA weak that is not an unusable Hessian does not trigger", {
+  # fit = FALSE: no objective, and "fitting" is on the record.
+  expect_null(.hzr_limit_trigger(mk_na(objective = NA_real_, converged = NA,
+    degraded = c("fitting", "standard_errors", "weak_direction_check"))))
+  # Imported from SAS: fitting on the record.
+  expect_null(.hzr_limit_trigger(mk_na(
+    degraded = c("fitting", "standard_errors", "weak_direction_check"))))
+  # The fit did not converge: there is no optimum to take a Hessian at.
+  expect_null(.hzr_limit_trigger(mk_na(converged = FALSE, objective = NA_real_)))
+  # numDeriv not installed: the check could not be made, which says nothing
+  # about the fit, so the estimates must not depend on an installed Suggests.
+  expect_null(.hzr_limit_trigger(mk_na(weak_cause = "standard errors unavailable",
+    se_cause = "numDeriv not installed and no analytic Hessian")))
+  expect_null(.hzr_limit_trigger(mk_na(weak_cause = "standard errors unavailable",
+    se_cause = paste0("Conservation-of-Events full-information variance could ",
+                      "not be computed (numDeriv not installed)"))))
+  # Every shape fixed: no free t_half to name.
+  expect_null(.hzr_limit_trigger(mk_na(fixed = c("early.log_t_half", "early.nu", "early.m"))))
+  # Not multiphase.
+  expect_null(.hzr_limit_trigger(list(spec = list(dist = "weibull", phases = NULL),
+    fit = list(theta = c(mu = 0, nu = 1), weak = NA, converged = TRUE, objective = -1),
+    degraded = "weak_direction_check")))
+})
+
+test_that("the NA trigger reads sensibly in the limit line", {
+  trig <- list(list(phase = "early", parameter = "t_half", limit = na_limit,
+                    source = "weak_na"))
+  kept <- list(trigger = trig, outcome = "kept",
+               grid = data.frame(start = 1:2, objective = c(-5, -4)), winner = NA_integer_)
+  expect_identical(.hzr_limit_line(kept), paste0(
+    "  Limit check: restart tried (early.t_half: no usable Hessian ",
+    "(identification not checked)); none better, original kept"))
+})
