@@ -229,18 +229,38 @@
 #' @keywords internal
 #' @noRd
 .hzr_mask_eval <- function(name, exprs, data, inputs) {
+  .hzr_limit_once(name, inputs, function() {
+    eval(exprs[[name]], data, inputs$env)
+  })
+}
+
+#' Compute a value once per hazard() call under the limit layer
+#'
+#' The cache behind .hzr_mask_eval(), for any step of hazard()'s body that
+#' runs user code and gives every inner fit the same result: the formula's
+#' parse runs the user's code in the formula, so each inner fit would run it
+#' again (#683 review). The first call runs `fun()` and stores its value and
+#' warnings under `key` in `inputs$cache`; a later call replays the warnings
+#' and returns the stored value. Outside the layer there is no cache, and
+#' this is `fun()`.
+#' @param key Cache key. @param inputs `list(cache)`, or `NULL`.
+#' @param fun A function of no arguments.
+#' @return The value of `fun()`.
+#' @keywords internal
+#' @noRd
+.hzr_limit_once <- function(key, inputs, fun) {
   cache <- inputs$cache
-  if (!is.null(cache) && exists(name, envir = cache, inherits = FALSE)) {
-    hit <- cache[[name]]
+  if (!is.null(cache) && exists(key, envir = cache, inherits = FALSE)) {
+    hit <- cache[[key]]
     for (w in hit$warnings) warning(w)
     return(hit$value)
   }
   caught <- list()
   value <- withCallingHandlers(
-    eval(exprs[[name]], data, inputs$env),
+    fun(),
     warning = function(w) caught[[length(caught) + 1L]] <<- w)
   if (!is.null(cache)) {
-    assign(name, list(value = value, warnings = caught), envir = cache)
+    assign(key, list(value = value, warnings = caught), envir = cache)
   }
   value
 }

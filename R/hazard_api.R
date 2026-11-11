@@ -1138,8 +1138,12 @@ hazard <- function(formula = NULL,
     # The messages it warns with, so a re-parse after dropping rows at time 0
     # does not repeat them (#484). Recorded, not muffled.
     parse_warnings <- character(0)
+    # Once per hazard() call under the limit layer: the parse runs the
+    # user's code in the formula (#683 review).
     parsed <- withCallingHandlers(
-      .hzr_parse_formula(formula = formula, data = data),
+      .hzr_limit_once("formula_parse", inputs, function() {
+        .hzr_parse_formula(formula = formula, data = data)
+      }),
       warning = function(w) {
         parse_warnings <<- c(parse_warnings, conditionMessage(w))
       }
@@ -1390,7 +1394,10 @@ hazard <- function(formula = NULL,
       #      a kept row a value other than its own. scale(), poly(), ns() and
       #      factor coding do not. See .hzr_position_bound_columns() for
       #      what it cannot see.
-      position_bound <- .hzr_position_bound_columns(forms, data_full, keep)
+      position_bound <- .hzr_limit_once("formula_position_bound", inputs,
+                                        function() {
+        .hzr_position_bound_columns(forms, data_full, keep)
+      })
       if (length(position_bound)) {
         stop(n_dropped_time_zero, " row(s) are at time 0 and are dropped ",
              "before fitting, as PROC HAZARD drops them, but the formula's ",
@@ -1409,7 +1416,9 @@ hazard <- function(formula = NULL,
       #     Surv(time - min(time), status) -- and has no consistent fit.
       if (!is.null(formula) && any(keep)) {
         reparsed <- withCallingHandlers(
-          .hzr_parse_formula(formula = formula, data = data),
+          .hzr_limit_once("formula_reparse", inputs, function() {
+            .hzr_parse_formula(formula = formula, data = data)
+          }),
           hzr_intercept_removed = function(w) invokeRestart("muffleWarning"),
           # A warning the first parse already raised is muffled, once per
           # time it was raised; one only these rows raise still reaches the

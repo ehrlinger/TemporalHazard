@@ -375,6 +375,66 @@ test_that("the vector interface is evaluated once on a triggering fit", {
   expect_identical(err$best_objective, direct$best_objective)
 })
 
+# #683 review: user code inside the formula ran once per inner fit, because
+# each fit parsed the formula into its own response and design: cnt() below
+# ran ten times on the #448 grid against once without the layer. The parse is
+# now done once per hazard() call, and every inner fit reads it.
+fit_cnt_448 <- function(dd, limit_restart = TRUE) {
+  n <- 0L
+  cnt <- function(v) {
+    n <<- n + 1L
+    v
+  }
+  err <- refuse_448(hazard(survival::Surv(cnt(tt), st) ~ 1, data = dd,
+                           dist = "multiphase", phases = ph_448, fit = TRUE,
+                           control = list(n_starts = 1L,
+                                          limit_restart = limit_restart)))
+  list(err = err, n = n)
+}
+
+test_that("user code in the formula runs as often as without the layer", {
+  dd <- avc_448()
+  got <- fit_cnt_448(dd)
+  expect_grid_ran(got$err)
+  off <- fit_cnt_448(dd, limit_restart = FALSE)
+  expect_s3_class(off$err, "hzr_limit_refusal")
+  expect_identical(off$n, 1L)
+  expect_identical(got$n, off$n)
+  # Rows at time 0 are dropped and the formula parsed again on the kept rows:
+  # that second parse is done once per call too.
+  d0 <- rbind(dd[1:3, ], dd)
+  d0$tt[1:3] <- 0
+  got <- fit_cnt_448(d0)
+  expect_grid_ran(got$err)
+  off <- fit_cnt_448(d0, limit_restart = FALSE)
+  expect_identical(off$n, 2L)
+  expect_identical(got$n, off$n)
+})
+
+test_that("a random term in the formula draws once (#683 review)", {
+  dd <- avc_448()
+  # The draw is multiplied by 0: a jitter of even 1e-12 moves this fixture
+  # off its trigger, and without one the grid does not run. So the response
+  # is `tt`, and only the stream records how many draws were made.
+  set.seed(3)
+  invisible(stats::runif(nrow(dd)))
+  seed_after_one <- get(".Random.seed", envir = globalenv())
+  ref <- refuse_448(hazard(survival::Surv(tt, st) ~ 1, data = dd,
+                           dist = "multiphase", phases = ph_448, fit = TRUE,
+                           control = list(n_starts = 1L)))
+  set.seed(3)
+  got <- refuse_448(hazard(
+    survival::Surv(tt + 0 * stats::runif(length(tt)), st) ~ 1,
+    data = dd, dist = "multiphase", phases = ph_448, fit = TRUE,
+    control = list(n_starts = 1L)))
+  expect_grid_ran(got)
+  # The stream is where one runif() leaves it, as without the layer.
+  expect_true(identical(get(".Random.seed", envir = globalenv()),
+                        seed_after_one))
+  expect_grid_ran(ref)
+  expect_identical(got$best_objective, ref$best_objective)
+})
+
 test_that("#734: an unusable Hessian in the m < 0 joint limit is checked, and kept", {
   # The #551 generator, seed 15: the early phase runs to t_half and nu near
   # infinity with m < 0 (log t_half 512.9, nu 317.8, m -0.312), a power law.
