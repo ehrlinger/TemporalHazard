@@ -22,3 +22,5 @@
 "test-predict-average-se.R","exponential - averaged SE matches the numerical gradient"
 "test-predict-average-se.R","loglogistic - averaged SE matches the numerical gradient"
 "test-predict-average-se.R","lognormal - averaged SE matches the numerical gradient"
+"test-limit-restart.R","#729 blind start, n_starts = 1, reaches SAS's optimum"
+"test-limit-restart.R","#729 blind start, n_starts = 5, reaches SAS's optimum"

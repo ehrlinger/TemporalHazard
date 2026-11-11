@@ -39,3 +39,4 @@ Entry times (left truncation),test-entry-time-lognormal.R,(a) lognormal logl inc
 Entry times (left truncation),test-entry-time-lognormal.R,(d) hazard(dist = 'lognormal') fits the truncated likelihood,oracle
 Entry times (left truncation),test-entry-time-loglogistic.R,(a) loglogistic logl subtracts H(entry) on status 0/1 rows,oracle
 Entry times (left truncation),test-entry-time-loglogistic.R,(d) hazard() loglogistic fit recovers the truncated-likelihood MLE,oracle
+Multiphase likelihood and optimizer,test-sas-parity.R,hm.death.patient: a blind start reaches SAS's optimum (#729),SAS
