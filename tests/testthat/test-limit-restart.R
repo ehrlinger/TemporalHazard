@@ -69,10 +69,17 @@ test_that("limit_restart = FALSE refuses at once, naming the parameter", {
 test_that("limit_restart = FALSE never refits a weak-only trigger", {
   fit <- suppressWarnings(fit_729(1L, limit_restart = FALSE))
   expect_lt(fit$fit$objective, sas_ll_729 - 100)   # the drifted fit, about -2036.66
-  expect_null(fit$fit$limit)
+  # Not refitted, but not clean either: the trigger is on the record and the
+  # line says the restart was not tried.
+  lim <- fit$fit$limit
+  expect_identical(lim$outcome, "skipped")
+  expect_true(all(vapply(lim$trigger, `[[`, "", "source") == "weak"))
+  expect_null(lim$grid)
+  expect_match(paste(utils::capture.output(print(fit)), collapse = "\n"),
+               "Limit check: restart not tried (", fixed = TRUE)
 })
 
-weak_only_fit <- function(limit_restart = TRUE) {
+weak_only_fit <- function(limit_restart = TRUE, fit = TRUE) {
   set.seed(42)
   n <- 100
   time   <- rexp(n, rate = 0.5) + 0.01
@@ -80,7 +87,7 @@ weak_only_fit <- function(limit_restart = TRUE) {
   phases <- list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
                  const = hzr_phase("constant"))
   hazard(time = time, status = status, dist = "multiphase",
-         phases = phases, fit = TRUE,
+         phases = phases, fit = fit,
          control = list(n_starts = 5, maxit = 500, limit_restart = limit_restart))
 }
 
@@ -99,9 +106,20 @@ test_that("a weak-only trigger tries the grid and keeps the original", {
   expect_true(all(vapply(lim$trigger, `[[`, "", "source") == "weak"))
   # The same fit as with the layer off.
   off <- suppressWarnings(weak_only_fit(limit_restart = FALSE))
-  expect_null(off$fit$limit)
+  expect_identical(off$fit$limit$outcome, "skipped")
+  expect_identical(off$fit$limit$trigger, lim$trigger)
   expect_identical(fit$fit$objective, off$fit$objective)
   expect_identical(fit$fit$theta, off$fit$theta)
+})
+
+test_that("fit = 1 is checked as fit = TRUE is", {
+  # The body fits on `if (fit && ...)`, so fit = 1 fits; it must not skip the
+  # check and print "Limit check: none" over an unexamined fit.
+  f1 <- suppressWarnings(weak_only_fit(fit = 1))
+  ft <- suppressWarnings(weak_only_fit())
+  expect_identical(f1$fit$limit$outcome, "kept")
+  expect_identical(f1$fit$limit$trigger, ft$fit$limit$trigger)
+  expect_identical(f1$fit$theta, ft$fit$theta)
 })
 
 test_that("#448: when the best objective is at the step, the fit refuses", {
@@ -472,9 +490,11 @@ test_that("#734: an unusable Hessian in the m < 0 joint limit is checked, and ke
   expect_match(paste(utils::capture.output(print(fit)), collapse = "\n"), paste0(
     "Limit check: restart tried (early.t_half: no usable Hessian ",
     "(identification not checked)); none better, original kept"), fixed = TRUE)
-  # Weak-only: with the layer off, the same fit and no record.
+  # Weak-only: with the layer off, the same fit, its trigger recorded and
+  # the restart marked not tried.
   off <- suppressWarnings(fit_551(limit_restart = FALSE))
-  expect_null(off$fit$limit)
+  expect_identical(off$fit$limit$outcome, "skipped")
+  expect_identical(off$fit$limit$trigger, fit$fit$limit$trigger)
   expect_identical(off$fit$theta, fit$fit$theta)
 })
 
@@ -516,7 +536,7 @@ test_that("user code in a phase formula runs as often as without the layer", {
   n_on <- n
   n <- 0L
   off <- fit_mal(dd, ~ cnt(mal), limit_restart = FALSE)
-  expect_null(off$fit$limit)
+  expect_identical(off$fit$limit$outcome, "skipped")
   expect_identical(n, 1L)
   expect_identical(n_on, n)
   # The design every fit used is the one the user's code returned.

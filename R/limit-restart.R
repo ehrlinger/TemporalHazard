@@ -157,6 +157,26 @@
 # natural scale, away from both limits (0 and large).
 .hzr_limit_grid_nu <- c(0.5, 1, 2)
 
+#' The event times the restart grid is placed on
+#'
+#' Every row with an event: an exact event at `time`, and a left- or
+#' interval-censored one at its upper bound, which is SAS's TIME and where
+#' `time_upper` holds it (an interval row's `time` is its lower bound). With
+#' exact events only, a fit whose events are all censored to an interval
+#' had no grid, and a hard trigger refused without trying a start.
+#' @param data A fit's `$data`.
+#' @return A numeric vector.
+#' @keywords internal
+#' @noRd
+.hzr_limit_event_times <- function(data) {
+  status <- data$status
+  t <- data$time
+  up <- data$time_upper
+  bounded <- !is.na(status) & status %in% c(-1, 2)
+  if (!is.null(up) && length(up) == length(t)) t[bounded] <- up[bounded]
+  t[!is.na(status) & status %in% c(-1, 1, 2)]
+}
+
 #' Restart starts for a triggered fit
 #'
 #' Covariate coefficients are zeroed, as SAS's RETRY_T does
@@ -363,6 +383,9 @@
   } else if (identical(limit$outcome, "kept")) {
     paste0("restart tried (", .hzr_limit_describe(limit$trigger),
            "); none better, original kept")
+  } else if (identical(limit$outcome, "skipped")) {
+    paste0("restart not tried (", .hzr_limit_describe(limit$trigger),
+           "); control$limit_restart = FALSE")
   } else {
     paste0("restarted (", .hzr_limit_describe(limit$trigger), "); start ",
            limit$winner, " of ", nrow(limit$grid), " kept")
@@ -441,8 +464,13 @@
   # or refuses.
   hard <- .hzr_limit_is_hard(trigger)
   if (!restart && !hard) {
+    # Not refitted, but flagged: the trigger goes on the record, so the fit
+    # does not read as examined and clean.
+    out <- first$value
+    out$fit$limit <- list(trigger = trigger, grid = NULL,
+                          winner = NA_integer_, outcome = "skipped")
     emit(first)
-    return(first$value)
+    return(out)
   }
   # On a refusal the drifted fit's own warnings (weak, boundary) are raised
   # first: they describe the drift the refusal names.
@@ -468,7 +496,7 @@
   fixed <- prep$names[as.logical(fit0$fit$fixed_mask %||%
                                    logical(length(prep$names)))]
   grid <- .hzr_limit_grid(start, trigger, prep$phases,
-                          event_times = fit0$data$time[fit0$data$status == 1],
+                          event_times = .hzr_limit_event_times(fit0$data),
                           fixed = fixed)
   ctrl <- control
   ctrl$n_starts <- 1L   # the grid IS the multi-start; 9 x n_starts is waste

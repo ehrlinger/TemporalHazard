@@ -128,6 +128,25 @@ test_that("a g3 trigger varies tau at the quartiles and nothing else", {
   expect_true(all(vapply(g, `[[`, 0, "late.gamma") == 2))
 })
 
+test_that("the grid's event times include left- and interval-censored events", {
+  # Exact events at `time`; a left- or interval-censored row at its upper
+  # bound (an interval row's `time` is its lower bound); right-censored rows
+  # are not events. Exact events only left an all-interval fit no grid.
+  d <- list(time = c(1, 2, 3, 4, 5), time_upper = c(NA, 2.5, 3.5, NA, NA),
+            status = c(1, 2, -1, 0, 1))
+  expect_identical(.hzr_limit_event_times(d), c(1, 2.5, 3.5, 5))
+  d_int <- list(time = c(1, 2), time_upper = c(1.5, 2.5), status = c(2, 2))
+  expect_identical(.hzr_limit_event_times(d_int), c(1.5, 2.5))
+  expect_gt(length(.hzr_limit_grid(
+    c(early.log_mu = 0, early.log_t_half = 0, early.nu = 1, early.m = 0),
+    list(list(phase = "early", parameter = "t_half", limit = "x",
+              source = "phase_beyond_data")),
+    list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 0)),
+    event_times = .hzr_limit_event_times(d_int), fixed = character(0))), 0L)
+  # Without time_upper (the exact-only vector path), `time` is used.
+  expect_identical(.hzr_limit_event_times(list(time = c(1, 2), status = c(1, 0))), 1)
+})
+
 test_that("the limit line has a sentence for each state", {
   expect_identical(.hzr_limit_line(NULL), "  Limit check: none")
   expect_identical(.hzr_limit_line(NA), "  Limit check: not run")
@@ -141,6 +160,29 @@ test_that("the limit line has a sentence for each state", {
                grid = data.frame(start = 1:2, objective = c(-5, -4)), winner = NA_integer_)
   expect_identical(.hzr_limit_line(kept),
     "  Limit check: restart tried (early.nu ran to 0 (a step at t_half)); none better, original kept")
+  skipped <- list(trigger = trig, outcome = "skipped", grid = NULL,
+                  winner = NA_integer_)
+  expect_identical(.hzr_limit_line(skipped),
+    paste0("  Limit check: restart not tried (early.nu ran to 0 (a step at ",
+           "t_half)); control$limit_restart = FALSE"))
+})
+
+test_that("a fit saved before the limit check prints \"not run\", not \"none\"", {
+  # A 1.3.0 multiphase object has no $fit$limit element, which reads NULL:
+  # "none" would claim it was examined and found clean.
+  obj <- hazard(time = c(1, 2, 3), status = c(1, 0, 1), dist = "multiphase",
+    phases = list(constant = hzr_phase("constant")), fit = FALSE)
+  obj$fit$limit <- NULL
+  expect_false("limit" %in% names(obj$fit))
+  expect_match(paste(utils::capture.output(print(obj)), collapse = "\n"),
+               "Limit check: not run", fixed = TRUE)
+  expect_match(paste(utils::capture.output(print(summary(obj))), collapse = "\n"),
+               "Limit check: not run", fixed = TRUE)
+  # A fit that was examined and found clean still reads "none".
+  obj$fit["limit"] <- list(NULL)
+  expect_true("limit" %in% names(obj$fit))
+  expect_match(paste(utils::capture.output(print(obj)), collapse = "\n"),
+               "Limit check: none", fixed = TRUE)
 })
 
 test_that("print() shows the limit line for a multiphase object", {

@@ -999,7 +999,9 @@ hazard <- function(formula = NULL,
                     time_lower = substitute(time_lower),
                     time_upper = substitute(time_upper),
                     weights = substitute(weights))
-  if (isTRUE(fit) && identical(unname(dist), "multiphase") &&
+  # `fit` is read as the body reads it (`if (fit && ...)`), so `fit = 1`
+  # fits and is checked, not fitted unchecked.
+  if (isTRUE(as.logical(fit)) && identical(unname(dist), "multiphase") &&
         !.hzr_limit_state$inner) {
     inputs <- list(
       exprs = arg_exprs,
@@ -3255,7 +3257,12 @@ print.hazard <- function(x, ...) {
         sep = "\n")
   }
   # Always printed, "none" included (#242).
-  if (identical(x$spec$dist, "multiphase")) cat(.hzr_limit_line(x$fit$limit), "\n", sep = "")
+  # A fit saved before the limit check has no `limit` element, which reads
+  # NULL ("none", examined and clean); it was never examined.
+  if (identical(x$spec$dist, "multiphase")) {
+    lim <- if ("limit" %in% names(x$fit)) x$fit$limit else NA
+    cat(.hzr_limit_line(lim), "\n", sep = "")
+  }
   cat(.hzr_format_not_done(x$degraded, x$degraded_causes), sep = "\n")
   invisible(x)
 }
@@ -3399,7 +3406,8 @@ summary.hazard <- function(object, ...) {
     pd = object$fit$pd,
     weak = object$fit$weak,
     boundary = object$fit$boundary,
-    limit = object$fit$limit,
+    # NA ("not run") for a fit saved before the limit check, as print() does.
+    limit = if ("limit" %in% names(object$fit)) object$fit$limit else NA,
     degraded = object$degraded,
     degraded_causes = object$degraded_causes,
     phases = object$spec$phases,
