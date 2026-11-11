@@ -212,6 +212,9 @@
 # bindings, and a cache of the masked evaluations, for the next inner call;
 # read and cleared at its entry (#683 review).
 .hzr_limit_state$inputs <- NULL
+# The outer call's cache while the layer runs, for the phase designs built
+# where `inputs` does not reach (.hzr_phase_formula_design()).
+.hzr_limit_state$cache <- NULL
 
 #' Evaluate one masked argument of hazard(), once per hazard() call
 #'
@@ -262,6 +265,43 @@
   if (!is.null(cache)) {
     assign(key, list(value = value, warnings = caught), envir = cache)
   }
+  value
+}
+
+#' Build a phase formula's design once per hazard() call under the layer
+#'
+#' A phase formula runs the user's code each time its design is built: once
+#' in each inner fit, once in the layer's own setup, and once more when a
+#' grid start counts the phases' columns (#683 review). The design is built
+#' deep in the fit, where the call's `inputs` list does not reach, so
+#' .hzr_limit_fit() puts its cache in `.hzr_limit_state$cache` for the
+#' duration of the call. An entry is reused only for the same phase,
+#' formula and data, so a build on other rows (rows at time 0 dropped, say)
+#' runs the formula as it would without the layer. Outside the layer this is
+#' .hzr_formula_design().
+#' @param nm Phase name. @param formula The phase formula.
+#' @param data The data it is evaluated in.
+#' @return As .hzr_formula_design().
+#' @keywords internal
+#' @noRd
+.hzr_phase_formula_design <- function(nm, formula, data) {
+  cache <- .hzr_limit_state$cache
+  if (is.null(cache)) return(.hzr_formula_design(formula, data))
+  key <- paste0("phase_design:", nm)
+  if (exists(key, envir = cache, inherits = FALSE)) {
+    hit <- cache[[key]]
+    if (identical(hit$formula, formula) && identical(hit$data, data)) {
+      for (w in hit$warnings) warning(w)
+      return(hit$value)
+    }
+    return(.hzr_formula_design(formula, data))
+  }
+  caught <- list()
+  value <- withCallingHandlers(
+    .hzr_formula_design(formula, data),
+    warning = function(w) caught[[length(caught) + 1L]] <<- w)
+  assign(key, list(formula = formula, data = data, value = value,
+                   warnings = caught), envir = cache)
   value
 }
 
@@ -380,6 +420,10 @@
   if (!(isTRUE(restart) || isFALSE(restart))) {
     stop("control$limit_restart must be TRUE or FALSE.", call. = FALSE)
   }
+  # Phase designs are built once per call (.hzr_phase_formula_design()).
+  old_cache <- .hzr_limit_state$cache
+  .hzr_limit_state$cache <- inputs$cache
+  on.exit(.hzr_limit_state$cache <- old_cache, add = TRUE)
   first <- .hzr_limit_capture(cl, env, inputs)
   emit <- function(r) for (w in r$warnings) warning(w)
   if (inherits(first$value, "condition")) {

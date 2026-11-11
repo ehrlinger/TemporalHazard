@@ -477,3 +477,68 @@ test_that("#734: an unusable Hessian in the m < 0 joint limit is checked, and ke
   expect_null(off$fit$limit)
   expect_identical(off$fit$theta, fit$fit$theta)
 })
+
+# #683 review: user code in a PHASE formula ran once per design built: in
+# each inner fit, in the layer's own setup, and again when a grid start
+# counted the phases' columns, 20 times on this fixture against once with
+# limit_restart = FALSE. The #448 data with the early phase on `mal` is a
+# weak-only trigger whose grid runs and keeps the original.
+avc_mal <- function() {
+  data(avc, package = "TemporalHazard", envir = environment())
+  k <- is.finite(avc$int_dead) & is.finite(avc$dead) & avc$int_dead > 0
+  data.frame(tt = avc$int_dead[k], st = avc$dead[k], mal = avc$mal[k])
+}
+fit_mal <- function(dd, early_formula, limit_restart = TRUE) {
+  ph <- suppressWarnings(list(
+    early = hzr_phase("cdf", t_half = 0.15, nu = 1.4, m = 1, fixed = "m",
+                      formula = early_formula),
+    late = hzr_phase("g3", tau = 5, gamma = 1, alpha = 1, eta = 1,
+                     constraint = "alpha_gamma_eta")))
+  suppressWarnings(hazard(survival::Surv(tt, st) ~ 1, data = dd,
+                          dist = "multiphase", phases = ph, fit = TRUE,
+                          control = list(n_starts = 1L,
+                                         limit_restart = limit_restart)))
+}
+expect_kept_grid <- function(fit) {
+  expect_identical(fit$fit$limit$outcome, "kept")
+  expect_identical(nrow(fit$fit$limit$grid), 9L)
+}
+
+test_that("user code in a phase formula runs as often as without the layer", {
+  dd <- avc_mal()
+  n <- 0L
+  cnt <- function(v) {
+    n <<- n + 1L
+    v
+  }
+  got <- fit_mal(dd, ~ cnt(mal))
+  expect_kept_grid(got)
+  n_on <- n
+  n <- 0L
+  off <- fit_mal(dd, ~ cnt(mal), limit_restart = FALSE)
+  expect_null(off$fit$limit)
+  expect_identical(n, 1L)
+  expect_identical(n_on, n)
+  # The design every fit used is the one the user's code returned.
+  expect_identical(got$fit$theta, off$fit$theta)
+})
+
+test_that("a random term in a phase formula draws once (#683 review)", {
+  dd <- avc_mal()
+  # Multiplied by 0, so the design is `mal` and the fit stays on its trigger;
+  # only the stream records how many draws were made.
+  set.seed(5)
+  invisible(stats::runif(nrow(dd)))
+  seed_after_one <- get(".Random.seed", envir = globalenv())
+  set.seed(5)
+  got <- fit_mal(dd, ~ I(mal + 0 * stats::runif(length(mal))))
+  expect_kept_grid(got)
+  expect_true(identical(get(".Random.seed", envir = globalenv()),
+                        seed_after_one))
+  set.seed(5)
+  off <- fit_mal(dd, ~ I(mal + 0 * stats::runif(length(mal))),
+                 limit_restart = FALSE)
+  expect_true(identical(get(".Random.seed", envir = globalenv()),
+                        seed_after_one))
+  expect_identical(got$fit$theta, off$fit$theta)
+})
