@@ -410,6 +410,45 @@ fit_cnt_448 <- function(dd, limit_restart = TRUE) {
   list(err = err, n = n)
 }
 
+# #737 review: the layer's own inner fit is not checked again, but a
+# multiphase hazard() that fit runs (here inside a formula term) is the
+# user's, and is checked. With limit_restart = FALSE the nested #448 fit
+# refuses at once; returning a fit means it skipped the check.
+test_that("a multiphase hazard() run inside a fit is checked (#737 review)", {
+  dd <- avc_448()
+  seen <- character(0)
+  nest <- function(v) {
+    got <- refuse_448(hazard(time = dd$tt, status = dd$st,
+                             dist = "multiphase", phases = ph_448, fit = TRUE,
+                             control = list(n_starts = 1L,
+                                            limit_restart = FALSE)))
+    seen <<- c(seen, if (inherits(got, "hzr_limit_refusal")) "refused" else "returned")
+    v
+  }
+  outer <- hazard(survival::Surv(nest(tt), st) ~ 1, data = dd,
+                  dist = "multiphase",
+                  phases = list(constant = hzr_phase("constant")), fit = TRUE)
+  expect_null(outer$fit$limit)
+  expect_gt(length(seen), 0L)
+  expect_identical(unique(seen), "refused")
+})
+
+test_that("a refusal carries the restart grid it tried (#737 review)", {
+  dd <- avc_448()
+  err <- refuse_448(hazard(time = dd$tt, status = dd$st, dist = "multiphase",
+                           phases = ph_448, fit = TRUE,
+                           control = list(n_starts = 1L)))
+  expect_grid_ran(err)
+  expect_s3_class(err$grid, "data.frame")
+  expect_identical(names(err$grid), c("start", "objective", "triggered", "error"))
+  n <- as.integer(sub(".*None of ([0-9]+) restarts.*", "\\1", conditionMessage(err)))
+  expect_identical(nrow(err$grid), n)
+  off <- refuse_448(hazard(time = dd$tt, status = dd$st, dist = "multiphase",
+                           phases = ph_448, fit = TRUE,
+                           control = list(n_starts = 1L, limit_restart = FALSE)))
+  expect_null(off$grid)
+})
+
 test_that("user code in the formula runs as often as without the layer", {
   dd <- avc_448()
   got <- fit_cnt_448(dd)

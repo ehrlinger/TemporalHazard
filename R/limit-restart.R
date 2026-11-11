@@ -163,8 +163,11 @@
 #' interval-censored one at its upper bound, which is SAS's TIME and where
 #' `time_upper` holds it (an interval row's `time` is its lower bound). With
 #' exact events only, a fit whose events are all censored to an interval
-#' had no grid, and a hard trigger refused without trying a start.
-#' @param data A fit's `$data`.
+#' had no grid, and a hard trigger refused without trying a start. A row of
+#' weight 0 is left out: the likelihood ignores it, so it must not move the
+#' grid (#737 review).
+#' @param data The rows the likelihood uses: `.hzr_evaluate_prepare()`'s
+#'   output, which has dropped rows a phase design drops (NA covariates).
 #' @return A numeric vector.
 #' @keywords internal
 #' @noRd
@@ -174,7 +177,10 @@
   up <- data$time_upper
   bounded <- !is.na(status) & status %in% c(-1, 2)
   if (!is.null(up) && length(up) == length(t)) t[bounded] <- up[bounded]
-  t[!is.na(status) & status %in% c(-1, 1, 2)]
+  keep <- !is.na(status) & status %in% c(-1, 1, 2)
+  w <- data$weights
+  if (!is.null(w) && length(w) == length(t)) keep <- keep & !is.na(w) & w > 0
+  t[keep]
 }
 
 #' Restart starts for a triggered fit
@@ -396,7 +402,8 @@
 #' @keywords internal
 #' @noRd
 .hzr_limit_refusal <- function(trigger, best_objective, n_tried,
-                               disabled = FALSE, n_errored = 0L) {
+                               disabled = FALSE, n_errored = 0L,
+                               grid = NULL) {
   first <- trigger[[1L]]
   msg <- paste0(
     "hazard(): ", .hzr_limit_describe(trigger), ". ",
@@ -421,7 +428,10 @@
     class = c("hzr_limit_refusal", "error", "condition"),
     list(message = msg, call = NULL, phase = first$phase,
          parameter = first$parameter, limit = first$limit,
-         best_objective = best_objective, trigger = trigger))
+         best_objective = best_objective, trigger = trigger,
+         # The restart grid (start, objective, triggered, error), so a caller
+         # can read why each start failed; NULL when none was tried.
+         grid = grid))
 }
 
 .hzr_limit_usable <- function(v) {
@@ -496,7 +506,7 @@
   fixed <- prep$names[as.logical(fit0$fit$fixed_mask %||%
                                    logical(length(prep$names)))]
   grid <- .hzr_limit_grid(start, trigger, prep$phases,
-                          event_times = .hzr_limit_event_times(fit0$data),
+                          event_times = .hzr_limit_event_times(prep),
                           fixed = fixed)
   ctrl <- control
   ctrl$n_starts <- 1L   # the grid IS the multi-start; 9 x n_starts is waste
@@ -551,7 +561,7 @@
   } else if (is.na(win) || best_any - rows$objective[[win]] > tol) {
     emit(first)
     stop(.hzr_limit_refusal(trigger, best_any, length(runs),
-                            n_errored = sum(!is.na(rows$error))))
+                            n_errored = sum(!is.na(rows$error)), grid = rows))
   }
   out <- runs[[win]]$value
   emit(runs[[win]])

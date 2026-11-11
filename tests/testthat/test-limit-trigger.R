@@ -147,6 +147,18 @@ test_that("the grid's event times include left- and interval-censored events", {
   expect_identical(.hzr_limit_event_times(list(time = c(1, 2), status = c(1, 0))), 1)
 })
 
+test_that("a row of weight 0 does not place the grid (#737 review)", {
+  # The likelihood ignores a zero-weight row, so its event must not move the
+  # grid's quantiles. NA weights are left out with it.
+  d <- list(time = c(1, 2, 3, 40), status = c(1, 1, 1, 1),
+            weights = c(1, 1, 1, 0))
+  expect_identical(.hzr_limit_event_times(d), c(1, 2, 3))
+  d$weights[2] <- NA
+  expect_identical(.hzr_limit_event_times(d), c(1, 3))
+  d$weights <- NULL
+  expect_identical(.hzr_limit_event_times(d), c(1, 2, 3, 40))
+})
+
 test_that("the limit line has a sentence for each state", {
   expect_identical(.hzr_limit_line(NULL), "  Limit check: none")
   expect_identical(.hzr_limit_line(NA), "  Limit check: not run")

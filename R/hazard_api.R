@@ -1039,6 +1039,11 @@ hazard <- function(formula = NULL,
                           objective = objective, ...))
     return(.hzr_limit_fit(inner, environment(), inputs, theta, control))
   }
+  # The flag marks only this call as the layer's own. Cleared here, a
+  # multiphase hazard() that this fit runs (a formula term, say) is checked
+  # as the user's own call would be (#737 review); .hzr_limit_capture()
+  # restores it when this fit returns.
+  .hzr_limit_state$inner <- FALSE
   # A restart start: the layer hands over the grid start and control here.
   if (!is.null(.hzr_limit_state$restart)) {
     theta <- .hzr_limit_state$restart$theta
