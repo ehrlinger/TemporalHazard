@@ -508,6 +508,8 @@ hzr_read_outhaz <- function(path) {
 #'   return log-log limits that disagree with the SAS job being reproduced.
 #'   As in [predict.hazard()], the value is checked only where it is used, so
 #'   an ignored one does not make a point or hazard prediction fail.
+#' @param average **Experimental.** Logical; average the predictions at each distinct time,
+#'   as [predict.hazard()] does. Default `FALSE`.
 #' @param ... Must be empty. Anything landing here is an error rather than a
 #'   silently ignored argument.
 #' @return What [predict.hazard()] returns for a fit with no covariates: a
@@ -529,7 +531,8 @@ predict.hzr_outhaz <- function(object, newdata,
                                         "cumulative_hazard"),
                                decompose = FALSE,
                                se.fit = FALSE, level = 0.95,
-                               conf.type = c("log-log", "logit"), ...) {
+                               conf.type = c("log-log", "logit"),
+                               average = FALSE, ...) {
   type <- match.arg(type)
   # `decompose`, `level` and `conf.type` are formals here, in
   # predict.hazard()'s order, so that the two methods of the same generic
@@ -553,7 +556,7 @@ predict.hzr_outhaz <- function(object, newdata,
     stop("Unused argument(s) passed to predict(): ",
          paste(nms, collapse = ", "),
          ". predict.hzr_outhaz() takes 'newdata', 'type', 'decompose', ",
-         "'se.fit', 'level' and 'conf.type'.", call. = FALSE)
+         "'se.fit', 'level', 'conf.type' and 'average'.", call. = FALSE)
   }
   if (!identical(decompose, FALSE)) {
     stop("'decompose' is not available for a fit loaded from an OUTHAZ= ",
@@ -567,5 +570,5 @@ predict.hzr_outhaz <- function(object, newdata,
   }
   spec <- .hzr_outhaz_to_spec(object, need_vcov = isTRUE(se.fit))
   stats::predict(spec, newdata = newdata, type = type, se.fit = se.fit,
-                 level = level, conf.type = conf.type)
+                 level = level, conf.type = conf.type, average = average)
 }
