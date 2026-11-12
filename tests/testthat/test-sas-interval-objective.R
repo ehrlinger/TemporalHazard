@@ -477,10 +477,17 @@ test_that("a vector-interface sas fit keeps its objective across a scope refit",
   # indistinguishable from the likelihood and this test proves nothing.
   expect_gt(sum(D$st == 2), 0L)
 
+  # nu is fixed: on these 60 rows the early phase fits nu = -0.004, a step,
+  # which the limit layer keeps as weak on macOS and refuses on some Linux
+  # runners (#737 CI). The objective's survival, not the shape, is tested.
+  ph <- list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0,
+                               fixed = "nu"),
+             const = hzr_phase("constant"))
   f <- suppressWarnings(hazard(time = D$tt, status = D$st, time_lower = D$lo,
                                time_upper = D$up, dist = "multiphase",
-                               phases = sas_obj_phases(), objective = "sas",
+                               phases = ph, objective = "sas",
                                fit = TRUE))
+  expect_null(f$fit$limit)
   expect_null(f$call$formula)
   expect_identical(f$spec$objective, "sas")
 
