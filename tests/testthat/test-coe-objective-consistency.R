@@ -94,6 +94,8 @@ test_that("an ordinary CoE fit is unchanged: objective still equals its own like
   expect_true(isTRUE(fit$spec$control$conserve_applied))
   expect_equal(fit$fit$objective, coe_ll_at(fit, tt, st, phases),
                tolerance = 1e-10)
+  # #735: the limit layer restarts this fixture; a change in that fails here.
+  expect_limit(fit, "restarted", "span")
 })
 
 test_that("starts$objective keeps the optimizer's own value, and says so (#362)", {

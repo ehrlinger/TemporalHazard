@@ -44,6 +44,8 @@ test_that("hazard() accepts dist='multiphase' with phases", {
   expect_true(!is.null(fit$spec$phases))
   expect_equal(length(fit$spec$phases), 2)
   expect_equal(names(fit$spec$phases), c("early", "bg"))
+  # #735: the limit layer restarts this fixture; a change in that fails here.
+  expect_limit(fit, "restarted", "weak_na")
 })
 
 test_that("hazard() errors when dist='multiphase' without phases", {

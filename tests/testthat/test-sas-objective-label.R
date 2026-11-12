@@ -63,6 +63,9 @@ test_that("without interval-censored rows the SAS objective is the log-likelihoo
   expect_equal(fs$fit$objective, fl$fit$objective, tolerance = 1e-8)
   expect_match(printed(fs), "log-lik:", fixed = TRUE)
   expect_identical(summary(fs)$log_lik, fs$fit$objective)
+  # #735: the limit layer restarts this fixture; a change in that fails here.
+  expect_limit(fs, "restarted", "weak_na")
+  expect_limit(fl, "restarted", "weak_na")
 })
 
 test_that("interval rows the fit did not read do not change the label (#544)", {
@@ -98,6 +101,8 @@ test_that("interval rows a phase design dropped do not change the label (#544)",
   # The premise: the rows are stored, and the fit did not read them.
   expect_true(any(fit$data$status == 2))
   expect_false(any(fit$fit$rows_used[fit$data$status == 2]))
+  # #735: the limit layer restarts this fixture; a change in that fails here.
+  expect_limit(fit, "restarted", "weak_na")
   expect_match(printed(fit), "log-lik:", fixed = TRUE)
   expect_identical(summary(fit)$log_lik, fit$fit$objective)
 })

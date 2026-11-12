@@ -205,6 +205,8 @@ test_that("multiphase fits are not flagged, whatever the stop", {
   expect_equal(r$fit$fit$rel_gradient, 1e-2)
   expect_true(r$fit$fit$converged)
   expect_length(pfm_classed(r), 0L)
+  # #735: the limit layer restarts this fixture; a change in that fails here.
+  expect_limit(r$fit, "restarted", "weak_na")
 })
 
 pfm_boot_base <- function() {
