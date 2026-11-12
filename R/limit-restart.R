@@ -392,6 +392,9 @@
   } else if (identical(limit$outcome, "skipped")) {
     paste0("restart not tried (", .hzr_limit_describe(limit$trigger),
            "); control$limit_restart = FALSE")
+  } else if (identical(limit$outcome, "refused")) {
+    paste0("REFUSED (", .hzr_limit_describe(limit$trigger),
+           "); this is the drifted fit, kept for inspection, not a result")
   } else {
     paste0("restarted (", .hzr_limit_describe(limit$trigger), "); start ",
            limit$winner, " of ", nrow(limit$grid), " kept")
@@ -403,7 +406,7 @@
 #' @noRd
 .hzr_limit_refusal <- function(trigger, best_objective, n_tried,
                                disabled = FALSE, n_errored = 0L,
-                               grid = NULL) {
+                               grid = NULL, fit = NULL) {
   first <- trigger[[1L]]
   msg <- paste0(
     "hazard(): ", .hzr_limit_describe(trigger), ". ",
@@ -431,7 +434,11 @@
          best_objective = best_objective, trigger = trigger,
          # The restart grid (start, objective, triggered, error), so a caller
          # can read why each start failed; NULL when none was tried.
-         grid = grid))
+         grid = grid,
+         # The drifted fit hazard() used to return, for inspection only: its
+         # $fit$limit says it was refused, so print() never shows it as a
+         # result.
+         fit = fit))
 }
 
 .hzr_limit_usable <- function(v) {
@@ -486,10 +493,18 @@
   }
   # On a refusal the drifted fit's own warnings (weak, boundary) are raised
   # first: they describe the drift the refusal names.
+  # The fit the user's own start reached, marked refused, rides on the
+  # refusal so it can be inspected, never returned (#737).
+  drifted <- function(grid) {
+    d <- first$value
+    d$fit$limit <- list(trigger = trigger, grid = grid,
+                        winner = NA_integer_, outcome = "refused")
+    d
+  }
   if (!restart) {
     emit(first)
     stop(.hzr_limit_refusal(trigger, first$value$fit$objective, 0L,
-                            disabled = TRUE))
+                            disabled = TRUE, fit = drifted(NULL)))
   }
   fit0 <- first$value
   # This rebuilds the first fit's phases, so any warning it raises is one the
@@ -563,7 +578,8 @@
   } else if (is.na(win) || best_any - rows$objective[[win]] > tol) {
     emit(first)
     stop(.hzr_limit_refusal(trigger, best_any, length(runs),
-                            n_errored = sum(!is.na(rows$error)), grid = rows))
+                            n_errored = sum(!is.na(rows$error)), grid = rows,
+                            fit = drifted(rows)))
   }
   out <- runs[[win]]$value
   emit(runs[[win]])

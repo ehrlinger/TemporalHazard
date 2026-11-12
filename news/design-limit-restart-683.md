@@ -7,7 +7,9 @@
   objective without running to a limit the check detects is returned, with
   a warning of class `hzr_limit_restarted`. When none does, `hazard()`
   stops with an error of class `hzr_limit_refusal` that names the phase and
-  parameter, and carries the restarts it tried as `$grid`, so you can fix it, as `FIXNU` or `FIXTHALF` would in SAS. A
+  parameter, so you can fix it, as `FIXNU` or `FIXTHALF` would in SAS. The
+  error carries the restarts it tried as `$grid`, and the drifted fit as
+  `$fit` for inspection; `print()` marks that fit as refused. A
   weakly identified shape, or a fit whose Hessian cannot be used so it has
   no standard errors (#734), tries the same grid but is never refused: the
   original is kept unless a start does strictly better. `print()` and

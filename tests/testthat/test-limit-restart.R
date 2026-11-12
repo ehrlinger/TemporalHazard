@@ -77,6 +77,15 @@ test_that("limit_restart = FALSE refuses at once, naming the parameter", {
   expect_match(conditionMessage(err), "hzr_phase\\(")
   expect_match(conditionMessage(err), "FIXTHALF", fixed = TRUE)
   expect_lt(err$best_objective, sas_ll_729 - 10)
+  # The drifted fit rides on the refusal, marked, for inspection (#737).
+  expect_s3_class(err$fit, "hazard")
+  expect_identical(err$fit$fit$objective, err$best_objective)
+  expect_identical(err$fit$fit$limit$outcome, "refused")
+  expect_identical(err$fit$fit$limit$trigger, err$trigger)
+  expect_null(err$fit$fit$limit$grid)
+  expect_gt(err$fit$fit$theta[["early.log_t_half"]], 100)
+  expect_match(paste(utils::capture.output(print(err$fit)), collapse = "\n"),
+               "Limit check: REFUSED", fixed = TRUE)
 })
 
 test_that("limit_restart = FALSE never refits a weak-only trigger", {
@@ -531,6 +540,11 @@ test_that("a refusal carries the restart grid it tried (#737 review)", {
                            phases = ph_448, fit = TRUE,
                            control = list(n_starts = 1L, limit_restart = FALSE)))
   expect_null(off$grid)
+  # Both refusals carry the user's own start's drifted fit, marked refused.
+  expect_identical(err$fit$fit$limit$grid, err$grid)
+  expect_identical(err$fit$fit$limit$outcome, "refused")
+  expect_lte(err$fit$fit$objective, err$best_objective)
+  expect_identical(off$fit$fit$objective, err$fit$fit$objective)
 })
 
 test_that("user code in the formula runs as often as without the layer", {

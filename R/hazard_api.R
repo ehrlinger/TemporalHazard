@@ -570,7 +570,11 @@ NULL
 #'   the last observed time, `nu` toward 0 as a step) triggers a restart from
 #'   a fixed grid of starts. The best fit is returned only if it has the best
 #'   objective found and no parameter at a limit; otherwise `hazard()` stops
-#'   with an error of class `hzr_limit_refusal` naming the parameter. A flat
+#'   with an error of class `hzr_limit_refusal` naming the parameter. The
+#'   error carries the restarts it tried as `$grid` and, for inspection, the
+#'   drifted fit as `$fit` (catch it with
+#'   `tryCatch(..., hzr_limit_refusal = function(e) e$fit)`); that fit's
+#'   `fit$fit$limit$outcome` is `"refused"`, and `print()` says so. A flat
 #'   direction through a shape (the weak-identification reading) only tries
 #'   the grid: a better fit is returned if one is found, and otherwise the
 #'   original fit is returned unchanged. A converged fit whose Hessian cannot
@@ -946,7 +950,9 @@ NULL
 #'   restarted the fit (\code{trigger}, \code{original}, \code{grid},
 #'   \code{winner}, \code{outcome}), which also raises a warning of class
 #'   \code{"hzr_limit_restarted"}. A fit that cannot be rescued is not
-#'   returned: \code{hazard()} stops with class \code{"hzr_limit_refusal"}.
+#'   returned: \code{hazard()} stops with class \code{"hzr_limit_refusal"},
+#'   and the error's \code{$fit} holds the drifted fit for inspection, with
+#'   \code{outcome = "refused"}.
 #'   A fit whose only flag is a flat direction (a ridge), or a Hessian that
 #'   cannot be used (no standard errors), tries the same restart but is never
 #'   refused: when no restart does better it is returned unchanged, with

@@ -168,6 +168,10 @@ test_that("the limit line has a sentence for each state", {
               grid = data.frame(start = 1:2, objective = c(-5, -4)), winner = 2L)
   expect_identical(.hzr_limit_line(lim),
     "  Limit check: restarted (early.nu ran to 0 (a step at t_half)); start 2 of 2 kept")
+  lim$outcome <- "refused"
+  expect_identical(.hzr_limit_line(lim), paste0(
+    "  Limit check: REFUSED (early.nu ran to 0 (a step at t_half)); ",
+    "this is the drifted fit, kept for inspection, not a result"))
   kept <- list(trigger = trig, outcome = "kept",
                grid = data.frame(start = 1:2, objective = c(-5, -4)), winner = NA_integer_)
   expect_identical(.hzr_limit_line(kept),
