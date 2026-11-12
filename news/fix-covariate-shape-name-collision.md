@@ -10,4 +10,6 @@
   two phases making one name (a phase `a.b` beside a phase `a` with a
   covariate `b.log_mu`). A fit saved before this release with such a name
   still prints and predicts, but `hzr_evaluate()` and `hzr_bootstrap()`
-  now refuse it.
+  now refuse it. `hzr_stepwise()` refuses such a candidate, or a
+  `data` column that the default scope would offer, before fitting any
+  candidate, under every criterion.

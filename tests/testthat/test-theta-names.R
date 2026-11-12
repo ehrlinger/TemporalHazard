@@ -165,8 +165,8 @@ test_that("hazard() refuses a colliding covariate, by phase and column", {
                "covariate `nu` in phase `early`", fixed = TRUE)
 })
 
-test_that("a stepwise screen does not pass over a colliding candidate", {
-  skip_on_cran() # three multiphase fits
+test_that("every stepwise criterion refuses a colliding candidate up front", {
+  skip_on_cran() # a multiphase fit
   set.seed(5)
   n <- 300
   x <- stats::rnorm(n)
@@ -175,20 +175,25 @@ test_that("a stepwise screen does not pass over a colliding candidate", {
                   st = stats::rbinom(n, 1, 0.8), log_mu = x, w = w)
   fit <- hazard(survival::Surv(tt, st) ~ 1, data = d, dist = "multiphase",
                 phases = list(constant = hzr_phase("constant")), fit = TRUE)
-  sc <- list(constant = ~ log_mu + w)
-  # The score screen stops with the refusal.
-  expect_error(suppressWarnings(hzr_stepwise(fit, scope = sc, data = d,
-                                             criterion = "score",
+  # Score and Wald used to differ: score stopped on the candidate's refit,
+  # Wald entered `w` and stopped naming it. Every criterion now refuses
+  # before any candidate is fitted, as hazard() refuses the name.
+  refits <- 0L
+  local_mocked_bindings(.hzr_refit_with_scope = function(...) {
+    refits <<- refits + 1L
+    stop("no candidate should be fitted")
+  })
+  for (cr in c("score", "wald", "aic")) {
+    expect_error(suppressWarnings(hzr_stepwise(
+      fit, scope = list(constant = ~ log_mu + w), data = d, criterion = cr,
+      trace = FALSE)), "covariate `log_mu` in phase `constant`",
+      fixed = TRUE, info = cr)
+  }
+  # The default scope reads every column of `data`, so the same column
+  # refuses there too, rather than being left out untested.
+  expect_error(suppressWarnings(hzr_stepwise(fit, data = d,
+                                             criterion = "wald",
                                              trace = FALSE)),
                "covariate `log_mu` in phase `constant`", fixed = TRUE)
-  # The Wald screen enters what it can and stops naming the candidate it
-  # could not move.
-  sw <- suppressWarnings(hzr_stepwise(fit, scope = sc, data = d,
-                                      criterion = "wald", trace = FALSE))
-  expect_identical(sw$steps$variable, "w")
-  # ...and records the refusal as the reason, not some other failure.
-  why <- sw$criteria$refit_failure_reasons
-  expect_gt(length(why), 0L)
-  expect_true(all(grepl("covariate `log_mu` in phase `constant`", why,
-                        fixed = TRUE)))
+  expect_identical(refits, 0L)
 })

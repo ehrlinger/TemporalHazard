@@ -9,6 +9,35 @@
 # Candidate enumeration
 # ---------------------------------------------------------------------------
 
+#' Refuse a candidate whose design column would repeat a parameter name
+#'
+#' hazard() refuses a covariate named like one of its own phase's
+#' parameters (.hzr_phase_theta_names()). A screen used to meet that refusal
+#' only inside a candidate's refit, so the score criterion stopped and the
+#' Wald criterion recorded a failed refit and went on (#738). Checked here,
+#' on each candidate's design columns, before any candidate is fitted, so
+#' every criterion refuses the same way.
+#' @param fit The current multiphase fit. @param candidates As
+#'   .hzr_stepwise_candidates() builds them. @param data The screen's data.
+#' @return `NULL`, invisibly; stops on a collision.
+#' @keywords internal
+#' @noRd
+.hzr_refuse_colliding_candidates <- function(fit, candidates, data) {
+  phases <- fit$spec$phases
+  for (cand in candidates) {
+    # A candidate model.matrix() cannot build here is reported by the code
+    # that reads it; this check names only columns it can see.
+    cols <- tryCatch(
+      setdiff(colnames(stats::model.matrix(
+        stats::reformulate(cand$var), data = data)), "(Intercept)"),
+      error = function(e) character(0))
+    if (length(cols)) {
+      .hzr_phase_theta_names(phases[[cand$phase]], cand$phase, cols)
+    }
+  }
+  invisible(NULL)
+}
+
 #' Normalise a user-supplied scope into a flat list of (var, phase) pairs
 #'
 #' Drops variables already in the model, variables in `force_out`, and
@@ -103,6 +132,7 @@
           list(var = spelling, phase = p, id = v)
       }
     }
+    .hzr_refuse_colliding_candidates(fit, candidates, data)
     return(candidates)
   }
 
