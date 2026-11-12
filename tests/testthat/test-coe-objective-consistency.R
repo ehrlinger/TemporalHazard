@@ -94,6 +94,11 @@ test_that("an ordinary CoE fit is unchanged: objective still equals its own like
   expect_true(isTRUE(fit$spec$control$conserve_applied))
   expect_equal(fit$fit$objective, coe_ll_at(fit, tt, st, phases),
                tolerance = 1e-10)
+  # #735: the limit layer restarts this fixture; a change in that fails here.
+  # Not on CRAN: the verdict rests on a 0.23 log-likelihood threshold and a
+  # relative 1e-6 win, which other BLAS builds can tip.
+  skip_on_cran()
+  expect_limit(fit, "restarted", "span")
 })
 
 test_that("starts$objective keeps the optimizer's own value, and says so (#362)", {

@@ -2176,7 +2176,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     common reason.}
 #'   \item{n_restarted}{Number of successful replicates whose first fit ran a
 #'     shape parameter to a limit and was refitted from a grid of other
-#'     starts, the restart winning. Such a replicate counts as a success. It is
+#'     starts, the restart winning. Such a replicate counts as a success. With
+#'     a `scope`, a replicate also counts when the refit of its base model was
+#'     restarted, since every candidate was measured against it. It is
 #'     reported for every multiphase fit, including when it is 0, and is `NA`
 #'     for any other model, which has no limit check.}
 #'   \item{restart_reasons}{Named integer vector counting the restarted
@@ -3074,6 +3076,13 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       n_success <- n_success + 1L
       lim <- boot_fit$fit$limit
       restarted <- is.list(lim) && identical(lim$outcome, "restarted")
+      # In select mode the base refit is a fit of its own, and the screen
+      # measured every candidate against it: a replicate whose base was
+      # rescued is restarted, whatever its final fit did (#736).
+      if (!restarted && select_mode) {
+        lim <- pfm_state$base_fit$fit$limit
+        restarted <- is.list(lim) && identical(lim$outcome, "restarted")
+      }
       if (restarted) {
         n_restarted <- n_restarted + 1L
         restart_reasons <- .hzr_merge_reasons(

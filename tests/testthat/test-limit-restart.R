@@ -626,7 +626,7 @@ test_that("#734: an unusable Hessian in the m < 0 joint limit is checked, and ke
   expect_true(all(is.finite(lim$grid$objective)))
   expect_match(paste(utils::capture.output(print(fit)), collapse = "\n"), paste0(
     "Limit check: restart tried (early.t_half: no usable Hessian ",
-    "(identification not checked)); none better, original kept"), fixed = TRUE)
+    "(identification not checked)); no start clear of a limit did better, original kept"), fixed = TRUE)
   # Weak-only: with the layer off, the same fit, its trigger recorded and
   # the restart marked not tried.
   off <- suppressWarnings(fit_551(limit_restart = FALSE))
@@ -760,4 +760,254 @@ test_that("a random term in a phase formula draws once (#683 review)", {
   expect_true(identical(get(".Random.seed", envir = globalenv()),
                         seed_after_one))
   expect_identical(got$fit$theta, off$fit$theta)
+})
+
+# #735: the layer's inner flag must not stay set after an inner fit errors,
+# or every later multiphase fit in the session would skip the check.
+test_that("the inner flag resets after an inner fit errors", {
+  dd <- avc_448()
+  expect_error(hazard(time = dd$tt, status = dd$st, dist = "multiphase",
+                      phases = list(constant = hzr_phase("constant",
+                                                         formula = ~ no_such)),
+                      fit = TRUE))
+  expect_false(.hzr_limit_state$inner)
+  expect_null(.hzr_limit_state$restart)
+  expect_null(.hzr_limit_state$inputs)
+  # And the next fit is checked: the #448 fit refuses with the layer off.
+  got <- refuse_448(hazard(time = dd$tt, status = dd$st, dist = "multiphase",
+                           phases = ph_448, fit = TRUE,
+                           control = list(n_starts = 1L,
+                                          limit_restart = FALSE)))
+  expect_s3_class(got, "hzr_limit_refusal")
+  # The capture catches every error itself, so only a condition that unwinds
+  # past it (an interrupt, an outer handler) reaches its on.exit() restore.
+  # The hazard() call above cannot show that; this can (#739 review).
+  jump <- structure(class = c("th_jump", "condition"),
+                    list(message = "jump", call = NULL))
+  out <- tryCatch(.hzr_limit_capture(quote(signalCondition(jump)),
+                                     environment(), inputs = list(1),
+                                     restart = list(1)),
+                  th_jump = function(c) "unwound")
+  expect_identical(out, "unwound")  # the premise: it left through the handler
+  expect_false(.hzr_limit_state$inner)
+  expect_null(.hzr_limit_state$restart)
+  expect_null(.hzr_limit_state$inputs)
+})
+
+# #735: the inner call is written out by hand, so a new formal of hazard()
+# would silently not reach the inner fit. Read the call from hazard()'s body.
+test_that("the layer's inner call passes every formal of hazard()", {
+  find_inner <- function(e) {
+    if (is.call(e)) {
+      if (identical(e[[1L]], as.name("quote")) && is.call(e[[2L]]) &&
+            identical(e[[2L]][[1L]], as.name("hazard"))) {
+        return(e[[2L]])
+      }
+      for (a in as.list(e)) {
+        r <- find_inner(a)
+        if (!is.null(r)) return(r)
+      }
+    }
+    NULL
+  }
+  inner <- find_inner(body(hazard))
+  expect_false(is.null(inner))
+  passed <- c(setdiff(names(as.list(inner))[-1L], ""),
+              if (any(vapply(as.list(inner)[-1L], identical, NA,
+                             as.name("...")))) "...")
+  expect_setequal(passed, names(formals(hazard)))
+  # Each named argument is passed as itself.
+  args <- as.list(inner)[-1L]
+  named <- args[nzchar(names(args))]
+  expect_true(all(vapply(names(named), function(n) {
+    identical(named[[n]], as.name(n))
+  }, NA)))
+  # The masked arguments the gate captures as expressions are formals.
+  expect_true(all(c("data", "time", "status", "time_lower", "time_upper",
+                    "weights") %in% names(formals(hazard))))
+})
+
+# #734: the m < 0 joint limit that no record or Hessian flags. The #551
+# generator, seed 21, early fraction 0.15, beta 2.5: the early phase runs to
+# log t_half 13.8, nu 11.7, m -0.26 (a power law), with a last time near 15,
+# and nothing but the span check fires (measured 2026-11-12: objective
+# -379.531; every grid start returns to it or does worse, so it is kept).
+span_734 <- function() {
+  set.seed(21)
+  n <- 300
+  x1 <- stats::rnorm(n)
+  x2 <- stats::rnorm(n)
+  early <- stats::runif(n) < 0.15
+  tt <- ifelse(early, stats::rexp(n, 8), stats::rexp(n, 0.2 * exp(2.5 * x1)))
+  cens <- stats::runif(n, 2, 15)
+  data.frame(tt = pmin(tt, cens) + 0.001, ev = as.numeric(tt <= cens))
+}
+# The same generator with its event times drawn from a later part of the
+# stream (a sample first met by accident, kept because it is the only one
+# found where starts beat the original AT the limit): it fits log t_half
+# 4.22 against a last time near 15, m -0.055, objective -362.402, and three
+# grid starts reach -362.245 to -362.262 with their own span check firing.
+span_734_b <- function() {
+  n <- 300
+  set.seed(21)
+  x1 <- stats::rnorm(n)
+  x2 <- stats::rnorm(n)
+  early <- stats::runif(n) < 0.15
+  set.seed(21)
+  invisible(stats::rnorm(2 * n))
+  invisible(stats::runif(n))
+  invisible(stats::rexp(n))
+  invisible(stats::rexp(n))
+  invisible(stats::runif(n))
+  tt <- ifelse(early, stats::rexp(n, 8), stats::rexp(n, 0.2 * exp(2.5 * x1)))
+  cens <- stats::runif(n, 2, 15)
+  data.frame(tt = pmin(tt, cens) + 0.001, ev = as.numeric(tt <= cens))
+}
+fit_span_734 <- function(d, limit_restart = TRUE) {
+  suppressWarnings(hazard(
+    time = d$tt, status = d$ev, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                  const = hzr_phase("constant")),
+    fit = TRUE, control = list(limit_restart = limit_restart)))
+}
+span_trigger_734 <- list(list(
+  phase = "early", parameter = "t_half", limit = .hzr_limit_span_limit,
+  source = "span"))
+
+test_that("#734: a t_half that moves across the data's span at no cost triggers", {
+  d <- span_734()
+  fit <- fit_span_734(d)
+  th <- fit$fit$theta
+  expect_gt(th[["early.log_t_half"]], log(max(d$tt)))
+  expect_lt(th[["early.m"]], 0)
+  # Nothing the fit records flags it: the span check is what fires.
+  expect_null(.hzr_limit_trigger(fit))
+  lim <- fit$fit$limit
+  expect_type(lim, "list")
+  expect_identical(lim$trigger, span_trigger_734)
+  # Weak-only: the grid ran and the original was kept, never refused.
+  expect_identical(lim$outcome, "kept")
+  expect_gt(nrow(lim$grid), 0L)
+  expect_identical(fit$fit$objective, lim$original$objective)
+  expect_match(paste(utils::capture.output(print(fit)), collapse = "\n"),
+               "Limit check: restart tried (early.t_half: a flat span",
+               fixed = TRUE)
+  # With the layer off: the same fit, its trigger recorded, not tried.
+  off <- fit_span_734(d, limit_restart = FALSE)
+  expect_identical(off$fit$limit$outcome, "skipped")
+  expect_identical(off$fit$limit$trigger, lim$trigger)
+  expect_identical(off$fit$theta, fit$fit$theta)
+})
+
+test_that("#734: a start that does better at the same span limit is no rescue", {
+  fit <- fit_span_734(span_734_b())
+  lim <- fit$fit$limit
+  expect_identical(lim$trigger, span_trigger_734)
+  expect_identical(lim$outcome, "kept")
+  better <- lim$grid$objective >
+    fit$fit$objective + 1e-6 * abs(fit$fit$objective)
+  expect_gte(sum(better, na.rm = TRUE), 1L)
+  expect_true(all(lim$grid$triggered[which(better)]))
+  # Those starts also carry a weak direction, which flags them on its own.
+  # With the record checks silenced, only the span check can turn them
+  # down, so this is what holds the rule itself.
+  testthat::local_mocked_bindings(
+    .hzr_limit_trigger = function(object, unusable = TRUE) NULL,
+    .package = "TemporalHazard")
+  alone <- fit_span_734(span_734_b())
+  lim2 <- alone$fit$limit
+  expect_identical(lim2$outcome, "kept")
+  better2 <- lim2$grid$objective >
+    alone$fit$objective + 1e-6 * abs(alone$fit$objective)
+  expect_gte(sum(better2, na.rm = TRUE), 1L)
+  expect_true(all(lim2$grid$triggered[which(better2)]))
+})
+
+test_that("#734: the span check skips a fixed t_half and an interior one", {
+  d <- span_734()
+  fit <- fit_span_734(d, limit_restart = FALSE)
+  expect_false(is.null(.hzr_limit_span(fit)))
+  # Held by the analyst, as FIXTHALF does: not a limit (the KUL reference
+  # fixes every shape and is not at the free optimum, by design).
+  held <- fit
+  held$fit$fixed_mask <- names(held$fit$theta) == "early.log_t_half"
+  expect_null(.hzr_limit_span(held))
+  # Inside the observed times with m >= 0, the check does not run.
+  inside <- fit
+  inside$fit$theta[["early.log_t_half"]] <- log(stats::median(d$tt))
+  inside$fit$theta[["early.m"]] <- 0.5
+  expect_null(.hzr_limit_span(inside))
+})
+
+test_that("#734: an uncomputable span move is not reported as a flat span", {
+  d <- span_734()
+  fit <- fit_span_734(d, limit_restart = FALSE)
+  # At log t_half 705 the upward move (705 plus a log-span of 8.88) is past
+  # log(.Machine$double.xmax), so it cannot be computed at all.
+  far <- fit
+  far$fit$theta[["early.log_t_half"]] <- 705
+  span <- log(max(d$tt) / min(d$tt))
+  expect_gt(705 + span, log(.Machine$double.xmax))
+  moves <- list()
+  real_move <- .hzr_limit_span_move
+  testthat::local_mocked_bindings(
+    .hzr_limit_span_move = function(th, pk, type, to, free, ut, ll) {
+      d <- real_move(th, pk, type, to, free, ut, ll)
+      moves[[length(moves) + 1L]] <<- c(to = to, d = d, ll0 = ll(th))
+      d
+    }, .package = "TemporalHazard")
+  # The failed upward move does not end the check: the downward one is
+  # measured, and it is flat (the phase is negligible there).
+  hit <- .hzr_limit_span(far)
+  expect_length(moves, 2L)
+  expect_true(is.na(moves[[1L]][["d"]]))
+  expect_lt(abs(moves[[2L]][["ll0"]] - moves[[2L]][["d"]]),
+            .hzr_limit_span_tau)
+  expect_identical(hit[[1L]]$limit, .hzr_limit_span_limit)
+  # When the downward move fails too (a likelihood error), nothing was
+  # measured: the record says unchecked, not flat, and stays weak-only.
+  real_ll <- .hzr_logl_multiphase
+  testthat::local_mocked_bindings(
+    .hzr_logl_multiphase = function(theta, ...) {
+      if (theta[[2L]] != 705) stop("planted likelihood failure")
+      real_ll(theta, ...)
+    }, .package = "TemporalHazard")
+  moves <- list()
+  none <- .hzr_limit_span(far)
+  expect_length(moves, 2L)
+  expect_true(all(vapply(moves, function(m) is.na(m[["d"]]), logical(1))))
+  expect_identical(none, list(list(
+    phase = "early", parameter = "t_half",
+    limit = .hzr_limit_span_unchecked, source = "span")))
+  expect_false(identical(.hzr_limit_span_unchecked, .hzr_limit_span_limit))
+  expect_match(.hzr_limit_describe(none), "early.t_half: an unchecked span",
+               fixed = TRUE)
+  expect_false(.hzr_limit_is_hard(none))
+})
+
+test_that("#734: a span move that gains fires, and weight-0 rows do not widen the data", {
+  d <- span_734()
+  fit <- fit_span_734(d, limit_restart = FALSE)
+  # A move that RAISES the log-likelihood by more than the threshold shows
+  # the fit is not a maximum: the check fires, so the grid looks for the
+  # better fit, rather than reading the fit as clean (#739 review).
+  far <- fit
+  far$fit$theta[["early.log_t_half"]] <- log(max(d$tt)) + 1
+  testthat::local_mocked_bindings(
+    .hzr_limit_span_move = function(th, pk, type, to, free, ut, ll) ll(th) + 5,
+    .package = "TemporalHazard")
+  expect_identical(.hzr_limit_span(far), span_trigger_734)
+  # Weight-0 rows are not in the likelihood, so they do not make a t_half
+  # past the weighted data read as inside it. The last time gets weight 0
+  # and t_half sits between it and the next one, with m >= 0.
+  prep <- .hzr_evaluate_prepare(fit)
+  i <- which.max(prep$time)
+  inside <- fit
+  inside$fit$theta[["early.m"]] <- 0.5
+  inside$fit$theta[["early.log_t_half"]] <-
+    log((max(prep$time[-i]) + prep$time[[i]]) / 2)
+  prep$weights <- rep(1, length(prep$time))
+  expect_null(.hzr_limit_span(inside, prep))  # the premise: inside the data
+  prep$weights[[i]] <- 0
+  expect_identical(.hzr_limit_span(inside, prep), span_trigger_734)
 })

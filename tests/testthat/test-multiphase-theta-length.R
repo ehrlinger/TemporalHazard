@@ -44,6 +44,8 @@ test_that("a multiphase theta of the right length fits (#408)", {
   fit <- suppressWarnings(theta_len_fit(theta_ok))
   expect_length(fit$fit$theta, 9L)
   expect_true(is.finite(fit$fit$objective))
+  # #735: the limit layer restarts this fixture; a change in that fails here.
+  expect_limit(fit, "restarted", "weak_na")
 })
 
 test_that("a longer multiphase theta stops, naming both lengths (#408)", {
@@ -64,6 +66,8 @@ test_that("a phase with its own formula is counted from that formula (#408)", {
   own_ok <- c(0, log(0.5), 1, 1, 0, log(0.3), 0, 0)
   fit <- suppressWarnings(theta_len_fit(own_ok, phases = ph))
   expect_length(fit$fit$theta, 8L)
+  # #735: the limit layer restarts this fixture; a change in that fails here.
+  expect_limit(fit, "restarted", "weak_na")
   # The old design's length for this model (the inherited count, 9) is one
   # too many here, so counting every phase from the global design would
   # pass this and fail the fit above.

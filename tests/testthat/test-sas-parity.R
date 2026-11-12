@@ -314,7 +314,9 @@ test_that("hm.death.patient: a blind start reaches SAS's optimum (#729)", {
                   constant = hzr_phase("constant", formula = ~ age_cop + black + i_path)),
     fit = TRUE, control = list(n_starts = 1L, maxit = 2000, conserve = TRUE)))
   expect_equal(fit$fit$objective / ref$loglik, 1, tolerance = 1e-5)
-  expect_true(is.list(fit$fit$limit))  # it got there by restarting, on the record
+  # It got there by restarting, on the record (#735: is.list() alone would
+  # also pass a fit the layer kept).
+  expect_limit(fit, "restarted", "weak")
 })
 
 # ---------------------------------------------------------------------------

@@ -768,7 +768,10 @@
 #' returned it before #551: its error re-raised, or its non-converged fit.
 #' The kept fit's warnings are then raised, and `fit$fit$refit_start` records
 #' which start won, beside `fit$fit$refit_objectives`, both starts' objectives
-#' (`NA` for one that failed).
+#' (`NA` for one that failed). When the start that lost refused because a
+#' shape parameter ran to a limit, the refusal is kept as
+#' `fit$fit$refit_refusal` and a warning of class `hzr_limit_refit_refused`
+#' says so.
 #'
 #' @param warm,default `.hzr_refit_capture()` results.
 #' @return The kept fit.
@@ -790,11 +793,29 @@
     "default"
   }
   kept <- if (winner == "warm") warm else default
+  lost <- if (winner == "warm") default else warm
   for (w in kept$warnings) warning(w)
   if (inherits(kept$value, "condition")) stop(kept$value)
   fit <- kept$value
   fit$fit$refit_start <- winner
   fit$fit$refit_objectives <- obj
+  # The other start's limit refusal used to be dropped: its objective read NA
+  # here, though it can exceed the kept fit's, and nothing said a limit was
+  # met (#736). It is kept on the fit and said once.
+  if (inherits(lost$value, "hzr_limit_refusal")) {
+    other <- setdiff(c("warm", "default"), winner)
+    fit$fit$refit_refusal <- lost$value
+    warning(structure(
+      class = c("hzr_limit_refit_refused", "warning", "condition"),
+      list(message = paste0(
+        "The refit from the ", other, " start refused (",
+        .hzr_limit_describe(lost$value$trigger), "; objective ",
+        format(lost$value$start_objective, digits = 8), "); the ", winner,
+        " start's fit is kept (objective ",
+        format(fit$fit$objective, digits = 8),
+        "). See fit$fit$refit_refusal."),
+        call = NULL)))
+  }
   fit
 }
 

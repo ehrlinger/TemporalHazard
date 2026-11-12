@@ -234,6 +234,8 @@ test_that("hzr_evaluate() scores the window-expanded design (#144)", {
   ))
   expect_equal(hzr_evaluate(mp, theta = mp$fit$theta)$logLik,
                mp$fit$objective, tolerance = 1e-8)
+  # #735: the limit layer restarts this fixture; a change in that fails here.
+  expect_limit(mp, "restarted", "phase_beyond_data")
 })
 
 test_that("hzr_evaluate() counts the rows it scored (#144)", {

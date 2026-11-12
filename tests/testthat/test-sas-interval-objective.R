@@ -609,10 +609,13 @@ test_that("the entry guards accept data that sas does support", {
   # valid -- at fit = FALSE the guard's verdict is never tested against the
   # objective's.
   ph <- list(early = hzr_phase("cdf"), late = hzr_phase("constant"))
-  expect_no_error(suppressWarnings(hazard(
+  expect_no_error(fit <- suppressWarnings(hazard(
     time = c(1, 2, 3, 4, 5, 6), status = c(1, 0, 2, 1, 0, 1),
     time_lower = c(1, 2, 2.0, 4, 5, 6), time_upper = c(1, 2, 3.5, 4, 5, 6),
     dist = "multiphase", phases = ph, fit = TRUE, objective = "sas")))
+  # #735: the limit layer tries the grid on this fixture; a change in that
+  # fails here. A start wins on macOS and not on Linux CI.
+  expect_limit(fit, c("restarted", "kept"), "weak_na")
 })
 
 test_that("interval rows with no bounds supplied are caught at entry", {

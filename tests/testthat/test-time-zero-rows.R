@@ -295,6 +295,9 @@ test_that("a phase formula is built on the retained rows too", {
   ref <- fit(d)
   expect_equal(got$fit$objective, ref$fit$objective, tolerance = 1e-8)
   expect_equal(unname(got$fit$x_list$early), unname(ref$fit$x_list$early))
+  # #735: the limit layer restarts this fixture; a change in that fails here.
+  expect_limit(got, "restarted", "weak")
+  expect_limit(ref, "restarted", "weak")
   # The two consumers the review found disagreeing: hzr_evaluate() and the
   # multiphase score test, which rebuild the phase design from the frame.
   expect_equal(as.numeric(hzr_evaluate(got, got$fit$theta)$logLik),

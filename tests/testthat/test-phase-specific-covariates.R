@@ -305,6 +305,9 @@ test_that("`~ log(age)`, with no phase named `log`, fits as a covariate", {
   )
   expect_equal(fit$fit$objective, ref$fit$objective, tolerance = 1e-8)
   expect_equal(unname(coef(fit) / coef(ref)), rep(1, 7), tolerance = 1e-6)
+  # #735: the limit layer restarts this fixture; a change in that fails here.
+  expect_limit(fit, "restarted", "weak_na")
+  expect_limit(ref, "restarted", "weak_na")
 })
 
 test_that("a plain global covariate in a multiphase fit is unchanged", {

@@ -57,6 +57,8 @@ test_that("CoE switched off by the user is listed as not requested", {
   skip_on_cran()
   fit <- mp_fit(c(1, 0), conserve = FALSE)
   expect_false(fit$spec$control$conserve_applied)  # guard
+  # #735: the limit layer restarts this fixture; a change in that fails here.
+  expect_limit(fit, "restarted", "span")
   expect_identical(fit$degraded_causes[["conservation_of_events"]],
                    "not requested (conserve = FALSE)")
   expect_false("cause not recorded" %in% fit$degraded_causes)

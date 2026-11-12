@@ -93,7 +93,8 @@ test_that("stepwise backward records a refused drop as a failed drop", {
   sw <- res$value
   expect_true(any(grepl("post-drop refit failed for .*: limit: ", res$warnings)))
   cr <- sw$criteria
-  expect_gte(cr$n_refit_failures, 1L)
+  # Only the accepted drop is refitted, so exactly one refit refused.
+  expect_identical(cr$n_refit_failures, 1L)
   expect_true(all(startsWith(cr$refit_failure_reasons, "limit: ")))
   expect_true(cr$stopped_refit_failed)
   # The model was not changed: the refused drop is not a removal.
@@ -158,4 +159,90 @@ test_that("a clean bootstrap reports zero restarted, and still prints it", {
   expect_match(utils::capture.output(print(boot)),
                "Restarted replicates: 0 of 3 successful", all = FALSE,
                fixed = TRUE)
+})
+
+# #736: a refusal from the start that lost a stepwise refit is kept and said.
+test_that("a refit's losing start that refused is kept and warned", {
+  d <- lc_data()
+  base <- lc_base(d)
+  refusal <- .hzr_limit_refusal(limit_trigger_hard("constant"), 50, 9L,
+                                start_objective = 40)
+  warm <- list(value = refusal, warnings = list())
+  default <- list(value = base, warnings = list())
+  w <- NULL
+  fit <- withCallingHandlers(
+    .hzr_refit_best_start(warm, default),
+    hzr_limit_refit_refused = function(c) {
+      w <<- c
+      invokeRestart("muffleWarning")
+    })
+  expect_s3_class(w, "hzr_limit_refit_refused")
+  expect_match(conditionMessage(w), paste0(
+    "The refit from the warm start refused (constant.nu ran to 0 ",
+    "(a step at t_half); objective 40); the default start's fit is kept"),
+    fixed = TRUE)
+  expect_identical(fit$fit$refit_start, "default")
+  expect_identical(fit$fit$refit_refusal, refusal)
+  expect_identical(unname(is.na(fit$fit$refit_objectives)), c(TRUE, FALSE))
+  # A loser that failed for another reason is not a limit refusal.
+  other <- list(value = simpleError("boom"), warnings = list())
+  fit2 <- expect_no_warning(.hzr_refit_best_start(other, default))
+  expect_null(fit2$fit$refit_refusal)
+})
+
+# Only an intercept-only constant phase triggers (theta of length 1), and each
+# such hazard() call reads the trigger twice, outer then its one grid start,
+# so the base refit of every replicate restarts while every candidate and
+# final fit, which carry z, are clean.
+with_base_restart <- function(code) {
+  state <- new.env()
+  state$outer <- TRUE
+  testthat::local_mocked_bindings(
+    .hzr_limit_trigger = function(object, unusable = TRUE) {
+      if (length(object$fit$theta) != 1L) return(NULL)
+      hit <- state$outer
+      state$outer <- !state$outer
+      if (hit) limit_trigger_hard(names(object$spec$phases)[[1]])
+    },
+    .hzr_limit_grid = function(start, ...) list(start),
+    .package = "TemporalHazard")
+  force(code)
+}
+
+test_that("select-mode bootstrap counts a replicate whose base refit restarted", {
+  d <- lc_data()
+  base <- lc_base(d)
+  boot <- with_base_restart(suppressWarnings(hzr_bootstrap(
+    base, n_boot = 3L, scope = list(constant = ~ z),
+    criterion = "wald", direction = "forward")))
+  expect_identical(boot$n_success, 3L)
+  # z entered every replicate, so each final fit is not the restarted base.
+  expect_identical(
+    sum(grepl("z", boot$replicates$parameter)), 3L)
+  expect_identical(boot$n_restarted, 3L)
+  expect_true(all(boot$replicates$restarted))
+  expect_identical(names(boot$restart_reasons),
+                   "limit: constant.nu ran to 0 (a step at t_half)")
+})
+
+test_that("a bootstrap with no successful replicate prints 0 of 0 restarted", {
+  d <- lc_data()
+  base <- lc_base(d)
+  boot <- with_refusal(suppressWarnings(hzr_bootstrap(base, n_boot = 2L)))
+  expect_identical(boot$n_success, 0L)
+  out <- utils::capture.output(print(boot))
+  expect_true("Restarted replicates: 0 of 0 successful" %in% out)
+})
+
+test_that("control$limit_restart is validated on an unfitted call too", {
+  d <- lc_data(50L)
+  expect_error(
+    hazard(survival::Surv(time, status) ~ 1, data = d, dist = "multiphase",
+           phases = list(constant = hzr_phase("constant")), fit = FALSE,
+           control = list(limit_restart = "yes")),
+    "control$limit_restart must be TRUE or FALSE.", fixed = TRUE)
+  expect_s3_class(
+    hazard(survival::Surv(time, status) ~ 1, data = d, dist = "multiphase",
+           phases = list(constant = hzr_phase("constant")), fit = FALSE,
+           control = list(limit_restart = FALSE)), "hazard")
 })

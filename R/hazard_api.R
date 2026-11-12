@@ -586,10 +586,22 @@ NULL
 #'   the original is kept
 #'   (`outcome = "kept"`). This trigger never refuses on its own, and it does
 #'   not fire when the Hessian is unusable only because the numDeriv package
-#'   is not installed. The original fit is recorded in `fit$fit$limit`. With
-#'   `FALSE` the grid is skipped: a limit found by the boundary checks then
-#'   refuses at once, and a flat direction or an unusable Hessian returns the
-#'   original fit.
+#'   is not installed. The original fit is recorded in `fit$fit$limit`.
+#'   Last, on a fit nothing else flagged, a free `t_half` of a cdf or hazard
+#'   phase that lies outside the observed times, or whose phase has `m < 0`,
+#'   is moved by the data's whole log-span, up and down, with the phase's
+#'   other parameters refitted. When either move lowers the log-likelihood
+#'   by less than `0.5 * qchisq(0.5, 1)` (about 0.23), `t_half` is not
+#'   identified: with `m < 0`, `nu` and `t_half` run to infinity together and
+#'   the phase is a power law in t over the data. A move that raises it fires
+#'   the check too: the fit is then not a maximum. When a move cannot be
+#'   computed (a `t_half` near the largest double, or a failed refit) and
+#'   the other move is not flat, the record says the span is unchecked, not
+#'   flat: nothing was measured. This also only tries the grid, and a start
+#'   wins only if this check is clean for it too and its Hessian can be used.
+#'   With `FALSE` the grid is skipped: a limit found by the boundary checks then
+#'   refuses at once, and a flat direction, an unusable Hessian or a flat
+#'   span returns the original fit.
 #' - `phase_share_tol`: Threshold for the multiphase identifiability warning
 #'   (default 1e-8). A phase is reported as having left the model when it
 #'   supplies less than this share of the cumulative hazard at every observed
@@ -947,14 +959,17 @@ NULL
 #' - \code{fit$fit$limit}: \code{NA} when the limit check did not run (an
 #'   unfitted object, or a non-multiphase model); \code{NULL} when it ran and
 #'   found no shape parameter at a limit; or a list when \code{hazard()}
-#'   restarted the fit (\code{trigger}, \code{original}, \code{grid},
+#'   tried a restart (\code{trigger}, \code{original}, \code{grid},
 #'   \code{winner}, \code{outcome}), which also raises a warning of class
-#'   \code{"hzr_limit_restarted"}. A fit that cannot be rescued is not
+#'   \code{"hzr_limit_restarted"} when a restart replaced the fit. A fit that
+#'   cannot be rescued is not
 #'   returned: \code{hazard()} stops with class \code{"hzr_limit_refusal"},
 #'   and the error's \code{$fit} holds the drifted fit for inspection, with
 #'   \code{outcome = "refused"}.
-#'   A fit whose only flag is a flat direction (a ridge), or a Hessian that
-#'   cannot be used (no standard errors), tries the same restart but is never
+#'   A fit whose only flag is a flat direction (a ridge), a Hessian that
+#'   cannot be used (no standard errors), or a flat span (a \code{t_half}
+#'   that moves across the data's whole range at no cost; see
+#'   \code{control$limit_restart}), tries the same restart but is never
 #'   refused: when no restart does better it is returned unchanged, with
 #'   \code{outcome = "kept"} and \code{winner = NA}. An unusable Hessian
 #'   triggers the restart only on a converged fit that nothing else flagged
@@ -4035,6 +4050,15 @@ vcov.hazard <- function(object, ...) {
            paste(format(m), collapse = ", "), "). A fit with no iterations ",
            "is its starting values, not an estimate: to evaluate a model at ",
            "parameters you supply, use hzr_evaluate().", call. = FALSE)
+    }
+  }
+  # Checked here as well as in the limit layer, which reads it only on a
+  # fitted multiphase call: an unfitted object stores the control a later
+  # stepwise or bootstrap refit uses (#736).
+  if ("limit_restart" %in% names(control)) {
+    r <- control[["limit_restart"]]
+    if (!(isTRUE(r) || isFALSE(r))) {
+      stop("control$limit_restart must be TRUE or FALSE.", call. = FALSE)
     }
   }
   control

@@ -85,6 +85,8 @@ test_that("a caller who declined CoE is distinguished from one who was refused",
   # The reason is what separates the two.
   fit <- coe_fit(c(1, 0), conserve = FALSE)
   expect_false(is.null(fit$fit$theta))
+  # #735: the limit layer restarts this fixture; a change in that fails here.
+  expect_limit(fit, "restarted", "span")
   expect_false(fit$spec$control$conserve_applied)
   expect_identical(fit$spec$control$conserve_disabled_reason, "not_requested")
 })

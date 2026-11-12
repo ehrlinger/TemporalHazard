@@ -74,6 +74,8 @@ test_that("the same start_seed reproduces a fit and a different one may not", {
   b  <- mp_repro_fit(d, control = list(start_seed = 8L))
 
   expect_identical(a$fit$theta, a2$fit$theta)
+  # #735: the limit layer restarts this fixture; a change in that fails here.
+  expect_limit(b, "restarted", "phase_discontinuity")
   # A different ensemble must actually be a different ensemble.  The optimum it
   # reaches may coincide, so assert on the draws rather than on the fit.
   expect_false(identical(

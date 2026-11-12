@@ -431,7 +431,7 @@ test_that("a constant entry time does not rescue tied exit times", {
   d <- data.frame(start = rep(1, 200), stop = rep(2, 200),
                   ev = rbinom(200, 1, 0.4))
   w <- character(0)
-  withCallingHandlers(
+  fit <- withCallingHandlers(
     hazard(survival::Surv(start, stop, ev) ~ 1, data = d, dist = "multiphase",
            phases = list(early = hzr_phase("cdf", t_half = 0.5, nu = 0, m = -0.4),
                          constant = hzr_phase("constant")),
@@ -442,6 +442,12 @@ test_that("a constant entry time does not rescue tied exit times", {
       invokeRestart("muffleWarning")
     })
   expect_true(any(grepl("span a relative range below", w)))
+  # The span check (#734) fires here, and a grid start reaches a degenerate
+  # spike (objective +772 against -147.6) whose Hessian is unusable. That is
+  # not a rescue: the original is kept, never the spike.
+  expect_identical(fit$fit$limit$trigger[[1]]$source, "span")
+  expect_false(identical(fit$fit$limit$outcome, "restarted"))
+  expect_lt(fit$fit$objective, 0)
 })
 
 test_that("degenerate times with an absent phase still warn", {

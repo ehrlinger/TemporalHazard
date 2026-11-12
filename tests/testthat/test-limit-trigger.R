@@ -163,7 +163,8 @@ test_that("the limit line has a sentence for each state", {
   expect_identical(.hzr_limit_line(NULL), "  Limit check: none")
   expect_identical(.hzr_limit_line(NA), "  Limit check: not run")
   trig <- list(list(phase = "early", parameter = "nu",
-                    limit = "0 (a step at t_half)", source = "weak"))
+                    limit = "0 (a step at t_half)",
+                    source = "phase_discontinuity"))
   lim <- list(trigger = trig, outcome = "restarted",
               grid = data.frame(start = 1:2, objective = c(-5, -4)), winner = 2L)
   expect_identical(.hzr_limit_line(lim),
@@ -175,7 +176,8 @@ test_that("the limit line has a sentence for each state", {
   kept <- list(trigger = trig, outcome = "kept",
                grid = data.frame(start = 1:2, objective = c(-5, -4)), winner = NA_integer_)
   expect_identical(.hzr_limit_line(kept),
-    "  Limit check: restart tried (early.nu ran to 0 (a step at t_half)); none better, original kept")
+    paste0("  Limit check: restart tried (early.nu ran to 0 (a step at t_half)); ",
+           "no start clear of a limit did better, original kept"))
   skipped <- list(trigger = trig, outcome = "skipped", grid = NULL,
                   winner = NA_integer_)
   expect_identical(.hzr_limit_line(skipped),
@@ -321,5 +323,67 @@ test_that("the NA trigger reads sensibly in the limit line", {
                grid = data.frame(start = 1:2, objective = c(-5, -4)), winner = NA_integer_)
   expect_identical(.hzr_limit_line(kept), paste0(
     "  Limit check: restart tried (early.t_half: no usable Hessian ",
-    "(identification not checked)); none better, original kept"))
+    "(identification not checked)); no start clear of a limit did better, original kept"))
+})
+
+test_that("a flat direction is described with a colon, not 'ran to' (#736)", {
+  trig <- list(list(phase = "early", parameter = "nu",
+                    limit = "a flat direction (not identified)", source = "weak"))
+  expect_identical(.hzr_limit_describe(trig),
+                   "early.nu: a flat direction (not identified)")
+})
+
+test_that("a refusal leads with the objective from the user's start (#736)", {
+  trig <- list(list(phase = "early", parameter = "nu",
+                    limit = "0 (a step at t_half)", source = "phase_discontinuity"))
+  e <- .hzr_limit_refusal(trig, best_objective = 997, n_tried = 9L,
+                          start_objective = -10)
+  expect_match(conditionMessage(e), paste0(
+    "the objective from your start was -10 (a restart that also ran to a ",
+    "limit reached 997)."), fixed = TRUE)
+  expect_identical(e$start_objective, -10)
+  expect_identical(e$best_objective, 997)
+  same <- .hzr_limit_refusal(trig, best_objective = -10, n_tried = 9L)
+  expect_match(conditionMessage(same), "the objective from your start was -10. ",
+               fixed = TRUE)
+  expect_false(grepl("also ran to a limit", conditionMessage(same)))
+})
+
+test_that("a weak record carries the flat-direction limit string (#735)", {
+  tr <- .hzr_limit_trigger(mk(weak = list(params = "early.nu")))
+  expect_identical(tr[[1]]$limit, "a flat direction (not identified)")
+})
+
+test_that("the vanished exclusion drops only the vanished phase (#735)", {
+  ph <- list(early = hzr_phase("cdf", t_half = 1, nu = 1, m = 1, fixed = "m"),
+             mid = hzr_phase("cdf", t_half = 5, nu = 1, m = 1, fixed = "m"))
+  th <- c(early.log_mu = 0, early.log_t_half = 0, early.nu = 1, early.m = 1,
+          mid.log_mu = 0, mid.log_t_half = 1, mid.nu = 1, mid.m = 1)
+  obj <- list(spec = list(dist = "multiphase", phases = ph),
+              fit = list(theta = th,
+                         boundary = list(list(mechanism = "coe_phase_vanished",
+                                              phase = "early")),
+                         weak = list(params = c("early.nu", "mid.nu"))))
+  tr <- .hzr_limit_trigger(obj)
+  expect_identical(vapply(tr, `[[`, "", "phase"), "mid")
+  expect_identical(vapply(tr, `[[`, "", "parameter"), "nu")
+})
+
+test_that("a g3 grid holds every other g3 shape and a fixed covariate (#735)", {
+  ph <- list(late = hzr_phase("g3", tau = 1, gamma = 1, alpha = 1, eta = 1))
+  start <- c(late.log_mu = 0, late.log_tau = 0, late.gamma = 2, late.alpha = 1.5,
+             late.eta = 3, late.age = 0.7, late.sex = 0.4)
+  tr <- list(list(phase = "late", parameter = "tau", limit = "x", source = "weak"))
+  g <- .hzr_limit_grid(start, tr, ph, event_times = 1:8, fixed = "late.age")
+  expect_length(g, 3L)
+  m <- do.call(rbind, g)
+  expect_equal(unname(m[, "late.log_tau"]),
+               log(unname(stats::quantile(1:8, c(0.25, 0.5, 0.75)))))
+  expect_true(all(m[, "late.gamma"] == 2))
+  expect_true(all(m[, "late.alpha"] == 1.5))
+  expect_true(all(m[, "late.eta"] == 3))
+  expect_true(all(m[, "late.log_mu"] == 0))
+  # A fixed covariate stays put; a free one is zeroed, as RETRY_T does.
+  expect_true(all(m[, "late.age"] == 0.7))
+  expect_true(all(m[, "late.sex"] == 0))
 })
