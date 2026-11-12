@@ -1926,10 +1926,10 @@ hazard <- function(formula = NULL,
       }
     }))
   }
-  # And each phase's log-scale scale parameters (#673). A covariate can share
-  # one of their names (a column called `log_mu` makes a second
-  # `constant.log_mu`), and a name that appears twice cannot say which
-  # parameter it is, so it is never named.
+  # And each phase's log-scale scale parameters (#673). A name that appears
+  # twice cannot say which parameter it is, so it is never named. Parameter
+  # names are now refused when they repeat (.hzr_theta_names_list()), so
+  # this guard should not fire; it stays as a defence.
   weak_logs <- if (dist == "multiphase" && length(phases)) {
     unlist(lapply(seq_along(phases), function(k) {
       scale <- switch(phases[[k]]$type, g3 = "log_tau", constant = NULL,

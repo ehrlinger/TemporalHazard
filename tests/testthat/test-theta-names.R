@@ -123,6 +123,12 @@ test_that("a covariate named like its phase's own parameter is refused", {
   expect_error(hzr_theta_names(list(constant = hzr_phase("constant")),
                                covariates = list(constant = "log_mu")),
                "constant.log_mu", fixed = TRUE)
+  # Two phases can produce one name too: `a` with covariate `b.log_mu`, and
+  # phase `a.b`.
+  expect_error(hzr_theta_names(list(a = hzr_phase("constant"),
+                                    a.b = hzr_phase("constant")),
+                               covariates = list(a = "b.log_mu")),
+               "share the name `a.b.log_mu`", fixed = TRUE)
   # Another phase's parameter name is not a collision: the prefix differs.
   expect_identical(
     hzr_theta_names(list(early = hzr_phase("cdf"),
@@ -180,5 +186,9 @@ test_that("a stepwise screen does not pass over a colliding candidate", {
   sw <- suppressWarnings(hzr_stepwise(fit, scope = sc, data = d,
                                       criterion = "wald", trace = FALSE))
   expect_identical(sw$steps$variable, "w")
-  expect_true(any(grepl("log_mu@constant", sw$trace_msg, fixed = TRUE)))
+  # ...and records the refusal as the reason, not some other failure.
+  why <- sw$criteria$refit_failure_reasons
+  expect_gt(length(why), 0L)
+  expect_true(all(grepl("covariate `log_mu` in phase `constant`", why,
+                        fixed = TRUE)))
 })

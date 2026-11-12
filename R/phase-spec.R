@@ -561,7 +561,8 @@ is_hzr_phase <- function(x) {
          "` has the name of one of that phase's own parameters (",
          paste0(phase_name, ".", clash[[1L]]), "), so two parameters would ",
          "share it and a lookup by name would read the wrong one. Rename ",
-         "the column in `data` (for a factor, the variable or its level).",
+         "the column in `data` or `x` (for a factor, the variable or its ",
+         "level).",
          call. = FALSE)
   }
 
@@ -701,9 +702,19 @@ hzr_theta_names <- function(phases, covariates = NULL) {
 #' @return Character vector, concatenated in phase order.
 #' @noRd
 .hzr_theta_names_list <- function(phases, cov_names = NULL) {
-  unlist(lapply(names(phases), function(nm) {
+  out <- unlist(lapply(names(phases), function(nm) {
     .hzr_phase_theta_names(phases[[nm]], nm, cov_names[[nm]] %||% character(0))
   }), use.names = FALSE)
+  # Two phases can also produce one name: phases `a` and `a.b`, with a
+  # covariate `b.log_mu` in `a`, both give `a.b.log_mu` (#737 review).
+  dup <- out[duplicated(out)]
+  if (length(dup) > 0L) {
+    stop("Two parameters would share the name `", dup[[1L]], "`, so a ",
+         "lookup by name would read the wrong one. A phase name followed by ",
+         "a dot begins another phase's name; rename that phase or the ",
+         "covariate.", call. = FALSE)
+  }
+  out
 }
 
 

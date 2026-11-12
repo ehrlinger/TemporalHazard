@@ -6,4 +6,8 @@
   lookup by name, `coef(fit)["early.nu"]` or a stepwise Wald test among
   them, read the shape instead of the covariate. `hazard()` now stops,
   naming the phase and the column, so it can be renamed. A factor level
-  that expands to such a name is caught too.
+  that expands to such a name is caught too, and so is the rarer case of
+  two phases making one name (a phase `a.b` beside a phase `a` with a
+  covariate `b.log_mu`). A fit saved before this release with such a name
+  still prints and predicts, but `hzr_evaluate()` and `hzr_bootstrap()`
+  now refuse it.
