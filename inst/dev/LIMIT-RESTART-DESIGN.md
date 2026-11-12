@@ -105,6 +105,10 @@ these:
     positive costs a grid and a `"kept"` record, never a refusal.
   - Under it, a grid start that does better wins only if its own span check is clean.
     On the seed-21 fixture three starts beat the original at the same limit.
+  - It also judges its starts strictly, as `weak_na` does: a start with an unusable
+    Hessian is not clean. Without that, the full-suite audit at `9f93b244` found a
+    tied-times fit (`test-phase-identifiability.R`) "rescued" by a degenerate spike,
+    objective +772 against -147.6.
   - The `nu * exp(-L)` move the measurement also tried is not used: it fires on fits
     with `nu` near 0 that the step check already handles, and on clean ones.
   - The KUL reference fit "not at an optimum" (open question 4) is the C binary's

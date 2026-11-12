@@ -33,4 +33,5 @@
   whole log-span with the phase's other parameters refitted. A change in the
   log-likelihood of less than about 0.23 means `t_half` is not identified. As
   with a flat direction, this tries the restart grid and keeps the original
-  unless a start clear of the limit does better. It never refuses.
+  unless a start clear of the limit does better, with a usable Hessian of its
+  own. It never refuses.

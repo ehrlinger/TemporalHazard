@@ -718,9 +718,11 @@
   # A grid start is clean when it does not trigger. Under an unusable-Hessian
   # trigger, a start whose Hessian is unusable too is in the same unchecked
   # state, not a rescue (#734: on the #551 seed-15 fixture every start drifted
-  # to the same limit, one 0.0017 above the original). Every other trigger
-  # judges its starts as before #734.
-  strict <- all(vapply(trigger, `[[`, "", "source") == "weak_na")
+  # to the same limit, one 0.0017 above the original). A span trigger judges
+  # its starts the same way: an unchecked start "rescued" a tied-times fit
+  # with a degenerate spike (+772 against -147.6). Every other trigger judges
+  # its starts as before #734.
+  strict <- all(vapply(trigger, `[[`, "", "source") %in% c("weak_na", "span"))
   rows <- data.frame(
     start = seq_along(runs),
     objective = vapply(runs, function(r) {
