@@ -710,9 +710,10 @@ hzr_theta_names <- function(phases, covariates = NULL) {
   dup <- out[duplicated(out)]
   if (length(dup) > 0L) {
     stop("Two parameters would share the name `", dup[[1L]], "`, so a ",
-         "lookup by name would read the wrong one. A phase name followed by ",
-         "a dot begins another phase's name; rename that phase or the ",
-         "covariate.", call. = FALSE)
+         "lookup by name would read the wrong one: a phase has two ",
+         "covariates of that name, or a phase name followed by a dot begins ",
+         "another phase's name. Rename the covariate or the phase.",
+         call. = FALSE)
   }
   out
 }

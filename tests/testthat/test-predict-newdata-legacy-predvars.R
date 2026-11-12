@@ -269,8 +269,16 @@ test_that("a legacy fit with duplicated phase column names is refused", {
   d <- legacy_data()
   d$g <- factor(c("a", "b")[(d$inc_surg %% 2) + 1])
   d$gb <- d$age / 100
-  local_mocked_bindings(.hzr_refuse_duplicate_columns =
-                          function(x, phase = NULL) invisible(NULL))
+  # Fits that old also predate the refusal of repeated parameter names, so
+  # the name builder is the one they were made with.
+  local_mocked_bindings(
+    .hzr_refuse_duplicate_columns = function(x, phase = NULL) invisible(NULL),
+    .hzr_theta_names_list = function(phases, cov_names = NULL) {
+      unlist(lapply(names(phases), function(nm) {
+        .hzr_phase_theta_names(phases[[nm]], nm,
+                               cov_names[[nm]] %||% character(0))
+      }), use.names = FALSE)
+    })
   lf <- legacy_fit_on("g + gb", d, keep_frame = TRUE)
   expect_identical(colnames(lf$current$fit$x_list$early), c("gb", "gb"))
   rows <- c(1, 2, 3, 50)
