@@ -157,6 +157,19 @@ interval-censored, the analytic Hessian declines and
 computes it numerically. `numDeriv` is a Suggests, so without it those
 fits have no standard errors.
 
+Above the optimizer,
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+checks every fitted multiphase model for a free shape parameter at a
+limit (`R/limit-restart.R`). When it finds one it refits from a fixed
+grid of starts and returns the best start that stays clear of every
+limit, or stops with an error of class `hzr_limit_refusal`. A flat
+direction or an unusable Hessian tries the same grid but keeps the
+original fit when no start does better.
+[`?hazard`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md),
+under `control$limit_restart`, has the rules, and
+[`print()`](https://rdrr.io/r/base/print.html) reports the outcome on
+its `Limit check:` line.
+
 ## 4 Golden fixture system
 
 Golden fixtures are pre-fitted model results saved as `.rds` files in

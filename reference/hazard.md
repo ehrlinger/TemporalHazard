@@ -336,11 +336,17 @@ and a printable `detail`. The mechanisms are `"unbounded_phase"`, a
 `"hazard"` phase whose `t_half` is below the first observed time;
 `"phase_discontinuity"`, a `"cdf"` or `"hazard"` phase whose shape has
 collapsed to a step the observed times cannot resolve (it can lie inside
-the data); and two made at setup, before the fit: `"g3_alpha_one"` (a g3
-phase with `alpha` fixed at 1, re-expressed as PROC HAZARD does, see
+the data); `"phase_beyond_data"`, a `"cdf"` or `"hazard"` phase whose
+`t_half` lies past the last observed time, where its `G` is still
+numerically 0 and `t_half` is not identified. On a multiphase fit these
+three, on a shape parameter left free, are the limits that trigger the
+restart described under `fit$fit$limit` below, so a fit `hazard()`
+returns does not carry one. Two more are made at setup, before the fit:
+`"g3_alpha_one"` (a g3 phase with `alpha` fixed at 1, re-expressed as
+PROC HAZARD does, see
 [`hzr_phase()`](https://ehrlinger.github.io/TemporalHazard/reference/hzr_phase.md))
 and `"g3_fixge2_alpha_start"` (a free `alpha` start moved to 2/3 under
-`constraint = "eta_gamma"`); and two made after it.
+`constraint = "eta_gamma"`). Two more are made after it.
 `"g3_corner_supremum"` is a g3 phase under `constraint = "eta_gamma"`
 whose estimated `gamma` converged below 1000 although the log-likelihood
 is higher at a much larger `gamma`, with any fixed `tau` or `alpha`
@@ -363,6 +369,24 @@ observed times. A fit with any record that has no `warned_by` raises one
 warning whose classes are `"hzr_"` plus each such record's mechanism,
 all inheriting `"hzr_boundary"`, so one handler catches the whole
 family.
+
+- `fit$fit$limit`: `NA` when the limit check did not run (an unfitted
+  object, or a non-multiphase model); `NULL` when it ran and found no
+  shape parameter at a limit; or a list when `hazard()` restarted the
+  fit (`trigger`, `original`, `grid`, `winner`, `outcome`), which also
+  raises a warning of class `"hzr_limit_restarted"`. A fit that cannot
+  be rescued is not returned: `hazard()` stops with class
+  `"hzr_limit_refusal"`, and the error's `$fit` holds the drifted fit
+  for inspection, with `outcome = "refused"`. A fit whose only flag is a
+  flat direction (a ridge), or a Hessian that cannot be used (no
+  standard errors), tries the same restart but is never refused: when no
+  restart does better it is returned unchanged, with `outcome = "kept"`
+  and `winner = NA`. An unusable Hessian triggers the restart only on a
+  converged fit that nothing else flagged and that has a cdf or hazard
+  phase with a free `t_half`. A restart then counts as better only when
+  its objective is higher by more than a relative 1e-6 and its own
+  identification can be checked. It does not trigger the restart when
+  the cause is that the numDeriv package is not installed.
 
 ## Details
 
@@ -396,6 +420,33 @@ Control parameters:
   compare the resulting `objective` values. A fractional value is
   rejected rather than truncated, since `3.9` and `3` would otherwise
   select the same ensemble without saying so.
+
+- `limit_restart` (multiphase, default `TRUE`): a shape parameter at a
+  limit that the boundary checks record (`t_half` below the first or
+  past the last observed time, `nu` toward 0 as a step) triggers a
+  restart from a fixed grid of starts. The best fit is returned only if
+  it has the best objective found and no parameter at a limit; otherwise
+  `hazard()` stops with an error of class `hzr_limit_refusal` naming the
+  parameter. The error carries the restarts it tried as `$grid` and, for
+  inspection, the drifted fit as `$fit` (catch it with
+  `tryCatch(..., hzr_limit_refusal = function(e) e$fit)`); that fit's
+  `fit$fit$limit$outcome` is `"refused"`, and
+  [`print()`](https://rdrr.io/r/base/print.html) says so. A flat
+  direction through a shape (the weak-identification reading) only tries
+  the grid: a better fit is returned if one is found, and otherwise the
+  original fit is returned unchanged. A converged fit whose Hessian
+  cannot be used, so that it has no standard errors and its
+  identification cannot be checked, also only tries the grid, provided
+  nothing else flagged it and some cdf or hazard phase has a free
+  `t_half`. A grid start replaces it only when its objective is better
+  by more than a relative 1e-6 and its own identification can be checked
+  (`outcome = "restarted"`); otherwise the original is kept
+  (`outcome = "kept"`). This trigger never refuses on its own, and it
+  does not fire when the Hessian is unusable only because the numDeriv
+  package is not installed. The original fit is recorded in
+  `fit$fit$limit`. With `FALSE` the grid is skipped: a limit found by
+  the boundary checks then refuses at once, and a flat direction or an
+  unusable Hessian returns the original fit.
 
 - `phase_share_tol`: Threshold for the multiphase identifiability
   warning (default 1e-8). A phase is reported as having left the model
@@ -848,6 +899,7 @@ summary(fit_mp)
 #>   converged:    TRUE 
 #>   gradient:     relative 3.75e-10 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -321.926 
+#>   Limit check: none
 #>   Not done in this run: none
 #>   evaluations: fn=26, gr=7
 #>   message:      continued with nlm() for 1 iterations (code 1) 

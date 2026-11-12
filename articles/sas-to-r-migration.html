@@ -456,6 +456,7 @@
 <blockquote>
 <p><strong>Note:</strong> <code>theta</code> takes the <code>PARMS</code> values on the scale the optimizer works on, which is not always the scale SAS prints. <code>MUE</code>, <code>MUC</code> and <code>THALF</code> go in as logs; <code>NU</code> and <code>M</code> go in as written. A fixed parameter is declared on the phase that owns it, so <code>FIXM</code> is <code>fixed = "m"</code> inside the early <code><a href="../reference/hzr_phase.html">hzr_phase()</a></code>. <code><a href="../reference/hazard.html">hazard()</a></code> does not read a <code>control$fix</code> entry: a fix written there leaves <code>M</code> free, and <code><a href="../reference/hazard.html">hazard()</a></code> warns that it never reads <code>control$fix</code>.</p>
 </blockquote>
+<p>The fix keywords also carry the other half of the SAS workflow. HAZARD never checks whether a shape parameter has run to a limit, a <code>THALF</code> below the first observed time or a <code>NU</code> heading to 0 as the early phase collapses into a step. You spot that in the listing, then pin the parameter with <code>FIXNU</code> or <code>FIXTHALF</code> and refit. <code><a href="../reference/hazard.html">hazard()</a></code> does the spotting for you. When a multiphase fit lands on a limit, it refits from a fixed grid of starts and returns the best start that stays clear of every limit, with a warning of class <code>hzr_limit_restarted</code>. When no start does, or a fit at the limit still beats every clean one, it stops with an error of class <code>hzr_limit_refusal</code> that names the parameter, and you make the <code>FIXNU</code> decision yourself: <code>hzr_phase(..., nu = &lt;value&gt;, fixed = "nu")</code> is <code>FIXNU</code>, and <code>fixed = "t_half"</code> is <code>FIXTHALF</code>. A softer sign, a shape that is only weakly identified or a fit with no standard errors, tries the same grid but never stops: when no start does better, the original fit is kept and the record says so. <code>print(fit)</code> always shows a <code>Limit check:</code> line, so a clean fit says so too.</p>
 <hr></section><section class="level3"><h3 id="early-and-constant-covariate-blocks">
 <code>EARLY</code> and <code>CONSTANT</code> covariate blocks<a class="anchor" aria-label="anchor" href="#early-and-constant-covariate-blocks"></a>
 </h3>
@@ -781,6 +782,7 @@ PROC HAZARD DATA=AVCS P CONSERVE OUTHAZ=OUTEST CONDITION=14 QUASI;
 <span><span class="co">#&gt;   gradient:     relative 0.000123 (SAS/C requires &lt;= 6.06e-06; not met, nlm code 2)</span></span>
 <span><span class="co">#&gt;   log-lik:      -160.408 </span></span>
 <span><span class="co">#&gt;   Note: Hessian ill-conditioned (rcond = 4.41e-12); standard errors may be unreliable.</span></span>
+<span><span class="co">#&gt;   Limit check: none</span></span>
 <span><span class="co">#&gt;   Not done in this run: none</span></span>
 <span><span class="co">#&gt;   evaluations: fn=17, gr=1</span></span>
 <span><span class="co">#&gt;   message:      continued with nlm() for 2 iterations (code 2) </span></span>

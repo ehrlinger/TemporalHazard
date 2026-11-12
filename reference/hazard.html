@@ -388,11 +388,17 @@ printable <code>detail</code>. The mechanisms are <code>"unbounded_phase"</code>
 <code>"hazard"</code> phase whose <code>t_half</code> is below the first observed
 time; <code>"phase_discontinuity"</code>, a <code>"cdf"</code> or <code>"hazard"</code>
 phase whose shape has collapsed to a step the observed times cannot
-resolve (it can lie inside the data); and two made at setup, before the
+resolve (it can lie inside the data); <code>"phase_beyond_data"</code>, a
+<code>"cdf"</code> or <code>"hazard"</code> phase whose <code>t_half</code> lies past
+the last observed time, where its <code>G</code> is still numerically 0 and
+<code>t_half</code> is not identified. On a multiphase fit these three, on a
+shape parameter left free, are the limits that trigger the restart
+described under <code>fit$fit$limit</code> below, so a fit <code>hazard()</code>
+returns does not carry one. Two more are made at setup, before the
 fit: <code>"g3_alpha_one"</code> (a g3 phase with <code>alpha</code> fixed at 1,
 re-expressed as PROC HAZARD does, see <code><a href="hzr_phase.html">hzr_phase()</a></code>) and
 <code>"g3_fixge2_alpha_start"</code> (a free <code>alpha</code> start moved to 2/3
-under <code>constraint = "eta_gamma"</code>); and two made after it.
+under <code>constraint = "eta_gamma"</code>). Two more are made after it.
 <code>"g3_corner_supremum"</code> is a g3 phase under
 <code>constraint = "eta_gamma"</code> whose estimated <code>gamma</code> converged
 below 1000 although the log-likelihood is higher at a much larger
@@ -417,8 +423,26 @@ likelihood reads
 count as observed times. A fit with any record that has no
 <code>warned_by</code> raises one warning whose classes are <code>"hzr_"</code>
 plus each such record's mechanism, all inheriting
-<code>"hzr_boundary"</code>, so one handler catches the whole family.</p>
-    </div>
+<code>"hzr_boundary"</code>, so one handler catches the whole family.</p><ul><li><p><code>fit$fit$limit</code>: <code>NA</code> when the limit check did not run (an
+unfitted object, or a non-multiphase model); <code>NULL</code> when it ran and
+found no shape parameter at a limit; or a list when <code>hazard()</code>
+restarted the fit (<code>trigger</code>, <code>original</code>, <code>grid</code>,
+<code>winner</code>, <code>outcome</code>), which also raises a warning of class
+<code>"hzr_limit_restarted"</code>. A fit that cannot be rescued is not
+returned: <code>hazard()</code> stops with class <code>"hzr_limit_refusal"</code>,
+and the error's <code>$fit</code> holds the drifted fit for inspection, with
+<code>outcome = "refused"</code>.
+A fit whose only flag is a flat direction (a ridge), or a Hessian that
+cannot be used (no standard errors), tries the same restart but is never
+refused: when no restart does better it is returned unchanged, with
+<code>outcome = "kept"</code> and <code>winner = NA</code>. An unusable Hessian
+triggers the restart only on a converged fit that nothing else flagged
+and that has a cdf or hazard phase with a free <code>t_half</code>. A restart
+then counts as better only when its objective is higher by more than a
+relative 1e-6 and its own identification can be checked. It does not
+trigger the restart when the cause is that the numDeriv package is not
+installed.</p></li>
+</ul></div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>Control parameters:</p><ul><li><p><code>maxit</code>: Maximum iterations of the quasi-Newton (BFGS) optimizer
@@ -444,6 +468,31 @@ starts when a fit is suspected of sitting in a local optimum, and compare
 the resulting <code>objective</code> values. A fractional value is rejected rather
 than truncated, since <code>3.9</code> and <code>3</code> would otherwise select the same
 ensemble without saying so.</p></li>
+<li><p><code>limit_restart</code> (multiphase, default <code>TRUE</code>): a shape parameter at a
+limit that the boundary checks record (<code>t_half</code> below the first or past
+the last observed time, <code>nu</code> toward 0 as a step) triggers a restart from
+a fixed grid of starts. The best fit is returned only if it has the best
+objective found and no parameter at a limit; otherwise <code>hazard()</code> stops
+with an error of class <code>hzr_limit_refusal</code> naming the parameter. The
+error carries the restarts it tried as <code>$grid</code> and, for inspection, the
+drifted fit as <code>$fit</code> (catch it with
+<code>tryCatch(..., hzr_limit_refusal = function(e) e$fit)</code>); that fit's
+<code>fit$fit$limit$outcome</code> is <code>"refused"</code>, and <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> says so. A flat
+direction through a shape (the weak-identification reading) only tries
+the grid: a better fit is returned if one is found, and otherwise the
+original fit is returned unchanged. A converged fit whose Hessian cannot
+be used, so that it has no standard errors and its identification cannot
+be checked, also only tries the grid, provided nothing else flagged it
+and some cdf or hazard phase has a free <code>t_half</code>. A grid start replaces
+it only when its objective is better by more than a relative 1e-6 and its
+own identification can be checked (<code>outcome = "restarted"</code>); otherwise
+the original is kept
+(<code>outcome = "kept"</code>). This trigger never refuses on its own, and it does
+not fire when the Hessian is unusable only because the numDeriv package
+is not installed. The original fit is recorded in <code>fit$fit$limit</code>. With
+<code>FALSE</code> the grid is skipped: a limit found by the boundary checks then
+refuses at once, and a flat direction or an unusable Hessian returns the
+original fit.</p></li>
 <li><p><code>phase_share_tol</code>: Threshold for the multiphase identifiability warning
 (default 1e-8). A phase is reported as having left the model when it
 supplies less than this share of the cumulative hazard at every observed
@@ -841,6 +890,7 @@ nonlinear temporal decomposition mixed effects model. <em>Stat Methods Med Res.<
 <span class="r-out co"><span class="r-pr">#&gt;</span>   converged:    TRUE </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   gradient:     relative 3.75e-10 (SAS/C requires &lt;= 6.06e-06; met, nlm code 1)</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   log-lik:      -321.926 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Limit check: none</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   Not done in this run: none</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   evaluations: fn=26, gr=7</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   message:      continued with nlm() for 1 iterations (code 1) </span>

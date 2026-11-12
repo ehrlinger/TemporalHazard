@@ -213,7 +213,10 @@ so is any <code>...</code> argument without <code>scope</code>.</p></dd>
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>A list with class <code>"hzr_bootstrap"</code> containing:</p><dl><dt>replicates</dt>
 <dd><p>Data frame with columns <code>replicate</code>, <code>parameter</code>,
-and <code>estimate</code>, one row per parameter per successful replicate.</p></dd>
+<code>estimate</code> and <code>restarted</code>, one row per parameter per successful
+replicate. <code>restarted</code> is <code>TRUE</code> on every row of a replicate whose fit
+ran a shape parameter to a limit and was rescued by a restart, so its
+estimates are the restart's.</p></dd>
 
 <dt>summary</dt>
 <dd><p>Data frame with columns <code>parameter</code>, <code>n</code>, <code>pct</code>,
@@ -244,7 +247,9 @@ fails as a non-finite objective, not at the sentinel (#486).</p></dd>
 <dt>failure_reasons</dt>
 <dd><p>Named integer vector counting why replicates
 failed, most common first: the refit's error message (or
-<code>"error with an empty message"</code>),
+<code>"error with an empty message"</code>), except that a refit <code><a href="hazard.html">hazard()</a></code>
+refused because a shape parameter ran to a limit is counted under one
+short reason such as <code>"limit: early.nu ran to 0"</code>,
 <code>"refit returned a &lt;class&gt;, not a fit object"</code> (<code>"an &lt;class&gt;"</code> when the
 class begins with a vowel; or <code>"... with no \code{fit}, not a fit object"</code>), <code>"refit returned no parameter estimates"</code>, or
 <code>"non-finite objective (did not converge)"</code> (the reason for a
@@ -271,6 +276,20 @@ It sums to <code>n_failed</code>, and
 is an empty named integer vector, never <code>NULL</code>, when none failed. When
 every replicate fails, <code>hzr_bootstrap()</code> also warns, naming the most
 common reason.</p></dd>
+
+<dt>n_restarted</dt>
+<dd><p>Number of successful replicates whose first fit ran a
+shape parameter to a limit and was refitted from a grid of other
+starts, the restart winning. Such a replicate counts as a success. It is
+reported for every multiphase fit, including when it is 0, and is <code>NA</code>
+for any other model, which has no limit check.</p></dd>
+
+<dt>restart_reasons</dt>
+<dd><p>Named integer vector counting the restarted
+replicates by the limit that triggered the restart, for example
+<code>"limit: early.nu ran to 0"</code>, most common first. It sums to
+<code>n_restarted</code>, and is an empty named integer vector when none were
+restarted.</p></dd>
 
 <dt>n_uncomputable_replicates</dt>
 <dd><p>Select mode only: number of otherwise

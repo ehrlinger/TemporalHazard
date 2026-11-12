@@ -122,6 +122,7 @@ summary(fit)
 #>   converged:    TRUE 
 #>   gradient:     relative 2.69e-06 (SAS/C requires <= 6.06e-06; met)
 #>   log-lik:      -211.468 
+#>   Limit check: none
 #>   Not done in this run: none
 #>   evaluations: fn=5, gr=1
 #> 

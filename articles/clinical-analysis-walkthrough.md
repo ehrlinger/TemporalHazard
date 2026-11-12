@@ -253,6 +253,7 @@ summary(fit_mp)
 #>   converged:    TRUE 
 #>   gradient:     relative 1.27e-09 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -228.029 
+#>   Limit check: none
 #>   Not done in this run: none
 #>   evaluations: fn=26, gr=3
 #>   message:      continued with nlm() for 1 iterations (code 1) 
@@ -494,6 +495,7 @@ summary(fit_mv)
 #>   gradient:     relative 2.17e-06 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -189.702 
 #>   Note: Hessian ill-conditioned (rcond = 8.64e-15); standard errors may be unreliable.
+#>   Limit check: none
 #>   Not done in this run: none
 #>   evaluations: fn=10, gr=1
 #>   message:      continued with nlm() for 139 iterations (code 1) 

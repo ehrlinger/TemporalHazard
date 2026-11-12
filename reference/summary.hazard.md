@@ -103,6 +103,7 @@ summary(fit_mp)
 #>   converged:    TRUE 
 #>   gradient:     relative 1.56e-08 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -428.716 
+#>   Limit check: none
 #>   Not done in this run: none
 #>   evaluations: fn=43, gr=9
 #>   message:      continued with nlm() for 1 iterations (code 1) 

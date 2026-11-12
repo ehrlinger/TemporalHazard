@@ -233,6 +233,7 @@ summary(fit_mp)
 #>   converged:    TRUE 
 #>   gradient:     relative 1.27e-09 (SAS/C requires <= 6.06e-06; met, nlm code 1)
 #>   log-lik:      -228.029 
+#>   Limit check: none
 #>   Not done in this run: none
 #>   evaluations: fn=26, gr=3
 #>   message:      continued with nlm() for 1 iterations (code 1) 
@@ -676,6 +677,7 @@ recognizable:
 | [`vcov()`](https://rdrr.io/r/stats/vcov.html) returns `NA` | Hessian is singular; parameters are not jointly identified |
 | A phase scale (`log_mu`) at a boundary value | Possibly an unneeded phase, but a tiny scale alone does not show it; check the phase’s contribution with `predict(..., decompose = TRUE)` |
 | Enormous standard errors on one or more parameters | Flat likelihood in that direction (weak identification) |
+| A warning of class `hzr_limit_restarted`, or an error of class `hzr_limit_refusal` | A free shape ran to a limit (`t_half` outside the observed times, `nu` toward 0); [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md) refits from a grid of starts and refuses when none stays clear. Fix that shape with `fixed`, or drop the phase |
 | Two phases with nearly identical shapes | One can be collapsed into the other |
 
 Two phases (early CDF plus constant) describe the AVC data well. Adding

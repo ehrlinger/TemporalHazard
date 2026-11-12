@@ -155,8 +155,11 @@ A list with class `"hzr_bootstrap"` containing:
 
 - replicates:
 
-  Data frame with columns `replicate`, `parameter`, and `estimate`, one
-  row per parameter per successful replicate.
+  Data frame with columns `replicate`, `parameter`, `estimate` and
+  `restarted`, one row per parameter per successful replicate.
+  `restarted` is `TRUE` on every row of a replicate whose fit ran a
+  shape parameter to a limit and was rescued by a restart, so its
+  estimates are the restart's.
 
 - summary:
 
@@ -190,6 +193,10 @@ A list with class `"hzr_bootstrap"` containing:
 
   Named integer vector counting why replicates failed, most common
   first: the refit's error message (or `"error with an empty message"`),
+  except that a refit
+  [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+  refused because a shape parameter ran to a limit is counted under one
+  short reason such as `"limit: early.nu ran to 0"`,
   `"refit returned a <class>, not a fit object"` (`"an <class>"` when
   the class begins with a vowel; or
   `"... with no \code{fit}, not a fit object"`),
@@ -216,6 +223,21 @@ A list with class `"hzr_bootstrap"` containing:
   sums to `n_failed`, and is an empty named integer vector, never
   `NULL`, when none failed. When every replicate fails,
   `hzr_bootstrap()` also warns, naming the most common reason.
+
+- n_restarted:
+
+  Number of successful replicates whose first fit ran a shape parameter
+  to a limit and was refitted from a grid of other starts, the restart
+  winning. Such a replicate counts as a success. It is reported for
+  every multiphase fit, including when it is 0, and is `NA` for any
+  other model, which has no limit check.
+
+- restart_reasons:
+
+  Named integer vector counting the restarted replicates by the limit
+  that triggered the restart, for example `"limit: early.nu ran to 0"`,
+  most common first. It sums to `n_restarted`, and is an empty named
+  integer vector when none were restarted.
 
 - n_uncomputable_replicates:
 

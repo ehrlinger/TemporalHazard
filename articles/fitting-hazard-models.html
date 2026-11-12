@@ -246,6 +246,7 @@ Figure 1: Weibull parametric survival vs. Kaplan-Meier (CABG, KU Leuven)
 <span><span class="co">#&gt;   converged:    TRUE </span></span>
 <span><span class="co">#&gt;   gradient:     relative 1.27e-09 (SAS/C requires &lt;= 6.06e-06; met, nlm code 1)</span></span>
 <span><span class="co">#&gt;   log-lik:      -228.029 </span></span>
+<span><span class="co">#&gt;   Limit check: none</span></span>
 <span><span class="co">#&gt;   Not done in this run: none</span></span>
 <span><span class="co">#&gt;   evaluations: fn=26, gr=3</span></span>
 <span><span class="co">#&gt;   message:      continued with nlm() for 1 iterations (code 1) </span></span>
@@ -611,6 +612,11 @@ Figure 3: Nelson-Aalen cumulative hazard for CABGKUL: three-phase shape visible
 <td>Flat likelihood in that direction (weak identification)</td>
 </tr>
 <tr class="odd">
+<td>A warning of class <code>hzr_limit_restarted</code>, or an error of class <code>hzr_limit_refusal</code>
+</td>
+<td>A free shape ran to a limit (<code>t_half</code> outside the observed times, <code>nu</code> toward 0); <code><a href="../reference/hazard.html">hazard()</a></code> refits from a grid of starts and refuses when none stays clear. Fix that shape with <code>fixed</code>, or drop the phase</td>
+</tr>
+<tr class="even">
 <td>Two phases with nearly identical shapes</td>
 <td>One can be collapsed into the other</td>
 </tr>

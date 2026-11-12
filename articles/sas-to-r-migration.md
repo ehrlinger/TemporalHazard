@@ -221,6 +221,25 @@ fit <- hazard(
 > [`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
 > warns that it never reads `control$fix`.
 
+The fix keywords also carry the other half of the SAS workflow. HAZARD
+never checks whether a shape parameter has run to a limit, a `THALF`
+below the first observed time or a `NU` heading to 0 as the early phase
+collapses into a step. You spot that in the listing, then pin the
+parameter with `FIXNU` or `FIXTHALF` and refit.
+[`hazard()`](https://ehrlinger.github.io/TemporalHazard/reference/hazard.md)
+does the spotting for you. When a multiphase fit lands on a limit, it
+refits from a fixed grid of starts and returns the best start that stays
+clear of every limit, with a warning of class `hzr_limit_restarted`.
+When no start does, or a fit at the limit still beats every clean one,
+it stops with an error of class `hzr_limit_refusal` that names the
+parameter, and you make the `FIXNU` decision yourself:
+`hzr_phase(..., nu = <value>, fixed = "nu")` is `FIXNU`, and
+`fixed = "t_half"` is `FIXTHALF`. A softer sign, a shape that is only
+weakly identified or a fit with no standard errors, tries the same grid
+but never stops: when no start does better, the original fit is kept and
+the record says so. `print(fit)` always shows a `Limit check:` line, so
+a clean fit says so too.
+
 ------------------------------------------------------------------------
 
 ### `EARLY` and `CONSTANT` covariate blocks
@@ -593,6 +612,7 @@ summary(fit)
 #>   gradient:     relative 0.000123 (SAS/C requires <= 6.06e-06; not met, nlm code 2)
 #>   log-lik:      -160.408 
 #>   Note: Hessian ill-conditioned (rcond = 4.41e-12); standard errors may be unreliable.
+#>   Limit check: none
 #>   Not done in this run: none
 #>   evaluations: fn=17, gr=1
 #>   message:      continued with nlm() for 2 iterations (code 2) 
