@@ -398,10 +398,18 @@ own identification can be checked (\code{outcome = "restarted"}); otherwise
 the original is kept
 (\code{outcome = "kept"}). This trigger never refuses on its own, and it does
 not fire when the Hessian is unusable only because the numDeriv package
-is not installed. The original fit is recorded in \code{fit$fit$limit}. With
+is not installed. The original fit is recorded in \code{fit$fit$limit}.
+Last, on a fit nothing else flagged, a free \code{t_half} of a cdf or hazard
+phase that lies outside the observed times, or whose phase has \code{m < 0},
+is moved by the data's whole log-span, up and down, with the phase's
+other parameters refitted. When either move changes the log-likelihood
+by less than \code{0.5 * qchisq(0.5, 1)} (about 0.23), \code{t_half} is not
+identified: with \code{m < 0}, \code{nu} and \code{t_half} run to infinity together and
+the phase is a power law in t over the data. This also only tries the
+grid, and a start wins only if this check is clean for it too. With
 \code{FALSE} the grid is skipped: a limit found by the boundary checks then
-refuses at once, and a flat direction or an unusable Hessian returns the
-original fit.
+refuses at once, and a flat direction, an unusable Hessian or a flat
+span returns the original fit.
 \item \code{phase_share_tol}: Threshold for the multiphase identifiability warning
 (default 1e-8). A phase is reported as having left the model when it
 supplies less than this share of the cumulative hazard at every observed

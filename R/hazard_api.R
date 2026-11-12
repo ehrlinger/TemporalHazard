@@ -586,10 +586,18 @@ NULL
 #'   the original is kept
 #'   (`outcome = "kept"`). This trigger never refuses on its own, and it does
 #'   not fire when the Hessian is unusable only because the numDeriv package
-#'   is not installed. The original fit is recorded in `fit$fit$limit`. With
+#'   is not installed. The original fit is recorded in `fit$fit$limit`.
+#'   Last, on a fit nothing else flagged, a free `t_half` of a cdf or hazard
+#'   phase that lies outside the observed times, or whose phase has `m < 0`,
+#'   is moved by the data's whole log-span, up and down, with the phase's
+#'   other parameters refitted. When either move changes the log-likelihood
+#'   by less than `0.5 * qchisq(0.5, 1)` (about 0.23), `t_half` is not
+#'   identified: with `m < 0`, `nu` and `t_half` run to infinity together and
+#'   the phase is a power law in t over the data. This also only tries the
+#'   grid, and a start wins only if this check is clean for it too. With
 #'   `FALSE` the grid is skipped: a limit found by the boundary checks then
-#'   refuses at once, and a flat direction or an unusable Hessian returns the
-#'   original fit.
+#'   refuses at once, and a flat direction, an unusable Hessian or a flat
+#'   span returns the original fit.
 #' - `phase_share_tol`: Threshold for the multiphase identifiability warning
 #'   (default 1e-8). A phase is reported as having left the model when it
 #'   supplies less than this share of the cumulative hazard at every observed
@@ -4035,6 +4043,15 @@ vcov.hazard <- function(object, ...) {
            paste(format(m), collapse = ", "), "). A fit with no iterations ",
            "is its starting values, not an estimate: to evaluate a model at ",
            "parameters you supply, use hzr_evaluate().", call. = FALSE)
+    }
+  }
+  # Checked here as well as in the limit layer, which reads it only on a
+  # fitted multiphase call: an unfitted object stores the control a later
+  # stepwise or bootstrap refit uses (#736).
+  if ("limit_restart" %in% names(control)) {
+    r <- control[["limit_restart"]]
+    if (!(isTRUE(r) || isFALSE(r))) {
+      stop("control$limit_restart must be TRUE or FALSE.", call. = FALSE)
     }
   }
   control

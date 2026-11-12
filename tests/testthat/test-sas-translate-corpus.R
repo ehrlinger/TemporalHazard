@@ -141,6 +141,8 @@ test_that("public-corpus jobs that translate also render", {
     }
     if (!is.na(refused)) {
       res <- sim$results[[refused]]
+      expect_true("hzr_limit_refusal" %in% sim$error_class[[refused]],
+                  info = basename(f))
       expect_match(res, "^ERROR: hazard\\(\\): phase_1\\.t_half ran to Inf ",
                    info = basename(f))
       expect_match(res, "The drifted estimate is not returned.", fixed = TRUE,

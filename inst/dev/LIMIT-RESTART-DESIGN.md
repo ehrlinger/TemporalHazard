@@ -84,6 +84,33 @@ these:
   - It is built beside the existing records in `hazard_api.R` (around lines 95-140),
     and reads every observed time, as #444 does.
   - Like #448, it thresholds no parameter and asks a question of the data.
+- **Amended 2026-11-12 (#734): the span check, for the joint limit nothing records.**
+  - The `m < 0` joint limit: `nu` and `t_half` run to infinity together at a fixed
+    `c = ((1 - 2^m)^-nu - 1) / t_half`, and the phase becomes `K log(1 + ct)^(1/|m|)`,
+    a power law over the data. `G(t_max)` can be far above `sqrt(eps)` (5.8e-7 to 0.125
+    on the misses), so `phase_beyond_data` does not fire, and a usable Hessian leaves
+    the weak check silent. The `weak_na` trigger above caught 10 of the 14 misses.
+  - `.hzr_limit_span()` asks the likelihood. For each free `t_half` of a `cdf` or
+    `hazard` phase, it moves `log t_half` by `L = log(t_max / t_min)` of the observed
+    times, up and down. It refits the phase's own other free parameters, first to the
+    phase's cumulative hazard over those times (in 10 steps, so a curved ridge is
+    followed), then on the likelihood. It fires when either move changes the
+    log-likelihood by less than `0.5 * qchisq(0.5, 1)` (0.227), or cannot be computed.
+  - It is gated: it runs only on a fit nothing else triggered on, and only for a
+    `t_half` outside the observed times or a phase with `m < 0`. It costs 30 to 2000
+    likelihood evaluations, 0.4 to 2.5 s at n = 300.
+  - It is **weak-only** (maintainer's decision, 2026-11-12). The margin is thin: the
+    largest change on a drifted fit was 0.038, against 0.082 on one clean parity fit
+    (the R-generated synthetic three-phase fixture's late phase). Weak-only, a false
+    positive costs a grid and a `"kept"` record, never a refusal.
+  - Under it, a grid start that does better wins only if its own span check is clean.
+    On the seed-21 fixture three starts beat the original at the same limit.
+  - The `nu * exp(-L)` move the measurement also tried is not used: it fires on fits
+    with `nu` near 0 that the step check already handles, and on clean ones.
+  - The KUL reference fit "not at an optimum" (open question 4) is the C binary's
+    model, whose shapes the analyst fixed. Freeing the early phase's three shapes
+    gains 11.27 (-3740.52 to -3729.26) at an interior point. A fixed `t_half` is never
+    checked.
 - **Amended 2026-11-11 (#734): `$weak` is `NA` because the Hessian was unusable.**
   - On 10 of the 14 drifted fits measured for #734, the fit converged into the
     `m < 0` joint limit (`nu` and `t_half` to infinity together, a power law). Its

@@ -136,8 +136,9 @@ predict(fit_mp, newdata = data.frame(time = t_grid),
 ```
 
 Each phase is specified with `hzr_phase()`, which sets the temporal shape
-type and starting values. The optimizer estimates both the phase-specific
-scale parameters and shape parameters jointly. Covariates are supported via
+type and starting values. The optimizer estimates the phase-specific
+scale parameters and the free shape parameters jointly; `fixed = "shapes"`
+holds a phase's shapes at the values given, as the late phase above does. Covariates are supported via
 the formula interface (see `vignette("fitting-hazard-models")`).
 
 ## Documentation

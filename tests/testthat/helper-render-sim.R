@@ -30,6 +30,9 @@ render_sim <- function(job, data = list()) {
   env <- new.env(parent = .render_parent())
   for (nm in names(data)) assign(nm, data[[nm]], envir = env)
   res <- character(0)
+  # The class of each chunk's error, so a caller can match a refusal by class
+  # rather than by its message (#735); NULL for a chunk that ran.
+  classes <- list()
   for (nm in names(job$calls)) {
     # job$calls holds quoted calls emitted by this package's own
     # hzr_translate_sas(), not arbitrary external input -- evaluating them
@@ -37,12 +40,16 @@ render_sim <- function(job, data = list()) {
     out <- tryCatch({
       eval(job$calls[[nm]], env)
       "ok"
-    }, error = function(e) paste0("ERROR: ", conditionMessage(e)))
+    }, error = function(e) {
+      classes[[nm]] <<- class(e)
+      paste0("ERROR: ", conditionMessage(e))
+    })
     res[[nm]] <- out
   }
   # all(character(0) == "ok") is TRUE, so an empty `res` would report ok
   # having evaluated nothing -- require at least one call ran.
-  list(ok = length(res) > 0 && all(res == "ok"), results = res, env = env)
+  list(ok = length(res) > 0 && all(res == "ok"), results = res, env = env,
+       error_class = classes)
 }
 
 # --- synthetic data for a translated SAS job ---------------------------

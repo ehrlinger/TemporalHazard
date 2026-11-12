@@ -150,7 +150,174 @@
 #' @keywords internal
 #' @noRd
 .hzr_limit_is_hard <- function(trigger) {
-  any(!vapply(trigger, `[[`, "", "source") %in% c("weak", "weak_na"))
+  any(!vapply(trigger, `[[`, "", "source") %in% c("weak", "weak_na", "span"))
+}
+
+# The span check's threshold: a move of t_half across the data's whole
+# log-span that costs less than this much log-likelihood leaves t_half
+# unidentified (#734). It is half the median of a chi-squared on 1 df.
+.hzr_limit_span_tau <- 0.5 * stats::qchisq(0.5, 1)
+
+# The limit string a span record carries.
+.hzr_limit_span_limit <- paste0(
+  "a flat span (t_half moves across the data's whole range at no cost; ",
+  "with m < 0 the phase is a power law in t)")
+
+#' Does moving a G1 phase's t_half across the data's span cost nothing?
+#'
+#' The m < 0 joint limit (#734): nu and t_half run to infinity together at a
+#' fixed ((1 - 2^m)^-nu - 1) / t_half, and over the data the phase becomes a
+#' power law in t. G at the last time can be far above sqrt(eps), so
+#' `phase_beyond_data` does not fire, and the Hessian can be usable, so
+#' neither does the weak check. This asks the likelihood directly: for each
+#' free t_half of a cdf or hazard phase, move log t_half by L = log(t_max /
+#' t_min) of the observed times, up and down; re-fit the phase's own other
+#' free shape and scale parameters, first to its cumulative hazard over the
+#' observed times (walking the move in 10 steps so a curved ridge is
+#' followed), then on the likelihood; and fire when either move changes the
+#' log-likelihood by less than `.hzr_limit_span_tau`, or cannot be computed.
+#' Run only where it can matter, a t_half outside the observed times or an
+#' m below 0: on a fit inside the data with m >= 0 it never fired in the
+#' measurements, and it costs from 30 to 2000 likelihood evaluations.
+#'
+#' A weak-only trigger: the fit is never refused on it. Measured on
+#' 2026-11-10 at 1ed2e69a: it fired on all 14 fits the earlier checks
+#' missed, and once on 38 G1 parity fits, at 0.082.
+#'
+#' @param object A fitted multiphase `hazard` object.
+#' @param prep `.hzr_evaluate_prepare(object)`, or NULL to build it.
+#' @return `NULL`, or trigger records as `.hzr_limit_trigger()` returns.
+#' @keywords internal
+#' @noRd
+.hzr_limit_span <- function(object, prep = NULL) {
+  if (!.hzr_limit_usable(object)) return(NULL)
+  th <- object$fit$theta
+  nm <- names(th)
+  phases <- object$spec$phases
+  if (is.null(nm) || !length(phases)) return(NULL)
+  fixed <- if (length(object$fit$fixed_mask) == length(th)) {
+    nm[as.logical(object$fit$fixed_mask)]
+  } else {
+    character(0)
+  }
+  cand <- Filter(function(ph) {
+    keys <- paste0(ph, c(".log_t_half", ".nu", ".m"))
+    phases[[ph]]$type %in% c("cdf", "hazard") && all(keys %in% nm) &&
+      !keys[[1L]] %in% fixed
+  }, names(phases))
+  if (!length(cand)) return(NULL)
+  if (is.null(prep)) {
+    prep <- tryCatch(suppressWarnings(.hzr_evaluate_prepare(object)),
+                     error = function(e) NULL)
+  }
+  if (is.null(prep)) return(NULL)
+  ut <- c(prep$time, prep$time_lower, prep$time_upper)
+  ut <- sort(unique(ut[is.finite(ut) & ut > 0]))
+  if (length(ut) < 2L) return(NULL)
+  span <- log(max(ut) / min(ut))
+  ll <- function(theta) {
+    v <- tryCatch(suppressWarnings(.hzr_logl_multiphase(
+      unname(theta), prep$time, prep$status, time_lower = prep$time_lower,
+      time_upper = prep$time_upper, x = prep$x, weights = prep$weights,
+      phases = prep$phases, covariate_counts = prep$covariate_counts,
+      x_list = prep$x_list,
+      objective = object$spec$objective %||% "likelihood")),
+      error = function(e) NA_real_)
+    if (length(v) == 1L && is.finite(v)) v else NA_real_
+  }
+  ll0 <- ll(th)
+  if (is.na(ll0)) return(NULL)
+  hits <- list()
+  for (ph in cand) {
+    pk <- paste0(ph, c(".log_mu", ".log_t_half", ".nu", ".m"))
+    lth <- th[[pk[[2L]]]]
+    if (lth >= log(min(ut)) && lth <= log(max(ut)) && th[[pk[[4L]]]] >= 0) {
+      next
+    }
+    flat <- FALSE
+    for (dir in c(1, -1)) {
+      d <- .hzr_limit_span_move(th, pk, phases[[ph]]$type, lth + dir * span,
+                                setdiff(pk, c(fixed, pk[[2L]])), ut, ll)
+      if (is.na(d) || abs(ll0 - d) < .hzr_limit_span_tau) {
+        flat <- TRUE
+        break
+      }
+    }
+    if (flat) {
+      hits[[length(hits) + 1L]] <- list(
+        phase = ph, parameter = "t_half", limit = .hzr_limit_span_limit,
+        source = "span")
+    }
+  }
+  if (!length(hits)) NULL else hits
+}
+
+#' One span move: the best log-likelihood with log t_half held at `to`
+#'
+#' @param th The fit's named theta. @param pk The phase's four G1 names.
+#' @param type `"cdf"` or `"hazard"`. @param to The moved log t_half.
+#' @param free The phase's names to re-fit (its free ones but t_half).
+#' @param ut The observed times. @param ll The log-likelihood, NA if none.
+#' @return The log-likelihood after the move, or NA.
+#' @keywords internal
+#' @noRd
+.hzr_limit_span_move <- function(th, pk, type, to, free, ut, ll) {
+  if (!is.finite(to) || to > log(.Machine$double.xmax)) return(NA_real_)
+  # The phase's log cumulative hazard over the observed times.
+  log_h <- function(t) {
+    tt <- exp(t[[pk[[2L]]]])
+    if (!is.finite(tt)) return(rep(NA_real_, length(ut)))
+    d <- tryCatch(hzr_decompos(ut, tt, t[[pk[[3L]]]], t[[pk[[4L]]]]),
+                  error = function(e) NULL)
+    if (is.null(d)) return(rep(NA_real_, length(ut)))
+    t[[pk[[1L]]]] + if (identical(type, "cdf")) log(d$G) else log(-d$log_surv)
+  }
+  target <- log_h(th)
+  ok <- is.finite(target)
+  cur <- th
+  if (length(free) && any(ok)) {
+    match_cost <- function(v) {
+      t2 <- cur
+      t2[free] <- v
+      # Both shapes negative is outside the G1 family.
+      if (t2[[pk[[4L]]]] < 0 && t2[[pk[[3L]]]] < 0) return(1e100)
+      h <- suppressWarnings(log_h(t2))[ok]
+      if (any(!is.finite(h))) 1e100 else sum((h - target[ok])^2)
+    }
+    from <- th[[pk[[2L]]]]
+    # Walk the move in steps, re-matching at each, so a curved ridge is
+    # followed rather than jumped across.
+    for (j in seq_len(10L)) {
+      cur[[pk[[2L]]]] <- from + (to - from) * j / 10
+      o <- tryCatch(stats::optim(cur[free], match_cost, method = "Nelder-Mead",
+                                 control = list(maxit = 1000, reltol = 1e-12)),
+                    error = function(e) NULL)
+      if (!is.null(o)) {
+        o2 <- tryCatch(stats::optim(o$par, match_cost, method = "BFGS",
+                                    control = list(maxit = 300,
+                                                   reltol = 1e-14)),
+                       error = function(e) o)
+        cur[free] <- if (o2$value <= o$value) o2$par else o$par
+      }
+    }
+  }
+  cur[[pk[[2L]]]] <- to
+  matched <- ll(cur)
+  polished <- NA_real_
+  if (length(free)) {
+    neg <- function(v) {
+      t2 <- cur
+      t2[free] <- v
+      r <- ll(t2)
+      if (is.na(r)) 1e100 else -r
+    }
+    o3 <- tryCatch(stats::optim(cur[free], neg, method = "BFGS",
+                                control = list(maxit = 200, reltol = 1e-12)),
+                   error = function(e) NULL)
+    if (!is.null(o3) && o3$value < 1e100) polished <- -o3$value
+  }
+  best <- suppressWarnings(max(matched, polished, na.rm = TRUE))
+  if (is.finite(best)) best else NA_real_
 }
 
 # The grid's nu values. Spread across the sigmoid's usable range on the
@@ -366,7 +533,9 @@
 .hzr_limit_describe <- function(trigger) {
   paste(vapply(trigger, function(r) {
     paste0(r$phase, ".", r$parameter,
-           if (identical(r$source, "weak_na")) ": " else " ran to ", r$limit)
+           # A flat direction is not a value the parameter ran to (#736).
+           if (r$source %in% c("weak", "weak_na", "span")) ": " else " ran to ",
+           r$limit)
   }, character(1)), collapse = "; ")
 }
 
@@ -388,7 +557,7 @@
     "not run"
   } else if (identical(limit$outcome, "kept")) {
     paste0("restart tried (", .hzr_limit_describe(limit$trigger),
-           "); none better, original kept")
+           "); no start clear of a limit did better, original kept")
   } else if (identical(limit$outcome, "skipped")) {
     paste0("restart not tried (", .hzr_limit_describe(limit$trigger),
            "); control$limit_restart = FALSE")
@@ -406,8 +575,14 @@
 #' @noRd
 .hzr_limit_refusal <- function(trigger, best_objective, n_tried,
                                disabled = FALSE, n_errored = 0L,
-                               grid = NULL, fit = NULL) {
+                               grid = NULL, fit = NULL,
+                               start_objective = best_objective) {
   first <- trigger[[1L]]
+  # The objective from the user's own start leads. A restart that also ran to
+  # a limit can reach a degenerate likelihood (a +1007 spike on tied times),
+  # so the best over all starts is named as that, not as a result (#736).
+  higher <- isTRUE(best_objective - start_objective >
+                     1e-6 * max(1, abs(start_objective)))
   msg <- paste0(
     "hazard(): ", .hzr_limit_describe(trigger), ". ",
     if (disabled) {
@@ -422,7 +597,12 @@
     } else {
       "No restart start could be built (no event times, or every shape fixed)"
     },
-    "; the best objective reached was ", format(best_objective, digits = 8),
+    "; the objective from your start was ",
+    format(start_objective, digits = 8),
+    if (higher) {
+      paste0(" (a restart that also ran to a limit reached ",
+             format(best_objective, digits = 8), ")")
+    },
     ". The drifted estimate is not returned. Fix the parameter at a value ",
     "you choose, as SAS's FIX", toupper(gsub("_", "", first$parameter)), " does: ",
     "hzr_phase(..., ", first$parameter, " = <value>, fixed = \"",
@@ -431,7 +611,8 @@
     class = c("hzr_limit_refusal", "error", "condition"),
     list(message = msg, call = NULL, phase = first$phase,
          parameter = first$parameter, limit = first$limit,
-         best_objective = best_objective, trigger = trigger,
+         best_objective = best_objective,
+         start_objective = start_objective, trigger = trigger,
          # The restart grid (start, objective, triggered, error), so a caller
          # can read why each start failed; NULL when none was tried.
          grid = grid,
@@ -473,6 +654,9 @@
     stop("control$limit_restart must be TRUE or FALSE.", call. = FALSE)
   }
   trigger <- .hzr_limit_trigger(first$value)
+  # The m < 0 joint limit reads clean to every check above, so the
+  # likelihood is asked directly, on a fit nothing else flagged (#734).
+  if (is.null(trigger)) trigger <- .hzr_limit_span(first$value)
   if (is.null(trigger)) {
     emit(first)
     return(first$value)
@@ -562,6 +746,18 @@
   # Relative tolerance: grid starts that reach the same optimum differ in
   # the last digits, and a tie must not read as "a limit fit was better".
   tol <- 1e-6 * max(1, abs(best_any))
+  # Under a span trigger a start that does better can sit at the same power
+  # law; it wins only if its own span check is clean. Starts are examined
+  # best first, and only those that beat the original (#734).
+  if (any(vapply(trigger, `[[`, "", "source") == "span")) {
+    for (i in ok[order(rows$objective[ok], decreasing = TRUE)]) {
+      if (rows$objective[[i]] - fit0$fit$objective <= tol) break
+      if (is.null(.hzr_limit_span(runs[[i]]$value))) break
+      rows$triggered[[i]] <- TRUE
+    }
+    ok <- which(is.finite(rows$objective) & !rows$triggered)
+    win <- if (length(ok)) ok[which.max(rows$objective[ok])] else NA_integer_
+  }
   if (!hard) {
     # Weak-only: a rescue only when the grid beats the original; otherwise
     # keep the original, with the tried grid on the record.
@@ -579,7 +775,8 @@
     emit(first)
     stop(.hzr_limit_refusal(trigger, best_any, length(runs),
                             n_errored = sum(!is.na(rows$error)), grid = rows,
-                            fit = drifted(rows)))
+                            fit = drifted(rows),
+                            start_objective = fit0$fit$objective))
   }
   out <- runs[[win]]$value
   emit(runs[[win]])
