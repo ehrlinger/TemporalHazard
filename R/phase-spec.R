@@ -548,6 +548,23 @@ is_hzr_phase <- function(x) {
     )
   }
 
+  # A covariate named like one of this phase's own parameters would give two
+  # parameters one name. The fit is unaffected, but summary() fails and every
+  # lookup by name (coef(fit)["early.nu"], theta[["early.nu"]], a stepwise
+  # Wald test) silently reads the shape (#737 review). Checked here, on the
+  # design columns, so a factor level that expands to such a name is caught,
+  # on every path that names theta.
+  clash <- covariate_names[paste0(phase_name, ".", covariate_names) %in%
+                             names_out]
+  if (length(clash) > 0L) {
+    stop("The covariate `", clash[[1L]], "` in phase `", phase_name,
+         "` has the name of one of that phase's own parameters (",
+         paste0(phase_name, ".", clash[[1L]]), "), so two parameters would ",
+         "share it and a lookup by name would read the wrong one. Rename ",
+         "the column in `data` (for a factor, the variable or its level).",
+         call. = FALSE)
+  }
+
   # Covariate coefficients
   if (length(covariate_names) > 0L) {
     names_out <- c(names_out,
