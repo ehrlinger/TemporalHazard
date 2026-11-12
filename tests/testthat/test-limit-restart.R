@@ -779,6 +779,19 @@ test_that("the inner flag resets after an inner fit errors", {
                            control = list(n_starts = 1L,
                                           limit_restart = FALSE)))
   expect_s3_class(got, "hzr_limit_refusal")
+  # The capture catches every error itself, so only a condition that unwinds
+  # past it (an interrupt, an outer handler) reaches its on.exit() restore.
+  # The hazard() call above cannot show that; this can (#739 review).
+  jump <- structure(class = c("th_jump", "condition"),
+                    list(message = "jump", call = NULL))
+  out <- tryCatch(.hzr_limit_capture(quote(signalCondition(jump)),
+                                     environment(), inputs = list(1),
+                                     restart = list(1)),
+                  th_jump = function(c) "unwound")
+  expect_identical(out, "unwound")  # the premise: it left through the handler
+  expect_false(.hzr_limit_state$inner)
+  expect_null(.hzr_limit_state$restart)
+  expect_null(.hzr_limit_state$inputs)
 })
 
 # #735: the inner call is written out by hand, so a new formal of hazard()
@@ -924,4 +937,77 @@ test_that("#734: the span check skips a fixed t_half and an interior one", {
   inside$fit$theta[["early.log_t_half"]] <- log(stats::median(d$tt))
   inside$fit$theta[["early.m"]] <- 0.5
   expect_null(.hzr_limit_span(inside))
+})
+
+test_that("#734: an uncomputable span move is not reported as a flat span", {
+  d <- span_734()
+  fit <- fit_span_734(d, limit_restart = FALSE)
+  # At log t_half 705 the upward move (705 plus a log-span of 8.88) is past
+  # log(.Machine$double.xmax), so it cannot be computed at all.
+  far <- fit
+  far$fit$theta[["early.log_t_half"]] <- 705
+  span <- log(max(d$tt) / min(d$tt))
+  expect_gt(705 + span, log(.Machine$double.xmax))
+  moves <- list()
+  real_move <- .hzr_limit_span_move
+  testthat::local_mocked_bindings(
+    .hzr_limit_span_move = function(th, pk, type, to, free, ut, ll) {
+      d <- real_move(th, pk, type, to, free, ut, ll)
+      moves[[length(moves) + 1L]] <<- c(to = to, d = d, ll0 = ll(th))
+      d
+    }, .package = "TemporalHazard")
+  # The failed upward move does not end the check: the downward one is
+  # measured, and it is flat (the phase is negligible there).
+  hit <- .hzr_limit_span(far)
+  expect_length(moves, 2L)
+  expect_true(is.na(moves[[1L]][["d"]]))
+  expect_lt(abs(moves[[2L]][["ll0"]] - moves[[2L]][["d"]]),
+            .hzr_limit_span_tau)
+  expect_identical(hit[[1L]]$limit, .hzr_limit_span_limit)
+  # When the downward move fails too (a likelihood error), nothing was
+  # measured: the record says unchecked, not flat, and stays weak-only.
+  real_ll <- .hzr_logl_multiphase
+  testthat::local_mocked_bindings(
+    .hzr_logl_multiphase = function(theta, ...) {
+      if (theta[[2L]] != 705) stop("planted likelihood failure")
+      real_ll(theta, ...)
+    }, .package = "TemporalHazard")
+  moves <- list()
+  none <- .hzr_limit_span(far)
+  expect_length(moves, 2L)
+  expect_true(all(vapply(moves, function(m) is.na(m[["d"]]), logical(1))))
+  expect_identical(none, list(list(
+    phase = "early", parameter = "t_half",
+    limit = .hzr_limit_span_unchecked, source = "span")))
+  expect_false(identical(.hzr_limit_span_unchecked, .hzr_limit_span_limit))
+  expect_match(.hzr_limit_describe(none), "early.t_half: an unchecked span",
+               fixed = TRUE)
+  expect_false(.hzr_limit_is_hard(none))
+})
+
+test_that("#734: a span move that gains fires, and weight-0 rows do not widen the data", {
+  d <- span_734()
+  fit <- fit_span_734(d, limit_restart = FALSE)
+  # A move that RAISES the log-likelihood by more than the threshold shows
+  # the fit is not a maximum: the check fires, so the grid looks for the
+  # better fit, rather than reading the fit as clean (#739 review).
+  far <- fit
+  far$fit$theta[["early.log_t_half"]] <- log(max(d$tt)) + 1
+  testthat::local_mocked_bindings(
+    .hzr_limit_span_move = function(th, pk, type, to, free, ut, ll) ll(th) + 5,
+    .package = "TemporalHazard")
+  expect_identical(.hzr_limit_span(far), span_trigger_734)
+  # Weight-0 rows are not in the likelihood, so they do not make a t_half
+  # past the weighted data read as inside it. The last time gets weight 0
+  # and t_half sits between it and the next one, with m >= 0.
+  prep <- .hzr_evaluate_prepare(fit)
+  i <- which.max(prep$time)
+  inside <- fit
+  inside$fit$theta[["early.m"]] <- 0.5
+  inside$fit$theta[["early.log_t_half"]] <-
+    log((max(prep$time[-i]) + prep$time[[i]]) / 2)
+  prep$weights <- rep(1, length(prep$time))
+  expect_null(.hzr_limit_span(inside, prep))  # the premise: inside the data
+  prep$weights[[i]] <- 0
+  expect_identical(.hzr_limit_span(inside, prep), span_trigger_734)
 })

@@ -26,12 +26,15 @@
   random number stream (#736).
 * **The limit layer now catches the `m < 0` joint limit (#734).** There
   `nu` and `t_half` run to infinity together and a cdf or hazard phase
-  becomes a power law in t over the data. No boundary record or Hessian
-  reading flags it, so such fits came back with `converged = TRUE` and a clean
-  `$fit$limit`. On a fit nothing else flagged, a free `t_half` outside the
+  becomes a power law in t over the data. No boundary record flags it, and
+  when the Hessian was still usable, such fits came back with
+  `converged = TRUE` and a clean `$fit$limit`. On a fit nothing else flagged, a free `t_half` outside the
   observed times, or in a phase with `m < 0`, is now moved across the data's
-  whole log-span with the phase's other parameters refitted. A change in the
-  log-likelihood of less than about 0.23 means `t_half` is not identified. As
+  whole log-span with the phase's other parameters refitted. A loss in the
+  log-likelihood of less than about 0.23 means `t_half` is not identified; a
+  gain means the fit was not a maximum, and fires the check too. As
   with a flat direction, this tries the restart grid and keeps the original
   unless a start clear of the limit does better, with a usable Hessian of its
-  own. It never refuses.
+  own. It never refuses. A move that cannot be computed does not count as
+  a flat span: the other direction is still tried, and when neither is
+  measured flat the record and messages say "an unchecked span".

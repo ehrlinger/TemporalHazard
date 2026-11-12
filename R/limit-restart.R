@@ -155,13 +155,22 @@
 
 # The span check's threshold: a move of t_half across the data's whole
 # log-span that costs less than this much log-likelihood leaves t_half
-# unidentified (#734). It is half the median of a chi-squared on 1 df.
+# unidentified (#734). It is half the median of a chi-squared on 1 df. A
+# move that GAINS more than this shows the fit is not a maximum, and fires
+# too, so the grid looks for the better fit (#739 review).
 .hzr_limit_span_tau <- 0.5 * stats::qchisq(0.5, 1)
 
 # The limit string a span record carries.
 .hzr_limit_span_limit <- paste0(
   "a flat span (t_half moves across the data's whole range at no cost; ",
   "with m < 0 the phase is a power law in t)")
+
+# The limit string when no move could be computed and none was measured
+# flat: the span check did not run to a result, so identification is not
+# known (#739 review). Weak-only, as the flat span is.
+.hzr_limit_span_unchecked <- paste0(
+  "an unchecked span (moving t_half across the data's range could not be ",
+  "computed, so whether it is identified is not known)")
 
 #' Does moving a G1 phase's t_half across the data's span cost nothing?
 #'
@@ -175,7 +184,11 @@
 #' free shape and scale parameters, first to its cumulative hazard over the
 #' observed times (walking the move in 10 steps so a curved ridge is
 #' followed), then on the likelihood; and fire when either move changes the
-#' log-likelihood by less than `.hzr_limit_span_tau`, or cannot be computed.
+#' log-likelihood by less than `.hzr_limit_span_tau`, or raises it by more
+#' (the fit is then not a maximum). Both moves are tried. A move measured
+#' flat records a flat span (`.hzr_limit_span_limit`); a move that could not
+#' be computed, with no move measured flat, records an unchecked span
+#' (`.hzr_limit_span_unchecked`), never a flat one (#739 review).
 #' Run only where it can matter, a t_half outside the observed times or an
 #' m below 0: on a fit inside the data with m >= 0 it never fired in the
 #' measurements, and it costs from 30 to 2000 likelihood evaluations.
@@ -211,7 +224,12 @@
                      error = function(e) NULL)
   }
   if (is.null(prep)) return(NULL)
-  ut <- c(prep$time, prep$time_lower, prep$time_upper)
+  # Weight-0 rows do not enter the likelihood, so they do not widen the
+  # observed range, as in .hzr_limit_event_times().
+  w <- prep$weights
+  keep <- if (length(w) == length(prep$time)) !is.na(w) & w > 0 else TRUE
+  rows <- function(v) if (length(v) == length(prep$time)) v[keep] else v
+  ut <- c(rows(prep$time), rows(prep$time_lower), rows(prep$time_upper))
   ut <- sort(unique(ut[is.finite(ut) & ut > 0]))
   if (length(ut) < 2L) return(NULL)
   span <- log(max(ut) / min(ut))
@@ -235,17 +253,23 @@
       next
     }
     flat <- FALSE
+    unchecked <- FALSE
     for (dir in c(1, -1)) {
       d <- .hzr_limit_span_move(th, pk, phases[[ph]]$type, lth + dir * span,
                                 setdiff(pk, c(fixed, pk[[2L]])), ut, ll)
-      if (is.na(d) || abs(ll0 - d) < .hzr_limit_span_tau) {
+      # A move that cannot be computed measured nothing: try the other
+      # direction before saying anything about the span.
+      if (is.na(d)) {
+        unchecked <- TRUE
+      } else if (ll0 - d < .hzr_limit_span_tau) {
         flat <- TRUE
         break
       }
     }
-    if (flat) {
+    if (flat || unchecked) {
       hits[[length(hits) + 1L]] <- list(
-        phase = ph, parameter = "t_half", limit = .hzr_limit_span_limit,
+        phase = ph, parameter = "t_half",
+        limit = if (flat) .hzr_limit_span_limit else .hzr_limit_span_unchecked,
         source = "span")
     }
   }
@@ -581,8 +605,8 @@
   # The objective from the user's own start leads. A restart that also ran to
   # a limit can reach a degenerate likelihood (a +1007 spike on tied times),
   # so the best over all starts is named as that, not as a result (#736).
-  higher <- isTRUE(best_objective - start_objective >
-                     1e-6 * max(1, abs(start_objective)))
+  higher <- is.finite(best_objective) && (!is.finite(start_objective) ||
+    best_objective - start_objective > 1e-6 * max(1, abs(start_objective)))
   msg <- paste0(
     "hazard(): ", .hzr_limit_describe(trigger), ". ",
     if (disabled) {
