@@ -83,8 +83,15 @@ test_that("a fit at an extreme g3 shape reports the reference standard errors (#
     time = d$time, status = d$status, dist = "multiphase",
     phases = list(late = hzr_phase("g3", tau = exp(2.6238), gamma = 220.08,
                                    alpha = 1.2174, eta = 0.0090875)),
-    fit = TRUE, control = list(n_starts = 1L, conserve = FALSE)
+    # The steps are checked at this extreme shape, the optimum from this
+    # start. The limit layer reads its g3 shapes as flat directions and moves
+    # to a grid start whose Hessian is near singular (rcond 4e-13 on macOS,
+    # below solve()'s tolerance on some Linux runners; #737 CI), so the
+    # restart is not tried and the original is kept.
+    fit = TRUE, control = list(n_starts = 1L, conserve = FALSE,
+                               limit_restart = FALSE)
   ))
+  expect_identical(fit$fit$limit$outcome, "skipped")
   expect_true(isTRUE(fit$fit$converged))
   expect_gt(fit$fit$theta[["late.gamma"]], 100)
   h <- g3_steps_hessians(d, unname(fit$fit$theta))

@@ -130,7 +130,11 @@ test_that("a failed CoE recompute reports no SEs, not the search-only ones", {
     w <<- c(w, conditionMessage(c))
     invokeRestart("muffleWarning")
   })
-  expect_identical(n_failed, 1L)                   # guard: only the recompute
+  # guard: only the recompute fails. Its unusable Hessian triggers the limit
+  # layer (#734), whose grid refits recompute too and fail the same way, so
+  # none is clean and the original is kept.
+  expect_identical(fit$fit$limit$outcome, "kept")
+  expect_identical(n_failed, 1L + nrow(fit$fit$limit$grid))
   expect_true(any(grepl("no standard errors are reported", w, fixed = TRUE)))
   expect_false(is.matrix(fit$fit$vcov))
   # Nothing describing the search's Hessian survives beside it: a finite rcond

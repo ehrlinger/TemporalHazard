@@ -2260,7 +2260,8 @@
     ph <- phases[[nm]]
     if (!is.null(ph$formula) && !is.null(data)) {
       # Phase-specific formula: build design matrix from data.
-      built <- .hzr_formula_design(ph$formula, data)
+      # Once per hazard() call under the limit layer (#683 review).
+      built <- .hzr_phase_formula_design(nm, ph$formula, data)
       .hzr_refuse_duplicate_columns(built$x, phase = nm)
       x_list[[nm]] <- built$x
       covariate_counts[[nm]] <- ncol(built$x)
@@ -2723,6 +2724,7 @@
   # synthetic two-phase fit in test-multiphase-reproducibility.R) before doing so.
   start_seed <- if (!is.null(control$start_seed)) control$start_seed else 3L
   control$start_seed <- NULL  # remove before passing to optim
+  control$limit_restart <- NULL  # read by hazard()'s limit layer (#683)
   # Held to what set.seed() takes, and rejected rather than coerced.  Negative
   # seeds are fine, but a non-whole number is not: truncating it would make 3.9
   # and 3 select the SAME ensemble, and a user sweeping 3.1/3.5/3.9 would believe

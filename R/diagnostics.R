@@ -2117,7 +2117,10 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #' @return A list with class `"hzr_bootstrap"` containing:
 #' \describe{
 #'   \item{replicates}{Data frame with columns `replicate`, `parameter`,
-#'     and `estimate`, one row per parameter per successful replicate.}
+#'     `estimate` and `restarted`, one row per parameter per successful
+#'     replicate. `restarted` is `TRUE` on every row of a replicate whose fit
+#'     ran a shape parameter to a limit and was rescued by a restart, so its
+#'     estimates are the restart's.}
 #'   \item{summary}{Data frame with columns `parameter`, `n`, `pct`,
 #'     `mean`, `sd`, `min`, `max`, `ci_lower`, `ci_upper`, one row per
 #'     parameter. In `mode = "select"`, `pct` is the selection frequency
@@ -2140,7 +2143,9 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     fails as a non-finite objective, not at the sentinel (#486).}
 #'   \item{failure_reasons}{Named integer vector counting why replicates
 #'     failed, most common first: the refit's error message (or
-#'     `"error with an empty message"`),
+#'     `"error with an empty message"`), except that a refit `hazard()`
+#'     refused because a shape parameter ran to a limit is counted under one
+#'     short reason such as `"limit: early.nu ran to 0"`,
 #'     `"refit returned a <class>, not a fit object"` (`"an <class>"` when the
 #'     class begins with a vowel; or `"... with no \code{fit}, not a fit
 #'     object"`), `"refit returned no parameter
@@ -2169,6 +2174,16 @@ print.hzr_nelson <- function(x, digits = 4, ...) {
 #'     is an empty named integer vector, never `NULL`, when none failed. When
 #'     every replicate fails, `hzr_bootstrap()` also warns, naming the most
 #'     common reason.}
+#'   \item{n_restarted}{Number of successful replicates whose first fit ran a
+#'     shape parameter to a limit and was refitted from a grid of other
+#'     starts, the restart winning. Such a replicate counts as a success. It is
+#'     reported for every multiphase fit, including when it is 0, and is `NA`
+#'     for any other model, which has no limit check.}
+#'   \item{restart_reasons}{Named integer vector counting the restarted
+#'     replicates by the limit that triggered the restart, for example
+#'     `"limit: early.nu ran to 0"`, most common first. It sums to
+#'     `n_restarted`, and is an empty named integer vector when none were
+#'     restarted.}
 #'   \item{n_uncomputable_replicates}{Select mode only: number of otherwise
 #'     successful replicates whose screen stopped because no remaining
 #'     candidate could be tested (its score statistic, or for a removal its
@@ -2814,6 +2829,11 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
   # the message with it: a run could fail every replicate and say only that
   # they failed. Named integer(0), never NULL, when nothing fails.
   failure_reasons <- stats::setNames(integer(0), character(0))
+  # Replicates the limit layer rescued: a grid start beat a fit that had run
+  # to a limit. They are successes, so without this tally a run where many
+  # were rescued reads like a clean one (#683).
+  n_restarted <- 0L
+  restart_reasons <- stats::setNames(integer(0), character(0))
   monotone_reason <- "likelihood flat or still rising (no unique finite maximum)"
   # Parameters held by `fixed =` in any replicate: identical across replicates
   # by design, so the zero-variance check below must not name them (#373).
@@ -3009,8 +3029,14 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
       # A reason is a name in the tally, and R cannot index by the name "":
       # a bare stop() would drop out, and the tally would stop summing to
       # n_failed.
-      msg <- conditionMessage(boot_fit)
-      if (nzchar(msg)) msg else "error with an empty message"
+      # A limit refusal's long message would be a unique key per replicate;
+      # it is tallied under its one short reason (#683).
+      if (inherits(boot_fit, "hzr_limit_refusal")) {
+        .hzr_limit_reason(boot_fit)
+      } else {
+        msg <- conditionMessage(boot_fit)
+        if (nzchar(msg)) msg else "error with an empty message"
+      }
     } else if (!is.null(.hzr_bootstrap_not_a_fit(boot_fit))) {
       # Read outside the tryCatch() above: `$` on an atomic vector ended the
       # whole run.
@@ -3046,6 +3072,15 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     }
     if (is.null(failure)) {
       n_success <- n_success + 1L
+      lim <- boot_fit$fit$limit
+      restarted <- is.list(lim) && identical(lim$outcome, "restarted")
+      if (restarted) {
+        n_restarted <- n_restarted + 1L
+        restart_reasons <- .hzr_merge_reasons(
+          restart_reasons,
+          stats::setNames(1L, paste0("limit: ",
+                                     .hzr_limit_describe(lim$trigger))))
+      }
       if (identical(object$spec$dist, "weibull")) {
         mu_rep <- boot_fit$fit$theta[[1L]]
         if (.hzr_unrepresentable(mu_rep) || mu_rep == 0) {
@@ -3130,6 +3165,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
         replicate = b,
         parameter = names_b,
         estimate  = as.numeric(theta_b),
+        restarted = restarted,
         stringsAsFactors = FALSE
       )
     } else {
@@ -3148,6 +3184,7 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     replicates <- data.frame(replicate = integer(0),
                               parameter = character(0),
                               estimate = numeric(0),
+                              restarted = logical(0),
                               stringsAsFactors = FALSE)
   }
   rownames(replicates) <- NULL
@@ -3407,6 +3444,12 @@ hzr_bootstrap <- function(object, n_boot = 200L, fraction = 1.0,
     n_success  = n_success,
     n_failed   = n_failed,
     failure_reasons = failure_reasons,
+    n_restarted = if (identical(object$spec$dist, "multiphase")) {
+      n_restarted
+    } else {
+      NA_integer_
+    },
+    restart_reasons = restart_reasons,
     n_uncomputable_replicates = n_uncomputable_reps,
     uncomputable_reasons      = uncomputable_reasons,
     n_nonmonotone_replicates  = n_nonmonotone_reps,
@@ -3437,6 +3480,13 @@ print.hzr_bootstrap <- function(x, digits = 4, ...) {
     "fixed refit"
   }, "\n")
   cat("Replicates:", x$n_success, "successful,", x$n_failed, "failed\n")
+  # Shown even at 0 for a multiphase fit: a line printed only on bad news
+  # cannot be told from one its author forgot. NA marks a fit with no limit
+  # layer, where the line would mean nothing.
+  if (!is.null(x$n_restarted) && !is.na(x$n_restarted)) {
+    cat("Restarted replicates:", x$n_restarted, "of", x$n_success,
+        "successful\n")
+  }
   for (arg in names(x$unresolved)) {
     if (length(x$unresolved[[arg]]) > 0L) {
       cat("Unresolved `", arg, "`, ignored: ",

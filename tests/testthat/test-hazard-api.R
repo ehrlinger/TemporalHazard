@@ -191,16 +191,23 @@ test_that("hazard() refuses zero rows on every path (#231)", {
                                        dist = "exponential", theta = 0.1,
                                        fit = TRUE)),
                "no observations")
+  # Five rows and three cannot identify a cdf phase's shapes: free, its nu
+  # runs to the step limit and hazard() refuses (#683). Fixed, as the
+  # likelihood comparison below needs no shape estimate.
+  ph_fixed <- list(early = hzr_phase("cdf", fixed = "shapes"),
+                   constant = hzr_phase("constant"))
   codes <- suppressWarnings(hazard(time = c(1, 2, 3, 4, 5),
                                    status = c(-1, 0, 1, 2, 1),
                                    time_lower = c(0, 0, 0, 1, 0),
-                                   dist = "multiphase", phases = ph,
+                                   dist = "multiphase", phases = ph_fixed,
                                    fit = TRUE))
+  expect_null(codes$fit$limit)
   expect_true(is.finite(codes$fit$objective))
   # The -1 and 2 rows must count: dropping them changes the likelihood.
   fewer <- suppressWarnings(hazard(time = c(2, 3, 5), status = c(0, 1, 1),
-                                   dist = "multiphase", phases = ph,
+                                   dist = "multiphase", phases = ph_fixed,
                                    fit = TRUE))
+  expect_null(fewer$fit$limit)
   expect_gt(abs(codes$fit$objective - fewer$fit$objective), 1e-6)
 })
 

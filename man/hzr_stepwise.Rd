@@ -257,7 +257,9 @@ moves whose refit errored, failed to converge, or was refused
 because the move would not change the model -- a drop that removes
 no design column, #320),
 \code{refit_failure_reasons} (why each one failed or was refused: the
-refit's error message, that it did not converge, or that the move
+refit's error message, shortened to a reason such as
+\code{"limit: early.nu ran to 0"} when \code{hazard()} refused the refit because
+a shape parameter ran to a limit, that it did not converge, or that the move
 changes nothing; named by the same tokens),
 \code{n_refit_failures},
 and \code{stopped_refit_failed} (\code{TRUE} when the run ended on an

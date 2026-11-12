@@ -172,3 +172,53 @@
   list(mechanism = "phase_discontinuity", phase = name,
        parameter = d$parameter, detail = d$detail)
 }
+
+#' Build a `$boundary` record for a G1 phase whose rise lies past the data
+#'
+#' The mirror of #444's `unbounded_phase`: there `t_half` sits below the
+#' first observed time; here it sits beyond the last, so far that `G` is still
+#' numerically 0 there. Over the observed range the phase is then a power law
+#' in t and `t_half` is not identified: `log_mu` and `log_t_half` trade along
+#' a ridge to infinity (#683; #729 reported converged = TRUE at log t_half
+#' 275.8). Like #448 this asks the data, not a threshold on the parameter:
+#' `.hzr_step_resolution` is the "indistinguishable from 0" scale.
+#'
+#' @param name,type The phase's name and type.
+#' @param theta The fitted, named full theta.
+#' @param t_obs Every positive, finite observed time the likelihood read.
+#' @return A `$boundary` record, or `NULL`.
+#' @keywords internal
+#' @noRd
+.hzr_phase_beyond_data_record <- function(name, type, theta, t_obs) {
+  if (!type %in% c("cdf", "hazard") || !length(t_obs)) return(NULL)
+  keys <- paste0(name, c(".log_t_half", ".nu", ".m"))
+  if (!all(keys %in% names(theta))) return(NULL)
+  log_t_half <- unname(theta[[keys[[1L]]]])
+  t_max <- max(t_obs)
+  if (!is.finite(log_t_half) || log_t_half <= log(t_max)) return(NULL)
+  t_half <- exp(log_t_half)
+  # A t_half that overflows, or a decomposition that fails, leaves G
+  # unknown. That is still a phase past the data, so it is recorded with
+  # G "not computable" rather than dropped: dropping it would let the
+  # extreme case through and catch only the mild one.
+  g_max <- if (is.finite(t_half)) {
+    tryCatch(hzr_decompos(t_max, t_half = t_half,
+                          nu = unname(theta[[keys[[2L]]]]),
+                          m = unname(theta[[keys[[3L]]]]))$G,
+             error = function(e) NA_real_)
+  } else {
+    NA_real_
+  }
+  if (is.finite(g_max) && g_max >= .hzr_step_resolution) return(NULL)
+  list(
+    mechanism = "phase_beyond_data", phase = name, parameter = "t_half",
+    t_half = t_half, t_max = t_max, G_max = g_max,
+    detail = paste0(
+      "phase '", name, "' has log t_half ", format(log_t_half, digits = 4),
+      " against a last observed time of ", format(t_max, digits = 4),
+      ", and G there is ",
+      if (is.finite(g_max)) format(g_max, digits = 3) else "not computable",
+      ": its rise begins after the data ends, so t_half is not identified ",
+      "and the phase is a power law in t over the observed range.")
+  )
+}

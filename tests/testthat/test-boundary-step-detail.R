@@ -176,12 +176,25 @@ test_that("the release review's translated avc job is reported (N4)", {
   AVC <- avc  # nolint: object_name_linter. The job's own data name.
   names(AVC) <- toupper(names(AVC))
   classes <- character(0)
-  withCallingHandlers(for (cl in tr$calls) eval(cl), warning = function(w) {
-    classes <<- c(classes, class(w))
-    invokeRestart("muffleWarning")
-  })
+  # #683: the fit chunk now refuses: nu ran to its step limit and no restart
+  # did as well off it. The drifted fit's warnings are raised first.
+  err <- expect_error(
+    withCallingHandlers(for (cl in tr$calls) eval(cl), warning = function(w) {
+      classes <<- c(classes, class(w))
+      invokeRestart("muffleWarning")
+    }),
+    class = "hzr_limit_refusal"
+  )
+  expect_identical(vapply(err$trigger, `[[`, "", "source"),
+                   "phase_discontinuity")
+  expect_identical(err$parameter, "nu")
   # The fit warns with the step's own class, not only about its Hessian.
   expect_true("hzr_phase_discontinuity" %in% classes)
+  # The record is read from the fit the limit layer examined: the job's own
+  # hazard() call, evaluated as the layer's first fit.
+  expect_identical(tr$calls$fit[[1L]], as.name("<-"))
+  fit <- .hzr_limit_capture(tr$calls$fit[[3L]], environment())$value
+  expect_s3_class(fit, "hazard")
   t_half <- exp(unname(fit$fit$theta[[2]]))
   # The premise: the step sits on the first observed time.
   expect_equal(t_half, min(AVC$INT_DEAD), tolerance = 1e-6)

@@ -25,26 +25,50 @@ avc_fit_448 <- function() {
   )
 }
 
+# #683: hazard() now refuses this fit. No restart reaches a fit off the step
+# that is as good (the best objective is at the step), so it stops with class
+# hzr_limit_refusal. The drifted fit's own warnings are raised first, so the
+# discontinuity warning is still seen. avc_inner_448() returns the fit the
+# limit layer examined, the one the record is built on.
+avc_inner_448 <- function() {
+  data(avc, package = "TemporalHazard", envir = environment())
+  tt <- avc$int_dead
+  st <- avc$dead
+  k <- is.finite(tt) & is.finite(st) & tt > 0
+  cl <- body(avc_fit_448)[[length(body(avc_fit_448))]]
+  v <- .hzr_limit_capture(cl, environment())$value
+  stopifnot(inherits(v, "hazard"))
+  v
+}
+
 test_that("a cdf phase driven to nu ~ 0 warns, and the warning is classed", {
   skip_on_cran()
-  # the assignment is INSIDE expect_warning: outside, `fit` would be bound to
-  # the condition object and every later assertion would silently test that.
+  # the assignment is INSIDE expect_error: outside, `err` would be bound to
+  # the warning, and every later assertion would silently test that.
   expect_warning(
-    fit <- avc_fit_448(),
+    err <- expect_error(avc_fit_448(), class = "hzr_limit_refusal"),
     class = "hzr_phase_discontinuity"
   )
   expect_s3_class(
     tryCatch(avc_fit_448(), hzr_boundary = function(e) e),
     "hzr_boundary"
   )
-  # the fit still returns: we warn, we do not refuse (SAS completes too)
-  expect_true(is.finite(fit$fit$objective))
+  # The refusal names the mechanism: nu ran to its step limit.
+  expect_identical(vapply(err$trigger, `[[`, "", "source"),
+                   "phase_discontinuity")
+  expect_identical(err$phase, "early")
+  expect_identical(err$parameter, "nu")
+  # It no longer returns the fit (#683), and it reports the best objective it
+  # reached, which is finite.
+  expect_true(is.finite(err$best_objective))
 })
 
 test_that("the discontinuity is recorded on fit$fit$boundary with its magnitude", {
   skip_on_cran()
-  suppressWarnings(fit <- avc_fit_448())
+  fit <- avc_inner_448()
 
+  # The record the refusal's trigger was read from.
+  expect_identical(.hzr_limit_trigger(fit)[[1L]]$source, "phase_discontinuity")
   expect_true(is.list(fit$fit$boundary))
   rec <- Filter(function(r) identical(r$mechanism, "phase_discontinuity"),
                 fit$fit$boundary)

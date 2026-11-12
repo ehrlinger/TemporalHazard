@@ -135,6 +135,22 @@ ro_screen_w <- function(fit, data, scope) {
   list(sw = sw, n_unverified = n)
 }
 
+# Run `code` and keep what each multiphase refit's two starts returned (#551):
+# the fit, or the error, that .hzr_refit_best_start() chose between. The
+# refit keeps only the winner and the two objectives, so a refused start is
+# otherwise visible only as an NA objective.
+ro_refit_starts <- function(code) {
+  seen <- list()
+  best_start <- .hzr_refit_best_start
+  local_mocked_bindings(.hzr_refit_best_start = function(warm, default) {
+    seen[[length(seen) + 1L]] <<- list(warm = warm$value,
+                                       default = default$value)
+    best_start(warm, default)
+  })
+  value <- force(code)
+  list(value = value, starts = seen)
+}
+
 test_that("a lookup-only `data` of another length is checked by time (#487)", {
   skip_on_cran() # a multiphase fit plus four screens
   # On the vector interface `data` may serve only to look names up, and is
@@ -159,14 +175,38 @@ test_that("a lookup-only `data` of another length is checked by time (#487)", {
   expect_false(identical(sh$tt, D$tt))
 
   # `tt` holds the fit's times in order: checked, and screened silently.
-  r <- ro_screen_w(fit, D, sc)
+  cap <- ro_refit_starts(ro_screen_w(fit, D, sc))
+  r <- cap$value
   expect_identical(r$sw$steps$variable, "x1")
   # x1 enters on its Wald-fallback refit, and that refit's better start is
-  # the default one: the warm start stops at a lower optimum with no usable
-  # variance, which left x1 untested and entered x2 (#551).
+  # the default one. On macOS the warm start converges at early.t_half e^395,
+  # a rise past the data, and the limit layer refuses it; on Linux R-devel it
+  # takes another path. Either way the drifted fit is never returned. #551,
+  # a warm start stopping at a lower optimum, is shown on its own fixture
+  # below.
+  expect_length(cap$starts, 1L)
+  warm <- cap$starts[[1L]]$warm
+  hard <- c("phase_discontinuity", "unbounded_phase", "phase_beyond_data")
+  if (inherits(warm, "hzr_limit_refusal")) {
+    expect_identical(.hzr_limit_reason(warm),
+                     "limit: early.t_half ran to Inf (the rise lies past the data)")
+  } else {
+    expect_s3_class(warm, "hazard")
+    src <- vapply(.hzr_limit_trigger(warm, unusable = FALSE), `[[`, "", "source")
+    expect_false(any(src %in% hard))
+  }
+  # The default start's Hessian is unusable, so the limit layer tried the grid
+  # (#734). No start was clean, so the fit is the one the default reached.
+  # It sits on a ridge: macOS and Linux R-devel differ by 1.2e-6 relative.
+  dflt <- cap$starts[[1L]]$default$fit
+  expect_identical(dflt$limit$outcome, "kept")
+  expect_equal(dflt$objective, -553.06393071, tolerance = 1e-5)
+  expect_identical(nrow(dflt$limit$grid), 9L)
+  expect_true(all(dflt$limit$grid$triggered))
   expect_identical(r$sw$fit$refit_start, "default")
-  expect_gt(r$sw$fit$refit_objectives[["default"]],
-            r$sw$fit$refit_objectives[["warm"]])
+  obj <- r$sw$fit$refit_objectives
+  expect_true(is.na(obj[["warm"]]) || obj[["default"]] > obj[["warm"]])
+  expect_equal(obj[["default"]], dflt$objective)
   expect_identical(r$n_unverified, 0L)
   # The same rows shuffled: `tt` holds the times out of order, so refused.
   expect_error(ro_screen(fit, sh, sc), "column `tt` holds the fit's event")
@@ -183,6 +223,71 @@ test_that("a lookup-only `data` of another length is checked by time (#487)", {
     "has 5 rows, not the fit's 300",
     class = "hzr_score_rows_unverified"
   ))
+})
+
+test_that("a warm refit that stops lower, at no limit, loses (#551)", {
+  skip_on_cran() # a multiphase fit plus a screen
+  # The warm start is the base fit with x1 at 0, so it cannot end below the
+  # base; it can still end below the default start, in another basin. Here
+  # it does by 2.1 log-likelihood units, and both fits are interior, so the
+  # default wins on #551's rule and not by the limit layer.
+  # 15% of the times come from an early hazard (mean 0.125), so the early
+  # phase is there to identify; x1 acts on the constant phase. Without x1 the
+  # base's early t_half lies past the data (log t_half 13.8, nu 11.7; the
+  # limit layer records nothing), and the warm refit from it stops in a slow,
+  # long-tailed early phase; the default refit finds the early hazard itself
+  # (t_half 0.11).
+  set.seed(21)
+  n <- 300
+  x1 <- stats::rnorm(n)
+  x2 <- stats::rnorm(n)
+  early <- stats::runif(n) < 0.15
+  tt <- ifelse(early, stats::rexp(n, 8), stats::rexp(n, 0.2 * exp(2.5 * x1)))
+  cens <- stats::runif(n, 2, 15)
+  D <- data.frame(tt = pmin(tt, cens) + 0.001, ev = as.numeric(tt <= cens),
+                  x1 = x1, x2 = x2)
+  base <- suppressWarnings(hazard(
+    time = D$tt, status = D$ev, data = D, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 1, nu = 1.5, m = 0),
+                  const = hzr_phase("constant")),
+    fit = TRUE
+  ))
+  expect_gt(base$fit$theta[["early.log_t_half"]], log(max(D$tt)))
+  cap <- ro_refit_starts(
+    ro_screen(base, D, list(early = NULL, const = ~ x1 + x2))
+  )
+  sw <- cap$value
+  expect_identical(sw$steps$variable, "x1")
+  expect_length(cap$starts, 1L)
+  warm <- cap$starts[[1L]]$warm
+  default <- cap$starts[[1L]]$default
+  # Both starts returned clean converged fits: the comparison is #551's.
+  expect_s3_class(warm, "hazard")
+  expect_s3_class(default, "hazard")
+  expect_null(warm$fit$limit)
+  expect_null(default$fit$limit)
+  expect_true(warm$fit$converged)
+  expect_true(default$fit$converged)
+  # Both are interior, not merely silent detectors (#683 review): early nu
+  # clear of 0 (the nu -> 0 step), every log_mu clear of a vanished phase,
+  # and t_half inside the observed times. Fitted: warm nu 2.59, t_half 0.23;
+  # default nu 0.157, t_half 0.11; log_mu between -1.9 and -1.5.
+  for (f in list(warm, default)) {
+    th <- f$fit$theta
+    expect_gt(abs(th[["early.nu"]]), 0.05)
+    expect_gt(min(th[c("early.log_mu", "const.log_mu")]), -10)
+    expect_gt(th[["early.log_t_half"]], log(min(D$tt)))
+    expect_lt(th[["early.log_t_half"]], log(max(D$tt)))
+  }
+
+  obj <- sw$fit$refit_objectives
+  expect_identical(obj, c(warm = warm$fit$objective,
+                          default = default$fit$objective))
+  expect_identical(sw$fit$refit_start, "default")
+  expect_gt(obj[["default"]], obj[["warm"]])
+  expect_gt(obj[["default"]] - obj[["warm"]], 1)
+  expect_equal(obj, c(warm = -250.275133758, default = -248.164185365),
+               tolerance = 1e-6)
 })
 
 test_that("a vector fit without `data =` is not screened silently (#487)", {

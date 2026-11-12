@@ -210,12 +210,6 @@ test_that("hm.deadp.VALVES: null model nu=0 m<0 LL matches SAS initial (Case 2L 
 # appearing in both Early and Constant). The `.lst` parser routes the duplicate
 # AGE_COP labels to distinct slots, and `vcov()` now returns a named matrix, so
 # parity can be checked by name.
-#
-# The fit is warm-started from the SAS estimates. Blind multi-start lands in a
-# different (shrunk-beta) basin here -- a 12-parameter CoE model with widely
-# scaled covariates is hard for BFGS to optimize from beta = 0 -- so this test
-# validates likelihood/model-spec parity (R agrees the SAS point is the MLE and
-# reports the same log-likelihood there), not blind optimizer convergence.
 test_that("hm.death.patient: 2-phase both-phase covariate model matches SAS", {
   testthat::skip_on_cran()
   dir <- skip_if_no_sas_fixtures()
@@ -303,6 +297,24 @@ test_that("hm.death.patient: 2-phase both-phase covariate model matches SAS", {
   V <- vcov(fit)
   expect_true(is.matrix(V))
   expect_true(all(c("early.age_cop", "constant.age_cop") %in% rownames(V)))
+})
+
+test_that("hm.death.patient: a blind start reaches SAS's optimum (#729)", {
+  testthat::skip_on_cran()
+  dir <- skip_if_no_sas_fixtures()
+  ref <- .hzr_parse_sas_lst(file.path(dir, "hm.death.patient.lst"))$fits[[1]]
+  data(valves, package = "TemporalHazard", envir = environment())
+  d <- valves
+  d$nyha[is.na(d$nyha)] <- mean(d$nyha, na.rm = TRUE)
+  d$mv_nyha <- d$mitral * d$nyha
+  fit <- suppressWarnings(hazard(survival::Surv(int_dead, dead) ~ 1, data = d,
+    dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 10, nu = 0.2, m = 1, fixed = "m",
+                    formula = ~ age_cop + nyha + mv_nyha + double_ + ao_pinc),
+                  constant = hzr_phase("constant", formula = ~ age_cop + black + i_path)),
+    fit = TRUE, control = list(n_starts = 1L, maxit = 2000, conserve = TRUE)))
+  expect_equal(fit$fit$objective / ref$loglik, 1, tolerance = 1e-5)
+  expect_true(is.list(fit$fit$limit))  # it got there by restarting, on the record
 })
 
 # ---------------------------------------------------------------------------

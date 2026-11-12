@@ -287,11 +287,17 @@ printable \code{detail}. The mechanisms are \code{"unbounded_phase"}, a
 \code{"hazard"} phase whose \code{t_half} is below the first observed
 time; \code{"phase_discontinuity"}, a \code{"cdf"} or \code{"hazard"}
 phase whose shape has collapsed to a step the observed times cannot
-resolve (it can lie inside the data); and two made at setup, before the
+resolve (it can lie inside the data); \code{"phase_beyond_data"}, a
+\code{"cdf"} or \code{"hazard"} phase whose \code{t_half} lies past
+the last observed time, where its \code{G} is still numerically 0 and
+\code{t_half} is not identified. On a multiphase fit these three, on a
+shape parameter left free, are the limits that trigger the restart
+described under \code{fit$fit$limit} below, so a fit \code{hazard()}
+returns does not carry one. Two more are made at setup, before the
 fit: \code{"g3_alpha_one"} (a g3 phase with \code{alpha} fixed at 1,
 re-expressed as PROC HAZARD does, see \code{\link[=hzr_phase]{hzr_phase()}}) and
 \code{"g3_fixge2_alpha_start"} (a free \code{alpha} start moved to 2/3
-under \code{constraint = "eta_gamma"}); and two made after it.
+under \code{constraint = "eta_gamma"}). Two more are made after it.
 \code{"g3_corner_supremum"} is a g3 phase under
 \code{constraint = "eta_gamma"} whose estimated \code{gamma} converged
 below 1000 although the log-likelihood is higher at a much larger
@@ -317,6 +323,27 @@ count as observed times. A fit with any record that has no
 \code{warned_by} raises one warning whose classes are \code{"hzr_"}
 plus each such record's mechanism, all inheriting
 \code{"hzr_boundary"}, so one handler catches the whole family.
+\itemize{
+\item \code{fit$fit$limit}: \code{NA} when the limit check did not run (an
+unfitted object, or a non-multiphase model); \code{NULL} when it ran and
+found no shape parameter at a limit; or a list when \code{hazard()}
+restarted the fit (\code{trigger}, \code{original}, \code{grid},
+\code{winner}, \code{outcome}), which also raises a warning of class
+\code{"hzr_limit_restarted"}. A fit that cannot be rescued is not
+returned: \code{hazard()} stops with class \code{"hzr_limit_refusal"},
+and the error's \code{$fit} holds the drifted fit for inspection, with
+\code{outcome = "refused"}.
+A fit whose only flag is a flat direction (a ridge), or a Hessian that
+cannot be used (no standard errors), tries the same restart but is never
+refused: when no restart does better it is returned unchanged, with
+\code{outcome = "kept"} and \code{winner = NA}. An unusable Hessian
+triggers the restart only on a converged fit that nothing else flagged
+and that has a cdf or hazard phase with a free \code{t_half}. A restart
+then counts as better only when its objective is higher by more than a
+relative 1e-6 and its own identification can be checked. It does not
+trigger the restart when the cause is that the numDeriv package is not
+installed.
+}
 }
 \description{
 Creates a \code{hazard} object and optionally fits it via maximum likelihood.
@@ -350,6 +377,31 @@ starts when a fit is suspected of sitting in a local optimum, and compare
 the resulting \code{objective} values. A fractional value is rejected rather
 than truncated, since \code{3.9} and \code{3} would otherwise select the same
 ensemble without saying so.
+\item \code{limit_restart} (multiphase, default \code{TRUE}): a shape parameter at a
+limit that the boundary checks record (\code{t_half} below the first or past
+the last observed time, \code{nu} toward 0 as a step) triggers a restart from
+a fixed grid of starts. The best fit is returned only if it has the best
+objective found and no parameter at a limit; otherwise \code{hazard()} stops
+with an error of class \code{hzr_limit_refusal} naming the parameter. The
+error carries the restarts it tried as \verb{$grid} and, for inspection, the
+drifted fit as \verb{$fit} (catch it with
+\code{tryCatch(..., hzr_limit_refusal = function(e) e$fit)}); that fit's
+\code{fit$fit$limit$outcome} is \code{"refused"}, and \code{print()} says so. A flat
+direction through a shape (the weak-identification reading) only tries
+the grid: a better fit is returned if one is found, and otherwise the
+original fit is returned unchanged. A converged fit whose Hessian cannot
+be used, so that it has no standard errors and its identification cannot
+be checked, also only tries the grid, provided nothing else flagged it
+and some cdf or hazard phase has a free \code{t_half}. A grid start replaces
+it only when its objective is better by more than a relative 1e-6 and its
+own identification can be checked (\code{outcome = "restarted"}); otherwise
+the original is kept
+(\code{outcome = "kept"}). This trigger never refuses on its own, and it does
+not fire when the Hessian is unusable only because the numDeriv package
+is not installed. The original fit is recorded in \code{fit$fit$limit}. With
+\code{FALSE} the grid is skipped: a limit found by the boundary checks then
+refuses at once, and a flat direction or an unusable Hessian returns the
+original fit.
 \item \code{phase_share_tol}: Threshold for the multiphase identifiability warning
 (default 1e-8). A phase is reported as having left the model when it
 supplies less than this share of the cumulative hazard at every observed

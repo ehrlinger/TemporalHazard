@@ -910,9 +910,11 @@ hzr_theta_names <- function(phases, covariates = NULL) {
 #' A phase formula against `data`, else the global design, else none (#328).
 #' @noRd
 .hzr_phase_covariate_counts <- function(phases, data, x_fit) {
-  vapply(phases, function(ph) {
+  vapply(stats::setNames(names(phases), names(phases)), function(nm) {
+    ph <- phases[[nm]]
     if (!is.null(ph$formula) && !is.null(data)) {
-      ncol(.hzr_formula_design(ph$formula, data)$x)
+      # Once per hazard() call under the limit layer (#683 review).
+      ncol(.hzr_phase_formula_design(nm, ph$formula, data)$x)
     } else if (!is.null(x_fit)) {
       ncol(x_fit)
     } else {

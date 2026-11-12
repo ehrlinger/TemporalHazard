@@ -595,6 +595,7 @@ recognizable:
 | `vcov()` returns `NA` | Hessian is singular; parameters are not jointly identified |
 | A phase scale (`log_mu`) at a boundary value | Possibly an unneeded phase, but a tiny scale alone does not show it; check the phase's contribution with `predict(..., decompose = TRUE)` |
 | Enormous standard errors on one or more parameters | Flat likelihood in that direction (weak identification) |
+| A warning of class `hzr_limit_restarted`, or an error of class `hzr_limit_refusal` | A free shape ran to a limit (`t_half` outside the observed times, `nu` toward 0); `hazard()` refits from a grid of starts and refuses when none stays clear. Fix that shape with `fixed`, or drop the phase |
 | Two phases with nearly identical shapes | One can be collapsed into the other |
 
 Two phases (early CDF plus constant) describe the AVC data well. Adding a

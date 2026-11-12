@@ -38,7 +38,9 @@ NULL
 #' Find phases fitted outside the support their parameterisation can carry
 #'
 #' A DIAGNOSIS run after the optimizer returns, never a constraint: it does
-#' not move an estimate, and a fit that trips it still returns its fit. An
+#' not move an estimate. On a multiphase fit the limit layer
+#' (`R/limit-restart.R`) acts on what it records: it restarts the fit or
+#' refuses it. An
 #' unbounded phase type (`.hzr_phase_type_unbounded()`) whose fitted `t_half`
 #' lies below the first observed time has left the data, and `-log(1 - G)` is
 #' then evaluated where `G` is essentially 1 (#444).
@@ -102,6 +104,10 @@ NULL
                                        time_lower = time_lower,
                                        time_upper = time_upper)
     if (!is.null(step_rec)) found[[length(found) + 1L]] <- step_rec
+    # #683: the mirror of the unbounded record below, a rise past the data.
+    beyond_rec <- .hzr_phase_beyond_data_record(nm, phases[[k]]$type, theta,
+                                                t_obs = t_ok)
+    if (!is.null(beyond_rec)) found[[length(found) + 1L]] <- beyond_rec
     if (!.hzr_phase_type_unbounded(phases[[k]]$type)) next
     key <- paste0(nm, ".log_t_half")
     if (!key %in% names(theta)) next
@@ -188,6 +194,7 @@ NULL
   # collapsed to a step inside the data; saying so would name the wrong cause.
   lead <- c(unbounded_phase = "fitted outside the observed support: ",
             phase_discontinuity = "phase collapsed to a step: ",
+            phase_beyond_data = "phase rises after the data ends: ",
             g3_alpha_one = "shape parameters held at setup: ",
             g3_fixge2_alpha_start = "starting value moved at setup: ")
   paste(vapply(records, function(r) {
@@ -558,6 +565,31 @@ NULL
 #'   the resulting `objective` values. A fractional value is rejected rather
 #'   than truncated, since `3.9` and `3` would otherwise select the same
 #'   ensemble without saying so.
+#' - `limit_restart` (multiphase, default `TRUE`): a shape parameter at a
+#'   limit that the boundary checks record (`t_half` below the first or past
+#'   the last observed time, `nu` toward 0 as a step) triggers a restart from
+#'   a fixed grid of starts. The best fit is returned only if it has the best
+#'   objective found and no parameter at a limit; otherwise `hazard()` stops
+#'   with an error of class `hzr_limit_refusal` naming the parameter. The
+#'   error carries the restarts it tried as `$grid` and, for inspection, the
+#'   drifted fit as `$fit` (catch it with
+#'   `tryCatch(..., hzr_limit_refusal = function(e) e$fit)`); that fit's
+#'   `fit$fit$limit$outcome` is `"refused"`, and `print()` says so. A flat
+#'   direction through a shape (the weak-identification reading) only tries
+#'   the grid: a better fit is returned if one is found, and otherwise the
+#'   original fit is returned unchanged. A converged fit whose Hessian cannot
+#'   be used, so that it has no standard errors and its identification cannot
+#'   be checked, also only tries the grid, provided nothing else flagged it
+#'   and some cdf or hazard phase has a free `t_half`. A grid start replaces
+#'   it only when its objective is better by more than a relative 1e-6 and its
+#'   own identification can be checked (`outcome = "restarted"`); otherwise
+#'   the original is kept
+#'   (`outcome = "kept"`). This trigger never refuses on its own, and it does
+#'   not fire when the Hessian is unusable only because the numDeriv package
+#'   is not installed. The original fit is recorded in `fit$fit$limit`. With
+#'   `FALSE` the grid is skipped: a limit found by the boundary checks then
+#'   refuses at once, and a flat direction or an unusable Hessian returns the
+#'   original fit.
 #' - `phase_share_tol`: Threshold for the multiphase identifiability warning
 #'   (default 1e-8). A phase is reported as having left the model when it
 #'   supplies less than this share of the cumulative hazard at every observed
@@ -876,11 +908,17 @@ NULL
 #'   \code{"hazard"} phase whose \code{t_half} is below the first observed
 #'   time; \code{"phase_discontinuity"}, a \code{"cdf"} or \code{"hazard"}
 #'   phase whose shape has collapsed to a step the observed times cannot
-#'   resolve (it can lie inside the data); and two made at setup, before the
+#'   resolve (it can lie inside the data); \code{"phase_beyond_data"}, a
+#'   \code{"cdf"} or \code{"hazard"} phase whose \code{t_half} lies past
+#'   the last observed time, where its \code{G} is still numerically 0 and
+#'   \code{t_half} is not identified. On a multiphase fit these three, on a
+#'   shape parameter left free, are the limits that trigger the restart
+#'   described under \code{fit$fit$limit} below, so a fit \code{hazard()}
+#'   returns does not carry one. Two more are made at setup, before the
 #'   fit: \code{"g3_alpha_one"} (a g3 phase with \code{alpha} fixed at 1,
 #'   re-expressed as PROC HAZARD does, see [hzr_phase()]) and
 #'   \code{"g3_fixge2_alpha_start"} (a free \code{alpha} start moved to 2/3
-#'   under \code{constraint = "eta_gamma"}); and two made after it.
+#'   under \code{constraint = "eta_gamma"}). Two more are made after it.
 #'   \code{"g3_corner_supremum"} is a g3 phase under
 #'   \code{constraint = "eta_gamma"} whose estimated \code{gamma} converged
 #'   below 1000 although the log-likelihood is higher at a much larger
@@ -906,6 +944,25 @@ NULL
 #'   \code{warned_by} raises one warning whose classes are \code{"hzr_"}
 #'   plus each such record's mechanism, all inheriting
 #'   \code{"hzr_boundary"}, so one handler catches the whole family.
+#' - \code{fit$fit$limit}: \code{NA} when the limit check did not run (an
+#'   unfitted object, or a non-multiphase model); \code{NULL} when it ran and
+#'   found no shape parameter at a limit; or a list when \code{hazard()}
+#'   restarted the fit (\code{trigger}, \code{original}, \code{grid},
+#'   \code{winner}, \code{outcome}), which also raises a warning of class
+#'   \code{"hzr_limit_restarted"}. A fit that cannot be rescued is not
+#'   returned: \code{hazard()} stops with class \code{"hzr_limit_refusal"},
+#'   and the error's \code{$fit} holds the drifted fit for inspection, with
+#'   \code{outcome = "refused"}.
+#'   A fit whose only flag is a flat direction (a ridge), or a Hessian that
+#'   cannot be used (no standard errors), tries the same restart but is never
+#'   refused: when no restart does better it is returned unchanged, with
+#'   \code{outcome = "kept"} and \code{winner = NA}. An unusable Hessian
+#'   triggers the restart only on a converged fit that nothing else flagged
+#'   and that has a cdf or hazard phase with a free \code{t_half}. A restart
+#'   then counts as better only when its objective is higher by more than a
+#'   relative 1e-6 and its own identification can be checked. It does not
+#'   trigger the restart when the cause is that the numDeriv package is not
+#'   installed.
 #' @export
 hazard <- function(formula = NULL,
                    data = NULL,
@@ -924,6 +981,74 @@ hazard <- function(formula = NULL,
                    objective = c("likelihood", "sas"),
                    ...) {
 
+  # #683: a multiphase fit is checked for a shape parameter at a limit, and
+  # restarted or refused. The layer fits this call once (inner), and again
+  # from each grid start, so everything below runs unchanged for each fit.
+  #
+  # Every argument is evaluated ONCE, here (#683 review). Re-evaluating the
+  # user's call for each inner fit ran each argument up to ten times: a
+  # `data = d[sample(...), ]` gave every start its own resample, the layer
+  # compared objectives across different datasets, and the user's RNG stream
+  # advanced. So the ordinary arguments are forced in this frame, where their
+  # promises live, and each inner fit is the call below, evaluated in this
+  # frame: its arguments are these promises, already forced, so every inner
+  # fit sees the same values. The arguments read by non-standard evaluation
+  # (`time`, `status`, `time_lower`, `time_upper`, `weights` as column names,
+  # and `data` for the ambiguity warning's wording) keep the expressions the
+  # user wrote, captured here by substitute(), and are resolved by the body
+  # below against the same `data` value and the same calling frame, once
+  # (.hzr_mask_eval()). Under a `...` wrapper, substitute() reads the
+  # caller's own promise, so the expression is the one the user wrote, not
+  # `..1` (fa519b88). The stored $call and $call_env are the user's.
+  arg_exprs <- list(data = substitute(data), time = substitute(time),
+                    status = substitute(status),
+                    time_lower = substitute(time_lower),
+                    time_upper = substitute(time_upper),
+                    weights = substitute(weights))
+  # `fit` is read as the body reads it (`if (fit && ...)`), so `fit = 1`
+  # fits and is checked, not fitted unchecked.
+  if (isTRUE(as.logical(fit)) && identical(unname(dist), "multiphase") &&
+        !.hzr_limit_state$inner) {
+    inputs <- list(
+      exprs = arg_exprs,
+      env = parent.frame(),
+      call = match.call(),
+      cache = new.env(parent = emptyenv()))
+    # Nothing else is forced here. The inner fit runs in this frame, so it
+    # forces each argument's promise as the body reaches it, in the body's
+    # own order, and every later inner fit reads the cached value: once, and
+    # in the order hazard() without the layer uses, which matters when
+    # arguments share RNG or other state (#737 review).
+    inner <- quote(hazard(formula = formula, data = data, time = time,
+                          status = status, time_lower = time_lower,
+                          time_upper = time_upper, x = x,
+                          time_windows = time_windows, theta = theta,
+                          dist = dist, phases = phases, fit = fit,
+                          weights = weights, control = control,
+                          objective = objective, ...))
+    return(.hzr_limit_fit(inner, environment(), inputs, theta, control))
+  }
+  # The flag marks only this call as the layer's own. Cleared here, a
+  # multiphase hazard() that this fit runs (a formula term, say) is checked
+  # as the user's own call would be (#737 review); .hzr_limit_capture()
+  # restores it when this fit returns.
+  .hzr_limit_state$inner <- FALSE
+  # A restart start: the layer hands over the grid start and control here.
+  if (!is.null(.hzr_limit_state$restart)) {
+    theta <- .hzr_limit_state$restart$theta
+    control <- .hzr_limit_state$restart$control
+    .hzr_limit_state$restart <- NULL
+  }
+  # An inner fit: the argument expressions, calling frame and call the
+  # layer captured from the user's call, read and cleared at entry.
+  inputs <- .hzr_limit_state$inputs
+  .hzr_limit_state$inputs <- NULL
+  if (is.null(inputs)) {
+    inputs <- list(exprs = arg_exprs, env = parent.frame())
+  }
+  arg_exprs <- inputs$exprs
+  caller_env <- inputs$env
+
   objective <- match.arg(objective)
   # A named scalar such as c(model = "multiphase") is a valid `dist`, but
   # identical() against a bare string is FALSE for it. Dropping the names
@@ -931,7 +1056,7 @@ hazard <- function(formula = NULL,
   dist <- unname(dist)
   # The caller's own `data` expression, captured before `data` is reassigned:
   # the ambiguity warning names it in its advice (#401).
-  data_arg <- substitute(data)
+  data_arg <- arg_exprs$data
 
   # `objective` is a top-level argument rather than a `control` element on
   # purpose: it changes the estimand, and burying that among convergence
@@ -1033,8 +1158,12 @@ hazard <- function(formula = NULL,
     # The messages it warns with, so a re-parse after dropping rows at time 0
     # does not repeat them (#484). Recorded, not muffled.
     parse_warnings <- character(0)
+    # Once per hazard() call under the limit layer: the parse runs the
+    # user's code in the formula (#683 review).
     parsed <- withCallingHandlers(
-      .hzr_parse_formula(formula = formula, data = data),
+      .hzr_limit_once("formula_parse", inputs, function() {
+        .hzr_parse_formula(formula = formula, data = data)
+      }),
       warning = function(w) {
         parse_warnings <<- c(parse_warnings, conditionMessage(w))
       }
@@ -1052,10 +1181,10 @@ hazard <- function(formula = NULL,
     # column and in the calling frame silently read the calling frame's
     # vector. stats::lm() also looks in `data` first, but falls back to the
     # formula's environment, not the calling frame.
-    .hzr_warn_masked_ambiguity(list(weights = substitute(weights)), data,
-                               parent.frame(), interface = "formula",
+    .hzr_warn_masked_ambiguity(arg_exprs["weights"], data,
+                               caller_env, interface = "formula",
                                data_arg = data_arg)
-    weights <- eval(substitute(weights), data, parent.frame())
+    weights <- .hzr_mask_eval("weights", arg_exprs, data, inputs)
   }
 
   # Data masking on the vector path. `data` used to be consulted only by the
@@ -1070,19 +1199,15 @@ hazard <- function(formula = NULL,
     if (!is.data.frame(data) && !is.list(data)) {
       stop("'data' must be a data frame or a list.", call. = FALSE)
     }
-    mask_env <- parent.frame()
     .hzr_warn_masked_ambiguity(
-      list(time = substitute(time), status = substitute(status),
-           time_lower = substitute(time_lower),
-           time_upper = substitute(time_upper),
-           weights = substitute(weights)),
-      data, mask_env, data_arg = data_arg
+      arg_exprs[c("time", "status", "time_lower", "time_upper", "weights")],
+      data, caller_env, data_arg = data_arg
     )
-    time <- eval(substitute(time), data, mask_env)
-    status <- eval(substitute(status), data, mask_env)
-    time_lower <- eval(substitute(time_lower), data, mask_env)
-    time_upper <- eval(substitute(time_upper), data, mask_env)
-    weights <- eval(substitute(weights), data, mask_env)
+    time <- .hzr_mask_eval("time", arg_exprs, data, inputs)
+    status <- .hzr_mask_eval("status", arg_exprs, data, inputs)
+    time_lower <- .hzr_mask_eval("time_lower", arg_exprs, data, inputs)
+    time_upper <- .hzr_mask_eval("time_upper", arg_exprs, data, inputs)
+    weights <- .hzr_mask_eval("weights", arg_exprs, data, inputs)
   }
 
   # After formula dispatch, require time and status
@@ -1289,7 +1414,10 @@ hazard <- function(formula = NULL,
       #      a kept row a value other than its own. scale(), poly(), ns() and
       #      factor coding do not. See .hzr_position_bound_columns() for
       #      what it cannot see.
-      position_bound <- .hzr_position_bound_columns(forms, data_full, keep)
+      position_bound <- .hzr_limit_once("formula_position_bound", inputs,
+                                        function() {
+        .hzr_position_bound_columns(forms, data_full, keep)
+      })
       if (length(position_bound)) {
         stop(n_dropped_time_zero, " row(s) are at time 0 and are dropped ",
              "before fitting, as PROC HAZARD drops them, but the formula's ",
@@ -1308,7 +1436,9 @@ hazard <- function(formula = NULL,
       #     Surv(time - min(time), status) -- and has no consistent fit.
       if (!is.null(formula) && any(keep)) {
         reparsed <- withCallingHandlers(
-          .hzr_parse_formula(formula = formula, data = data),
+          .hzr_limit_once("formula_reparse", inputs, function() {
+            .hzr_parse_formula(formula = formula, data = data)
+          }),
           hzr_intercept_removed = function(w) invokeRestart("muffleWarning"),
           # A warning the first parse already raised is muffled, once per
           # time it was raised; one only these rows raise still reaches the
@@ -2019,8 +2149,19 @@ hazard <- function(formula = NULL,
   # into any saved model. Copy only the symbols the call actually references.
   # Computed here, not inside list(), so parent.frame() unambiguously resolves
   # to hazard()'s caller.
-  captured_call <- match.call()
-  captured_env <- .hzr_capture_call_env(captured_call, parent.frame())
+  # An inner fit stores the user's call, which the layer captured: its own
+  # call is the layer's, over this function's frame.
+  if (is.null(inputs$call)) {
+    captured_call <- match.call()
+    captured_env <- .hzr_capture_call_env(captured_call, parent.frame())
+  } else {
+    captured_call <- inputs$call
+    # Copied where the body without the layer copies it (it can force a
+    # wrapper's promises), and once per call.
+    captured_env <- .hzr_limit_once("call_env", inputs, function() {
+      .hzr_capture_call_env(inputs$call, inputs$env)
+    })
+  }
 
   # Assemble the hazard S3 object.
   # $call       -- captured call for reproducibility / print
@@ -2072,6 +2213,11 @@ hazard <- function(formula = NULL,
     legacy_args = list(...),
     engine = "native-r-m2"
   )
+
+  # #683: NA not examined; NULL examined and clean. The limit layer replaces
+  # it with a record when it restarts.
+  obj$fit["limit"] <- list(
+    if (fit_ran && identical(dist, "multiphase")) NULL else NA)
 
   class(obj) <- "hazard"
 
@@ -3109,6 +3255,12 @@ print.hazard <- function(x, ...) {
         sep = "\n")
   }
   # Always printed, "none" included (#242).
+  # A fit saved before the limit check has no `limit` element, which reads
+  # NULL ("none", examined and clean); it was never examined.
+  if (identical(x$spec$dist, "multiphase")) {
+    lim <- if ("limit" %in% names(x$fit)) x$fit$limit else NA
+    cat(.hzr_limit_line(lim), "\n", sep = "")
+  }
   cat(.hzr_format_not_done(x$degraded, x$degraded_causes), sep = "\n")
   invisible(x)
 }
@@ -3252,6 +3404,8 @@ summary.hazard <- function(object, ...) {
     pd = object$fit$pd,
     weak = object$fit$weak,
     boundary = object$fit$boundary,
+    # NA ("not run") for a fit saved before the limit check, as print() does.
+    limit = if ("limit" %in% names(object$fit)) object$fit$limit else NA,
     degraded = object$degraded,
     degraded_causes = object$degraded_causes,
     phases = object$spec$phases,
@@ -3349,6 +3503,7 @@ print.summary.hazard <- function(x, ...) {
   # the notes that said "not examined for a weakly identified direction" and
   # "standard errors unavailable; the Hessian could not be inverted", both of
   # which could name the wrong cause.
+  if (identical(x$dist, "multiphase")) cat(.hzr_limit_line(x$limit), "\n", sep = "")
   cat(.hzr_format_not_done(x$degraded, x$degraded_causes), sep = "\n")
   if (!is.null(x$counts)) {
     fn_count <- x$counts[["function"]] %||% x$counts[["fn"]] %||% NA_integer_
@@ -3755,7 +3910,8 @@ vcov.hazard <- function(object, ...) {
 .hzr_control_names <- list(
   all = c("maxit", "reltol"),
   single = "shape_param_count",
-  multiphase = c("n_starts", "conserve", "phase_share_tol", "start_seed")
+  multiphase = c("n_starts", "conserve", "phase_share_tol", "start_seed",
+                 "limit_restart")
 )
 
 # Names ?hazard documented as accepted, a translation emitted, or a user
