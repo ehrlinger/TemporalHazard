@@ -179,29 +179,34 @@ test_that("a lookup-only `data` of another length is checked by time (#487)", {
   r <- cap$value
   expect_identical(r$sw$steps$variable, "x1")
   # x1 enters on its Wald-fallback refit, and that refit's better start is
-  # the default one. Before #683 the warm start converged at -558.42 with
-  # early.t_half at e^395, a rise past the data; the limit layer now refuses
-  # it, so its objective is recorded as NA and the default wins alone. #551,
+  # the default one. On macOS the warm start converges at early.t_half e^395,
+  # a rise past the data, and the limit layer refuses it; on Linux R-devel it
+  # takes another path. Either way the drifted fit is never returned. #551,
   # a warm start stopping at a lower optimum, is shown on its own fixture
   # below.
   expect_length(cap$starts, 1L)
   warm <- cap$starts[[1L]]$warm
-  expect_s3_class(warm, "hzr_limit_refusal")
-  expect_identical(.hzr_limit_reason(warm),
-                   "limit: early.t_half ran to Inf (the rise lies past the data)")
-  expect_equal(warm$best_objective, -553.21243263, tolerance = 1e-6)
+  hard <- c("phase_discontinuity", "unbounded_phase", "phase_beyond_data")
+  if (inherits(warm, "hzr_limit_refusal")) {
+    expect_identical(.hzr_limit_reason(warm),
+                     "limit: early.t_half ran to Inf (the rise lies past the data)")
+  } else {
+    expect_s3_class(warm, "hazard")
+    src <- vapply(.hzr_limit_trigger(warm, unusable = FALSE), `[[`, "", "source")
+    expect_false(any(src %in% hard))
+  }
   # The default start's Hessian is unusable, so the limit layer tried the grid
   # (#734). No start was clean, so the fit is the one the default reached.
+  # It sits on a ridge: macOS and Linux R-devel differ by 1.2e-6 relative.
   dflt <- cap$starts[[1L]]$default$fit
   expect_identical(dflt$limit$outcome, "kept")
-  expect_equal(dflt$objective, -553.06393071, tolerance = 1e-6)
+  expect_equal(dflt$objective, -553.06393071, tolerance = 1e-5)
   expect_identical(nrow(dflt$limit$grid), 9L)
   expect_true(all(dflt$limit$grid$triggered))
   expect_identical(r$sw$fit$refit_start, "default")
-  expect_identical(is.na(r$sw$fit$refit_objectives),
-                   c(warm = TRUE, default = FALSE))
-  expect_equal(r$sw$fit$refit_objectives[["default"]], -553.06393071,
-               tolerance = 1e-6)
+  obj <- r$sw$fit$refit_objectives
+  expect_true(is.na(obj[["warm"]]) || obj[["default"]] > obj[["warm"]])
+  expect_equal(obj[["default"]], dflt$objective)
   expect_identical(r$n_unverified, 0L)
   # The same rows shuffled: `tt` holds the times out of order, so refused.
   expect_error(ro_screen(fit, sh, sc), "column `tt` holds the fit's event")

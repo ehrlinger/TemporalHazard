@@ -52,10 +52,23 @@ for (ns in c(1L, 5L)) {
   })
 }
 
+# Where n_starts = 5 drifted on macOS: early.t_half at e^275.8, a rise past
+# the data. Starting there puts the fit on that limit on any platform; where
+# a blind start drifts is not (Linux R-devel did not reach it).
+drift_729 <- c(113.563, 275.830, -2.301, 1, 0.021, 0.557, 0.205, 0.447, 0.624,
+               7.752, -1.481, 1.003, 0.409)
+
 test_that("limit_restart = FALSE refuses at once, naming the parameter", {
-  # n_starts = 5 lands on phase_beyond_data, a hard trigger.
-  err <- tryCatch(suppressWarnings(fit_729(5L, limit_restart = FALSE)),
-                  hzr_limit_refusal = function(e) e)
+  d <- valves_729()
+  err <- tryCatch(suppressWarnings(hazard(
+    survival::Surv(int_dead, dead) ~ 1, data = d, dist = "multiphase",
+    phases = list(early = hzr_phase("cdf", t_half = 10, nu = 0.2, m = 1, fixed = "m",
+                    formula = ~ age_cop + nyha + mv_nyha + double_ + ao_pinc),
+                  constant = hzr_phase("constant", formula = ~ age_cop + black + i_path)),
+    theta = drift_729, fit = TRUE,
+    control = list(n_starts = 1L, maxit = 2000, conserve = TRUE,
+                   limit_restart = FALSE))),
+    hzr_limit_refusal = function(e) e)
   expect_s3_class(err, "hzr_limit_refusal")
   expect_identical(err$phase, "early")
   expect_identical(err$parameter, "t_half")
