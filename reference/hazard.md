@@ -372,21 +372,23 @@ family.
 
 - `fit$fit$limit`: `NA` when the limit check did not run (an unfitted
   object, or a non-multiphase model); `NULL` when it ran and found no
-  shape parameter at a limit; or a list when `hazard()` restarted the
-  fit (`trigger`, `original`, `grid`, `winner`, `outcome`), which also
-  raises a warning of class `"hzr_limit_restarted"`. A fit that cannot
-  be rescued is not returned: `hazard()` stops with class
-  `"hzr_limit_refusal"`, and the error's `$fit` holds the drifted fit
-  for inspection, with `outcome = "refused"`. A fit whose only flag is a
-  flat direction (a ridge), or a Hessian that cannot be used (no
-  standard errors), tries the same restart but is never refused: when no
-  restart does better it is returned unchanged, with `outcome = "kept"`
-  and `winner = NA`. An unusable Hessian triggers the restart only on a
-  converged fit that nothing else flagged and that has a cdf or hazard
-  phase with a free `t_half`. A restart then counts as better only when
-  its objective is higher by more than a relative 1e-6 and its own
-  identification can be checked. It does not trigger the restart when
-  the cause is that the numDeriv package is not installed.
+  shape parameter at a limit; or a list when `hazard()` tried a restart
+  (`trigger`, `original`, `grid`, `winner`, `outcome`), which also
+  raises a warning of class `"hzr_limit_restarted"` when a restart
+  replaced the fit. A fit that cannot be rescued is not returned:
+  `hazard()` stops with class `"hzr_limit_refusal"`, and the error's
+  `$fit` holds the drifted fit for inspection, with
+  `outcome = "refused"`. A fit whose only flag is a flat direction (a
+  ridge), a Hessian that cannot be used (no standard errors), or a flat
+  span (a `t_half` that moves across the data's whole range at no cost;
+  see `control$limit_restart`), tries the same restart but is never
+  refused: when no restart does better it is returned unchanged, with
+  `outcome = "kept"` and `winner = NA`. An unusable Hessian triggers the
+  restart only on a converged fit that nothing else flagged and that has
+  a cdf or hazard phase with a free `t_half`. A restart then counts as
+  better only when its objective is higher by more than a relative 1e-6
+  and its own identification can be checked. It does not trigger the
+  restart when the cause is that the numDeriv package is not installed.
 
 ## Details
 
@@ -444,9 +446,22 @@ Control parameters:
   (`outcome = "kept"`). This trigger never refuses on its own, and it
   does not fire when the Hessian is unusable only because the numDeriv
   package is not installed. The original fit is recorded in
-  `fit$fit$limit`. With `FALSE` the grid is skipped: a limit found by
-  the boundary checks then refuses at once, and a flat direction or an
-  unusable Hessian returns the original fit.
+  `fit$fit$limit`. Last, on a fit nothing else flagged, a free `t_half`
+  of a cdf or hazard phase that lies outside the observed times, or
+  whose phase has `m < 0`, is moved by the data's whole log-span, up and
+  down, with the phase's other parameters refitted. When either move
+  lowers the log-likelihood by less than `0.5 * qchisq(0.5, 1)` (about
+  0.23), `t_half` is not identified: with `m < 0`, `nu` and `t_half` run
+  to infinity together and the phase is a power law in t over the data.
+  A move that raises it fires the check too: the fit is then not a
+  maximum. When a move cannot be computed (a `t_half` near the largest
+  double, or a failed refit) and the other move is not flat, the record
+  says the span is unchecked, not flat: nothing was measured. This also
+  only tries the grid, and a start wins only if this check is clean for
+  it too and its Hessian can be used. With `FALSE` the grid is skipped:
+  a limit found by the boundary checks then refuses at once, and a flat
+  direction, an unusable Hessian or a flat span returns the original
+  fit.
 
 - `phase_share_tol`: Threshold for the multiphase identifiability
   warning (default 1e-8). A phase is reported as having left the model
@@ -834,10 +849,10 @@ summary(fit2)
 #> Coefficients:
 #>          estimate   std_error     z_stat      p_value
 #> mu    0.121938323 0.062299561  1.9572902 5.031335e-02
-#> nu    1.143693955 0.084297244 13.5673944 6.250475e-42
+#> nu    1.143693956 0.084297244 13.5673944 6.250475e-42
 #> beta1 0.001710112 0.008807807  0.1941586 8.460517e-01
 #> beta2 0.156102262 0.090593058  1.7231151 8.486772e-02
-#> beta3 0.017258365 0.362941256  0.0475514 9.620738e-01
+#> beta3 0.017258366 0.362941256  0.0475514 9.620738e-01
 
 # \donttest{
 # -- Parametric survival with Kaplan-Meier overlay -----------------

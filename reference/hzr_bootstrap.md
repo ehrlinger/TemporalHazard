@@ -228,7 +228,9 @@ A list with class `"hzr_bootstrap"` containing:
 
   Number of successful replicates whose first fit ran a shape parameter
   to a limit and was refitted from a grid of other starts, the restart
-  winning. Such a replicate counts as a success. It is reported for
+  winning. Such a replicate counts as a success. With a `scope`, a
+  replicate also counts when the refit of its base model was restarted,
+  since every candidate was measured against it. It is reported for
   every multiphase fit, including when it is 0, and is `NA` for any
   other model, which has no limit check.
 

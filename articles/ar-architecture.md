@@ -136,10 +136,12 @@ and apply the phase type mapping:
 
 [`.hzr_optim_multiphase()`](https://ehrlinger.github.io/TemporalHazard/reference/dot-hzr_optim_multiphase.md)
 runs a multi-start strategy: the first start uses the assembled starting
-values (from `theta` or `hzr_phase` specs); subsequent starts perturb
-randomly (sd = 0.5). The best log-likelihood across all starts is kept.
-This helps the optimizer escape the shallow local optima that are common
-in multiphase models.
+values (from `theta` or `hzr_phase` specs); subsequent starts add
+offsets (sd = 0.5) that the package computes from `control$start_seed`
+without R’s random number stream, so a fit is reproducible without
+[`set.seed()`](https://rdrr.io/r/base/Random.html). The best
+log-likelihood across all starts is kept. This helps the optimizer
+escape the shallow local optima that are common in multiphase models.
 
 The optimizer delegates to `.hzr_optim_generic()`, which wraps
 [`stats::optim()`](https://rdrr.io/r/stats/optim.html) with method
