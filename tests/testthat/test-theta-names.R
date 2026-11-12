@@ -108,3 +108,87 @@ test_that("a covariate matrix with no colnames still yields conformable names", 
   expect_length(nms, 6L)
   expect_false(anyNA(nms))
 })
+
+# A covariate named like one of its own phase's parameters gave two
+# parameters the same name: the fit was right, but summary() failed and every
+# lookup by name (coef(fit)["early.nu"], the package's own theta[["..."]]
+# reads, a stepwise Wald test) silently read the shape (#737 review).
+test_that("a covariate named like its phase's own parameter is refused", {
+  expect_error(hzr_theta_names(list(early = hzr_phase("cdf")),
+                               covariates = list(early = "nu")),
+               "early.nu", fixed = TRUE)
+  expect_error(hzr_theta_names(list(late = hzr_phase("g3")),
+                               covariates = list(late = c("age", "gamma"))),
+               "late.gamma", fixed = TRUE)
+  expect_error(hzr_theta_names(list(constant = hzr_phase("constant")),
+                               covariates = list(constant = "log_mu")),
+               "constant.log_mu", fixed = TRUE)
+  # Two phases can produce one name too: `a` with covariate `b.log_mu`, and
+  # phase `a.b`.
+  expect_error(hzr_theta_names(list(a = hzr_phase("constant"),
+                                    a.b = hzr_phase("constant")),
+                               covariates = list(a = "b.log_mu")),
+               "share the name `a.b.log_mu`", fixed = TRUE)
+  # Another phase's parameter name is not a collision: the prefix differs.
+  expect_identical(
+    hzr_theta_names(list(early = hzr_phase("cdf"),
+                         constant = hzr_phase("constant")),
+                    covariates = list(constant = "nu")),
+    c("early.log_mu", "early.log_t_half", "early.nu", "early.m",
+      "constant.log_mu", "constant.nu"))
+})
+
+test_that("hazard() refuses a colliding covariate, by phase and column", {
+  set.seed(5)
+  n <- 120
+  x <- stats::rnorm(n)
+  d <- data.frame(tt = stats::rexp(n, 0.3 * exp(0.7 * x)),
+                  st = stats::rbinom(n, 1, 0.8), log_mu = x, z = x)
+  fit_with <- function(cov) {
+    hazard(survival::Surv(tt, st) ~ 1, data = d, dist = "multiphase",
+           phases = list(constant = hzr_phase("constant", formula = cov)),
+           fit = TRUE)
+  }
+  expect_error(fit_with(~ log_mu),
+               "covariate `log_mu` in phase `constant`", fixed = TRUE)
+  # The same column under another name fits, so the refusal is the name's.
+  ok <- fit_with(~ z)
+  expect_identical(names(coef(ok)), c("constant.log_mu", "constant.z"))
+  # A factor's design column is checked, not only the variable's name:
+  # `n` with level "u" expands to the column `nu`.
+  d$n <- factor(rep(c("t", "u"), length.out = n))
+  expect_error(hazard(survival::Surv(tt, st) ~ 1, data = d,
+                      dist = "multiphase",
+                      phases = list(early = hzr_phase("cdf", formula = ~ n),
+                                    constant = hzr_phase("constant")),
+                      fit = TRUE),
+               "covariate `nu` in phase `early`", fixed = TRUE)
+})
+
+test_that("a stepwise screen does not pass over a colliding candidate", {
+  skip_on_cran() # three multiphase fits
+  set.seed(5)
+  n <- 300
+  x <- stats::rnorm(n)
+  w <- stats::rnorm(n)
+  d <- data.frame(tt = stats::rexp(n, 0.3 * exp(0.7 * x + 0.5 * w)),
+                  st = stats::rbinom(n, 1, 0.8), log_mu = x, w = w)
+  fit <- hazard(survival::Surv(tt, st) ~ 1, data = d, dist = "multiphase",
+                phases = list(constant = hzr_phase("constant")), fit = TRUE)
+  sc <- list(constant = ~ log_mu + w)
+  # The score screen stops with the refusal.
+  expect_error(suppressWarnings(hzr_stepwise(fit, scope = sc, data = d,
+                                             criterion = "score",
+                                             trace = FALSE)),
+               "covariate `log_mu` in phase `constant`", fixed = TRUE)
+  # The Wald screen enters what it can and stops naming the candidate it
+  # could not move.
+  sw <- suppressWarnings(hzr_stepwise(fit, scope = sc, data = d,
+                                      criterion = "wald", trace = FALSE))
+  expect_identical(sw$steps$variable, "w")
+  # ...and records the refusal as the reason, not some other failure.
+  why <- sw$criteria$refit_failure_reasons
+  expect_gt(length(why), 0L)
+  expect_true(all(grepl("covariate `log_mu` in phase `constant`", why,
+                        fixed = TRUE)))
+})

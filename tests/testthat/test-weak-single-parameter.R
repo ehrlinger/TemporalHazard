@@ -168,13 +168,12 @@ test_that("a determined log_mu is not named when covariate units open the gate (
   expect_null(fit$fit$weak)
 })
 
-test_that("a covariate named like a log-scale parameter is never named (#673 review)", {
-  # A column called `log_mu` makes a second `constant.log_mu`, the
-  # coefficient (z about 7). The name cannot say which parameter it is.
-  fit <- unit_fit(1e-4, covariate = "log_mu")
-  expect_identical(names(fit$fit$theta), rep("constant.log_mu", 2L))
-  expect_lt(fit$fit$rcond, .hzr_rcond_tol)
-  expect_null(fit$fit$weak)
+test_that("a covariate named like a log-scale parameter is refused (#673 review)", {
+  # A column called `log_mu` used to make a second `constant.log_mu`, which
+  # this reading then declined to name. Such a name is now refused before
+  # the fit (.hzr_phase_theta_names()), so the fit never exists.
+  expect_error(unit_fit(1e-4, covariate = "log_mu"),
+               "covariate `log_mu` in phase `constant`", fixed = TRUE)
 })
 
 # Nobody dies late, so a constant phase beside an early one has nothing to fit.

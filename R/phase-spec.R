@@ -548,6 +548,24 @@ is_hzr_phase <- function(x) {
     )
   }
 
+  # A covariate named like one of this phase's own parameters would give two
+  # parameters one name. The fit is unaffected, but summary() fails and every
+  # lookup by name (coef(fit)["early.nu"], theta[["early.nu"]], a stepwise
+  # Wald test) silently reads the shape (#737 review). Checked here, on the
+  # design columns, so a factor level that expands to such a name is caught,
+  # on every path that names theta.
+  clash <- covariate_names[paste0(phase_name, ".", covariate_names) %in%
+                             names_out]
+  if (length(clash) > 0L) {
+    stop("The covariate `", clash[[1L]], "` in phase `", phase_name,
+         "` has the name of one of that phase's own parameters (",
+         paste0(phase_name, ".", clash[[1L]]), "), so two parameters would ",
+         "share it and a lookup by name would read the wrong one. Rename ",
+         "the column in `data` or `x` (for a factor, the variable or its ",
+         "level).",
+         call. = FALSE)
+  }
+
   # Covariate coefficients
   if (length(covariate_names) > 0L) {
     names_out <- c(names_out,
@@ -684,9 +702,20 @@ hzr_theta_names <- function(phases, covariates = NULL) {
 #' @return Character vector, concatenated in phase order.
 #' @noRd
 .hzr_theta_names_list <- function(phases, cov_names = NULL) {
-  unlist(lapply(names(phases), function(nm) {
+  out <- unlist(lapply(names(phases), function(nm) {
     .hzr_phase_theta_names(phases[[nm]], nm, cov_names[[nm]] %||% character(0))
   }), use.names = FALSE)
+  # Two phases can also produce one name: phases `a` and `a.b`, with a
+  # covariate `b.log_mu` in `a`, both give `a.b.log_mu` (#737 review).
+  dup <- out[duplicated(out)]
+  if (length(dup) > 0L) {
+    stop("Two parameters would share the name `", dup[[1L]], "`, so a ",
+         "lookup by name would read the wrong one: a phase has two ",
+         "covariates of that name, or a phase name followed by a dot begins ",
+         "another phase's name. Rename the covariate or the phase.",
+         call. = FALSE)
+  }
+  out
 }
 
 
