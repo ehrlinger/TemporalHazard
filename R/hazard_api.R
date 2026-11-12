@@ -1008,28 +1008,11 @@ hazard <- function(formula = NULL,
       env = parent.frame(),
       call = match.call(),
       cache = new.env(parent = emptyenv()))
-    # The body forces these on every multiphase fit. `x`, and the five above
-    # on the vector path without `data`, are ordinary arguments only on some
-    # paths, so they are forced only on those, as the body would.
-    force(objective)
-    force(data)
-    force(formula)
-    force(time_windows)
-    force(phases)
-    force(theta)
-    force(control)
-    list(...)
-    if (is.null(formula)) {
-      force(x)
-      if (is.null(data)) {
-        force(time)
-        force(status)
-        force(time_lower)
-        force(time_upper)
-        force(weights)
-      }
-    }
-    inputs$call_env <- .hzr_capture_call_env(inputs$call, inputs$env)
+    # Nothing else is forced here. The inner fit runs in this frame, so it
+    # forces each argument's promise as the body reaches it, in the body's
+    # own order, and every later inner fit reads the cached value: once, and
+    # in the order hazard() without the layer uses, which matters when
+    # arguments share RNG or other state (#737 review).
     inner <- quote(hazard(formula = formula, data = data, time = time,
                           status = status, time_lower = time_lower,
                           time_upper = time_upper, x = x,
@@ -2167,7 +2150,11 @@ hazard <- function(formula = NULL,
     captured_env <- .hzr_capture_call_env(captured_call, parent.frame())
   } else {
     captured_call <- inputs$call
-    captured_env <- inputs$call_env
+    # Copied where the body without the layer copies it (it can force a
+    # wrapper's promises), and once per call.
+    captured_env <- .hzr_limit_once("call_env", inputs, function() {
+      .hzr_capture_call_env(inputs$call, inputs$env)
+    })
   }
 
   # Assemble the hazard S3 object.

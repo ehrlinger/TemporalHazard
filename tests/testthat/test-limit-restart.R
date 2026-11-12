@@ -335,6 +335,77 @@ expect_grid_ran <- function(err) {
   expect_match(conditionMessage(err), "None of [1-9][0-9]* restarts")
 }
 
+# #737 review: the layer used to force phases, theta and control before
+# time and status, so arguments sharing RNG or other state were evaluated in
+# another order than hazard() evaluates them, and a clean fit used other
+# data. The reference is the same body with the layer bypassed, i.e. the
+# pre-layer order, not limit_restart = FALSE (which also runs the layer).
+without_layer <- function(expr) {
+  old <- .hzr_limit_state$inner
+  .hzr_limit_state$inner <- TRUE
+  on.exit(.hzr_limit_state$inner <- old)
+  expr
+}
+
+test_that("arguments are evaluated in hazard()'s own order (#737 review)", {
+  rng_fit <- function() {
+    set.seed(21)
+    suppressWarnings(hazard(
+      time = stats::rexp(30) + 0.1, status = rep(c(0, 1), 15),
+      dist = "multiphase",
+      phases = list(early = hzr_phase("cdf", t_half = stats::runif(1, 1, 2),
+                                      nu = 1, m = 0, fixed = "shapes"),
+                    constant = hzr_phase("constant")),
+      fit = TRUE, control = list(n_starts = 1)))
+  }
+  got <- rng_fit()
+  ref <- without_layer(rng_fit())
+  expect_null(got$fit$limit)
+  expect_identical(got$data$time, ref$data$time)
+  expect_identical(got$fit$theta, ref$fit$theta)
+
+  # Every argument logs when it is evaluated: the layer must not reorder any
+  # of them, on either interface or through a wrapper's frame.
+  dd <- data.frame(tt = stats::rexp(40, 0.3) + 0.1, st = rep(c(1, 0), 20))
+  log_order <- function(call_fit) {
+    seen <- character(0)
+    at <- function(nm, v) {
+      seen <<- c(seen, nm)
+      v
+    }
+    suppressWarnings(call_fit(at))
+    seen
+  }
+  ph <- function(at) list(constant = at("phases", hzr_phase("constant")))
+  vec <- function(at) {
+    hazard(time = at("time", dd$tt), status = at("status", dd$st),
+           dist = at("dist", "multiphase"), phases = ph(at),
+           theta = at("theta", NULL), fit = TRUE,
+           control = at("control", list(n_starts = 1L)))
+  }
+  fml <- function(at) {
+    hazard(survival::Surv(tt, st) ~ 1, data = at("data", dd),
+           dist = "multiphase", phases = ph(at), theta = at("theta", NULL),
+           fit = TRUE, control = at("control", list(n_starts = 1L)))
+  }
+  wrap <- function(at) {
+    # The body forces `phases` after `weights` and `control`; copying the
+    # call's bindings up front forced the wrapper's promises in the order of
+    # hazard()'s formals, `phases` first.
+    inner <- function(tm, p, w, ctl) {
+      hazard(time = tm, status = dd$st, dist = "multiphase",
+             phases = p, fit = TRUE, control = ctl, weights = w)
+    }
+    inner(at("time", dd$tt), ph(at), at("weights", NULL),
+          at("control", list(n_starts = 1L)))
+  }
+  for (f in list(vec, fml, wrap)) {
+    ref <- without_layer(log_order(f))
+    expect_gt(length(ref), 2L)
+    expect_identical(log_order(f), ref)
+  }
+})
+
 test_that("an argument written in the call is evaluated once (#683 review)", {
   dd <- avc_448()
   n <- 0L

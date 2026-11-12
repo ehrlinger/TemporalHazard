@@ -23,5 +23,6 @@
   (#729).** It used to stop in another basin, where the early phase's
   `t_half` was not identified; the limit check restarts it from there.
 * **Code inside a formula, a phase formula included, runs as often as it
-  would without the limit check**, however many fits the check makes, so a
-  random term draws the same numbers.
+  would without the limit check**, however many fits the check makes, and
+  `hazard()`'s arguments are evaluated in the same order as without it, so
+  a random term or a `runif()` in a phase draws the same numbers.

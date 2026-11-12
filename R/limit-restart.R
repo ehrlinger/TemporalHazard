@@ -449,10 +449,6 @@
 #' @keywords internal
 #' @noRd
 .hzr_limit_fit <- function(cl, env, inputs, theta, control) {
-  restart <- control$limit_restart %||% TRUE
-  if (!(isTRUE(restart) || isFALSE(restart))) {
-    stop("control$limit_restart must be TRUE or FALSE.", call. = FALSE)
-  }
   # Phase designs are built once per call (.hzr_phase_formula_design()).
   old_cache <- .hzr_limit_state$cache
   .hzr_limit_state$cache <- inputs$cache
@@ -462,6 +458,12 @@
   if (inherits(first$value, "condition")) {
     emit(first)
     stop(first$value)
+  }
+  # Read after the first fit, which forces `control` where the body does
+  # (#737 review).
+  restart <- control$limit_restart %||% TRUE
+  if (!(isTRUE(restart) || isFALSE(restart))) {
+    stop("control$limit_restart must be TRUE or FALSE.", call. = FALSE)
   }
   trigger <- .hzr_limit_trigger(first$value)
   if (is.null(trigger)) {
