@@ -1008,6 +1008,17 @@ test_that("#734: a span move that gains fires, and weight-0 rows do not widen th
                "early.t_half: a span move that raises the log-likelihood",
                fixed = TRUE)
   expect_false(.hzr_limit_is_hard(gained))
+  # A flat upward move does not hide a gain downward: both directions are
+  # measured and the gain wins (#740 review).
+  moved <- character(0)
+  testthat::local_mocked_bindings(
+    .hzr_limit_span_move = function(th, pk, type, to, free, ut, ll) {
+      up <- to > th[[pk[[2L]]]]
+      moved <<- c(moved, if (up) "up" else "down")
+      ll(th) + if (up) 0 else 5
+    }, .package = "TemporalHazard")
+  expect_identical(.hzr_limit_span(far), gain_trigger)
+  expect_identical(moved, c("up", "down"))
   # Weight-0 rows are not in the likelihood, so they do not make a t_half
   # past the weighted data read as inside it. The last time gets weight 0
   # and t_half sits between it and the next one, with m >= 0.

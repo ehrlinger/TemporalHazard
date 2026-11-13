@@ -271,12 +271,14 @@
       if (is.na(d)) {
         unchecked <- TRUE
       } else if (d - ll0 > .hzr_limit_span_tau) {
-        # Tested first: a gain also passes the flat test below.
+        # Tested first: a gain also passes the flat test below. It ends the
+        # search, since a gain in either direction means no maximum.
         gain <- TRUE
         break
       } else if (ll0 - d < .hzr_limit_span_tau) {
+        # No break: the other direction may gain, which takes precedence
+        # (#740 review).
         flat <- TRUE
-        break
       }
     }
     if (gain || flat || unchecked) {
