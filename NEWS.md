@@ -1,3 +1,187 @@
+# TemporalHazard 1.3.1
+
+This is a patch release, but some calls that ran under 1.3.0 now give a
+different result. A multiphase fit whose shape parameter runs to a limit is
+now refitted from a grid of starts, with a warning of class
+`hzr_limit_restarted`, or refused with an error of class
+`hzr_limit_refusal` (#683, #734). Under 1.3.0 such a fit returned the drifted
+last iterate, often with no warning. These are correctness fixes: the fit
+1.3.0 returned was not an estimate. `hzr_bootstrap()` also refuses more terms
+that would have given a wrong interval (#721), and `hazard()` refuses a
+covariate named like one of its phase's parameters.
+
+## Changes since 1.3.0
+
+* **The `Surv()` response of a formula now sees the formula's environment
+  (#447).** It was evaluated in `data` and then in a frame of the package's
+  own, never the environment the formula was written in. A fit inside a
+  function whose response used a local variable, such as
+  `Surv(pmin(time, cutoff), status)`, silently used a global variable of the
+  same name instead, if one existed, with no warning. Without one it failed
+  with "object not found". The right-hand side and `stats::lm()` already
+  looked there. A column of `data` still takes precedence. `hzr_bootstrap()`
+  now checks response variables in the same place, so a per-row local in the
+  response is refused instead of being left out of the resampling.
+
+* The test that compares the stored stepwise fit in
+  `vignette("clinical-analysis-walkthrough")` with a refit now skips under
+  `covr`. `covr` installs the package without its vignettes, so the test
+  could not find the vignette source and failed the coverage run on every
+  merge since the stored fit was added.
+
+* The examples for `hzr_translate_sas()`, `hzr_gof()` and `hzr_deciles()` are no longer
+  wrapped in `\donttest{}`. Each runs in well under a second, so `R CMD check` now runs them.
+* `hzr_bootstrap()` gains a quick example (ten resamples) that runs during `R CMD check`.
+  The longer examples stay in `\donttest{}`.
+* The second reference in the `DESCRIPTION` now reads Rajeswaran et al. (2018), the
+  authors (year) form CRAN asks for. The year, 2018, is the print issue
+  (Statistical Methods in Medical Research 27(1)); the article appeared online in 2016.
+
+* `hzr_translate_sas()`: when a job's first fit sits in a `%MACRO` the file never calls, the `$untranslated` row for an ambiguous `INHAZ=` now names the fit the emitted `predict()` uses (`fit_2`, say), not the skipped `fit` (#724).
+* `hzr_translate_sas()`: the job state restored after a block in a `%MACRO` the file never calls now includes the prediction grid. The in-macro grid refusal already kept such a block from setting `job$grid`, so output does not change; the test now checks the restore itself, not the refusal (#725).
+
+* **`hzr_bootstrap()` now refuses a term that reads a per-row vector from
+  outside `data` through a helper function or an object member (#721).**
+  The refusal from #278 read the names in each formula and skipped any name
+  that held a function or did not hold one value per row. So
+  `z <- function(x) x + zvec` in `~ z(age)`, `cap <- function(x)
+  pmin(x, caps)` in `Surv(cap(time), status)`, and `cfg$z` with
+  `cfg <- list(z = ...)` all got through. Every replicate reported success
+  while the vector stayed in its original order, and the interval was wrong.
+  Each term of the response, the right-hand side, the phase formulas and a
+  select-mode `scope` is now also evaluated on the rows of `data` in a
+  second order, in each environment the refit reads it from, and a term
+  that does not give each row its own value is refused by name. A term that
+  depends on the order of the rows or is random, such as `cumsum(x)` or
+  `jitter(age)`, is refused too, since each replicate would recompute it. A helper that only transforms its argument, such as
+  `function(x) log(x)` defined next to the data, or a term computed from the
+  rows as a set, such as `scale()` or `poly()`, still bootstraps. A
+  bootstrap this now refuses would have returned a wrong interval.
+
+* The README figures now show the additive phases more clearly. The hazard
+  figure plots the hazard rate in percent per year over 15 years, with each
+  phase labelled on its curve and the axis clipped so the constant and late
+  phases are no longer flattened by the early spike. The survival figure draws the
+  Kaplan-Meier estimate over the fitted curve, where it had been hidden
+  underneath, and shades where the early and late phases dominate.
+
+* **`predict()` gives the standard error of a cohort's average curve
+  (#731, experimental).** With `se.fit = TRUE, average = TRUE`, the
+  predictions of all rows that share a `time` are averaged, one row per
+  distinct time, with columns `time`, `n`, `fit`, `se.fit`, `lower` and
+  `upper`. Use it for the expected survival of a cohort scored through a
+  fitted model, to set against its Kaplan-Meier. The standard error is the
+  delta-method standard error of the mean, so it allows for the correlation
+  between patients, and is never larger than the mean of the patients' own
+  standard errors. The limits are the mean's own. Averaging each patient's
+  `lower` and `upper`, the only way before, gives a different band that is
+  not the mean's interval.
+* **`hzr_jacobian()` returns the derivatives behind the standard errors of a
+  `se.fit = TRUE` result from `predict()`** (experimental): each row's
+  derivative with respect to the parameters, their covariance matrix and
+  their names. Any weighted sum of the predictions now has a standard error,
+  such as the expected number of events for a one-sample log-rank test,
+  without rebuilding the package's handling of fixed parameters or of the
+  Weibull scale. It matches the derivatives to the rows you hold after
+  selecting, reordering or repeating rows, and refuses rows it cannot match,
+  such as rows bound from another prediction. A Weibull fit's first column
+  is `log(mu)`. It and `average` may change in a later release.
+
+* **A multiphase fit no longer returns a shape that has run to a limit
+  (#683).** When a cdf or hazard phase's `nu` runs to 0 (the phase becomes
+  a step), its `t_half` falls below the first observed time, or its
+  `t_half` rises past the data, `hazard()` used to return the drifted last
+  iterate, with a warning for the first two and nothing for the third. It
+  now refits from a fixed grid of starts. A start that reaches the best
+  objective without running to a limit the check detects is returned, with
+  a warning of class `hzr_limit_restarted`. When none does, `hazard()`
+  stops with an error of class `hzr_limit_refusal` that names the phase and
+  parameter, so you can fix it, as `FIXNU` or `FIXTHALF` would in SAS. The
+  error carries the restarts it tried as `$grid`, and the drifted fit as
+  `$fit` for inspection; `print()` marks that fit as refused. A
+  weakly identified shape, or a fit whose Hessian cannot be used so it has
+  no standard errors (#734), tries the same grid but is never refused: the
+  original is kept unless a start does strictly better. `print()` and
+  `summary()` always show a `Limit check:` line, and `fit$fit$limit`
+  records the trigger and the grid; a fit saved before this release reads
+  "not run". `control = list(limit_restart = FALSE)` skips the grid: a hard
+  limit then refuses at once, so it does not bring back the drifted fit,
+  and a weak flag is recorded with the restart "not tried".
+  `hzr_stepwise()` and `hzr_bootstrap()` record a refused refit under the
+  reason `"limit: ..."`, and the bootstrap counts restarted replicates. The
+  model is never switched for you.
+* **A blind start now reaches the SAS optimum on `hm.death.patient`
+  (#729).** It used to stop in another basin, where the early phase's
+  `t_half` was not identified; the limit check restarts it from there.
+* **Code inside a formula, a phase formula included, runs as often as it
+  would without the limit check**, however many fits the check makes, and
+  `hazard()`'s arguments are evaluated in the same order as without it, so
+  a random term or a `runif()` in a phase draws the same numbers.
+
+* **A covariate named like one of its own phase's parameters is refused.**
+  A design column called `nu`, `m`, `log_t_half` or `log_mu` in a cdf or
+  hazard phase (`log_tau`, `gamma`, `alpha`, `eta` or `log_mu` in a g3
+  phase, `log_mu` in a constant one) gave two parameters the same name,
+  such as `early.nu`. The estimates were right, but `summary()` failed and a
+  lookup by name, `coef(fit)["early.nu"]` or a stepwise Wald test among
+  them, read the shape instead of the covariate. `hazard()` now stops,
+  naming the phase and the column, so it can be renamed. A factor level
+  that expands to such a name is caught too, and so is the rarer case of
+  two phases making one name (a phase `a.b` beside a phase `a` with a
+  covariate `b.log_mu`). A fit saved before this release with such a name
+  still prints and predicts, but `hzr_evaluate()` and `hzr_bootstrap()`
+  now refuse it.
+
+* `hzr_stepwise()`: when one of a multiphase candidate refit's two starts
+  refuses because a shape parameter ran to a limit and the other start's fit
+  is kept, the refusal is no longer dropped. It is kept on the fit as
+  `$fit$refit_refusal`, and a warning of class `hzr_limit_refit_refused`
+  names the limit and that start's objective (#736).
+* `hzr_bootstrap()` with a `scope` now counts a replicate as restarted when
+  the refit of its base model was restarted, not only when its final fit
+  was; every candidate in that replicate was measured against the base
+  (#736).
+* `control$limit_restart` is now validated on an unfitted call too
+  (`fit = FALSE`), whose control a later stepwise or bootstrap refit uses
+  (#736).
+* A hard limit refusal now reports the objective from the user's own start.
+  When a restart that also ran to a limit went higher, that value is named
+  separately: a fit at a limit can reach a degenerate likelihood, such as a
+  spike on tied times, which the message used to call "the best objective
+  reached". The refusal also carries `$start_objective` (#736).
+* The limit line and messages now say "no start clear of a limit did better,
+  original kept" where they said "none better", which was wrong when a start
+  at a limit did better, and describe a flat direction as
+  "early.nu: a flat direction (not identified)" rather than "ran to" one
+  (#736).
+* Documentation: the README no longer says the shapes are always estimated
+  jointly beside an example that fixes them, and the architecture vignette no
+  longer says the multi-start offsets are random draws; they do not use R's
+  random number stream (#736).
+* **The limit layer now catches the `m < 0` joint limit (#734).** There
+  `nu` and `t_half` run to infinity together and a cdf or hazard phase
+  becomes a power law in t over the data. No boundary record flags it, and
+  when the Hessian was still usable, such fits came back with
+  `converged = TRUE` and a clean `$fit$limit`. On a fit nothing else flagged, a free `t_half` outside the
+  observed times, or in a phase with `m < 0`, is now moved across the data's
+  whole log-span with the phase's other parameters refitted. A loss in the
+  log-likelihood of less than about 0.23 means `t_half` is not identified; a
+  gain means the fit was not a maximum, and fires the check too. As
+  with a flat direction, this tries the restart grid and keeps the original
+  unless a start clear of the limit does better, with a usable Hessian of its
+  own. It never refuses. A move that cannot be computed does not count as
+  a flat span: the other direction is still tried, and when neither is
+  measured flat the record and messages say "an unchecked span".
+
+## Known limitations
+
+* **A converged multiphase fit is still not certainly a maximum** (#589).
+  The limit check above catches a fit whose shape runs to a limit, but not
+  a fit that stopped at an interior point that is not the best optimum. No
+  available signal yet separates a genuine maximum from a stuck one. Refit
+  from a clearly different `theta` and compare log-likelihoods before
+  trusting a multiphase estimate.
+
 # TemporalHazard 1.3.0
 
 This is the first CRAN release since 1.1.0. The nineteen 1.2.x versions below
