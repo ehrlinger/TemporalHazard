@@ -718,8 +718,12 @@ test_that("a job PROC HAZARD rejects at parse emits a stop(), not a fit (#340)",
 
 test_that("a phase variable missing from the data is named, not 'object not found' (#340)", {
   f <- withr::local_tempfile(fileext = ".sas")
+  # The shapes are held (FIXTHALF FIXNU): the data are noise, and with a free
+  # t_half the control fit sat at the t_half -> Inf limit, kept on one machine
+  # and refused on another (the 1.3.1 lri release suite). The test is about
+  # the column check, not the fit.
   writeLines(paste("%HAZARD( PROC HAZARD DATA=D CONDITION=14; EVENT DEAD; TIME TT;",
-                   "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005;",
+                   "PARMS MUE=0.2 THALF=0.15 NU=1 MUC=0.0005 FIXTHALF FIXNU;",
                    "EARLY AGE, ZZ; CONSTANT QQ/E; );"), f)
   job <- suppressWarnings(hzr_translate_sas(f))
   set.seed(9)
