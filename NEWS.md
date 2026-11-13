@@ -1,14 +1,27 @@
 # TemporalHazard 1.3.1
 
 This is a patch release, but some calls that ran under 1.3.0 now give a
-different result. A multiphase fit whose shape parameter runs to a limit is
-now refitted from a grid of starts, with a warning of class
-`hzr_limit_restarted`, or refused with an error of class
-`hzr_limit_refusal` (#683, #734). Under 1.3.0 such a fit returned the drifted
-last iterate, often with no warning. These are correctness fixes: the fit
-1.3.0 returned was not an estimate. `hzr_bootstrap()` also refuses more terms
-that would have given a wrong interval (#721), and `hazard()` refuses a
-covariate named like one of its phase's parameters.
+different result. Every multiphase fit now goes through a limit check
+(#683, #734), with one of three outcomes:
+
+* A shape parameter that has run to a hard limit (`nu` to 0, or `t_half`
+  below the first observed time or past the data) is refitted from a grid
+  of starts. A start clear of the limit is returned with a warning of class
+  `hzr_limit_restarted`; when there is none, `hazard()` stops with an error
+  of class `hzr_limit_refusal`. Under 1.3.0 such a fit returned the drifted
+  last iterate, often with no warning, and it was not an estimate.
+* A weaker flag (a flat direction, an unusable Hessian, or a `t_half` the
+  span check finds unidentified or not at a maximum) tries the same grid,
+  but is never refused. When no start clear of a limit does better, the
+  original fit is returned unchanged and **without an
+  `hzr_limit_restarted` warning**.
+* A fit with no flag is returned as before.
+
+Read the outcome from the `Limit check:` line of `print()` and `summary()`,
+or from `fit$fit$limit`, rather than from the absence of a warning.
+`hzr_bootstrap()` also refuses more terms that would have given a wrong
+interval (#721), and `hazard()` refuses a covariate named like one of its
+phase's parameters.
 
 ## Changes since 1.3.0
 
@@ -87,8 +100,8 @@ covariate named like one of its phase's parameters.
   such as rows bound from another prediction. A Weibull fit's first column
   is `log(mu)`. It and `average` may change in a later release.
 
-* **A multiphase fit no longer returns a shape that has run to a limit
-  (#683).** When a cdf or hazard phase's `nu` runs to 0 (the phase becomes
+* **A multiphase fit whose shape has run to a hard limit is no longer
+  returned as if it were an estimate (#683).** When a cdf or hazard phase's `nu` runs to 0 (the phase becomes
   a step), its `t_half` falls below the first observed time, or its
   `t_half` rises past the data, `hazard()` used to return the drifted last
   iterate, with a warning for the first two and nothing for the third. It
@@ -166,7 +179,8 @@ covariate named like one of its phase's parameters.
   observed times, or in a phase with `m < 0`, is now moved across the data's
   whole log-span with the phase's other parameters refitted. A loss in the
   log-likelihood of less than about 0.23 means `t_half` is not identified; a
-  gain means the fit was not a maximum, and fires the check too. As
+  gain means the fit was not a maximum, fires the check too, and is recorded
+  as "a span move that raises the log-likelihood", not as a flat span. As
   with a flat direction, this tries the restart grid and keeps the original
   unless a start clear of the limit does better, with a usable Hessian of its
   own. It never refuses. A move that cannot be computed does not count as

@@ -5,12 +5,15 @@
 This is an update to TemporalHazard 1.3.0, accepted 2026-11-08.
 
 It is a patch release, but some calls that ran under 1.3.0 now give a
-different result. A multiphase fit whose shape parameter runs to a limit (a
-phase becoming a step, or its half-time leaving the observed times) is now
-refitted from a grid of starts with a warning, or refused with an error that
-names the parameter. Under 1.3.0 such a fit returned the drifted last
-iterate, often with no warning, so it was not an estimate. `NEWS.md` opens
-the 1.3.1 section with these changes.
+different result. A multiphase fit whose shape parameter has run to a hard
+limit (a phase becoming a step, or its half-time leaving the observed times)
+is now refitted from a grid of starts with a warning, or refused with an
+error that names the parameter. Under 1.3.0 such a fit returned the drifted
+last iterate, often with no warning, so it was not an estimate. A weaker
+flag, such as a poorly identified half-time, tries the same grid but is
+never refused: when no start does better, the original fit is returned
+without the restart warning, and the check's outcome is recorded on the fit. `NEWS.md`
+opens the 1.3.1 section with these changes.
 
 ## Test environments
 

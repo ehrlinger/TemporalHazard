@@ -165,6 +165,13 @@
   "a flat span (t_half moves across the data's whole range at no cost; ",
   "with m < 0 the phase is a power law in t)")
 
+# The limit string when a move RAISES the log-likelihood by more than the
+# threshold: the fit is not a maximum along t_half, which is a different
+# conclusion from a flat span and must not read as one (#740 review).
+.hzr_limit_span_gain <- paste0(
+  "a span move that raises the log-likelihood (moving t_half across the ",
+  "data's range does better, so the fit is not a maximum)")
+
 # The limit string when no move could be computed and none was measured
 # flat: the span check did not run to a result, so identification is not
 # known (#739 review). Weak-only, as the flat span is.
@@ -186,7 +193,8 @@
 #' followed), then on the likelihood; and fire when either move changes the
 #' log-likelihood by less than `.hzr_limit_span_tau`, or raises it by more
 #' (the fit is then not a maximum). Both moves are tried. A move measured
-#' flat records a flat span (`.hzr_limit_span_limit`); a move that could not
+#' flat records a flat span (`.hzr_limit_span_limit`); a move that gains
+#' records `.hzr_limit_span_gain` (#740 review); a move that could not
 #' be computed, with no move measured flat, records an unchecked span
 #' (`.hzr_limit_span_unchecked`), never a flat one (#739 review).
 #' Run only where it can matter, a t_half outside the observed times or an
@@ -253,6 +261,7 @@
       next
     }
     flat <- FALSE
+    gain <- FALSE
     unchecked <- FALSE
     for (dir in c(1, -1)) {
       d <- .hzr_limit_span_move(th, pk, phases[[ph]]$type, lth + dir * span,
@@ -261,15 +270,25 @@
       # direction before saying anything about the span.
       if (is.na(d)) {
         unchecked <- TRUE
+      } else if (d - ll0 > .hzr_limit_span_tau) {
+        # Tested first: a gain also passes the flat test below.
+        gain <- TRUE
+        break
       } else if (ll0 - d < .hzr_limit_span_tau) {
         flat <- TRUE
         break
       }
     }
-    if (flat || unchecked) {
+    if (gain || flat || unchecked) {
       hits[[length(hits) + 1L]] <- list(
         phase = ph, parameter = "t_half",
-        limit = if (flat) .hzr_limit_span_limit else .hzr_limit_span_unchecked,
+        limit = if (gain) {
+          .hzr_limit_span_gain
+        } else if (flat) {
+          .hzr_limit_span_limit
+        } else {
+          .hzr_limit_span_unchecked
+        },
         source = "span")
     }
   }
