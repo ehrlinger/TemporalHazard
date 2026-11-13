@@ -1,121 +1,45 @@
-# CRAN submission comments -- TemporalHazard 1.3.0
+# CRAN submission comments -- TemporalHazard 1.3.1
 
 ## Summary
 
-This is an update to TemporalHazard 1.1.0, accepted 2026-06-12.
+This is an update to TemporalHazard 1.3.0, accepted 2026-11-08.
 
-This is a resubmission. The first 1.3.0 submission, on 2026-11-05, failed the
-incoming checks on one NOTE, `Overall checktime 11 min > 10 min` on
-r-devel-windows-x86_64. Its Windows and Debian pre-tests were otherwise
-`Status: OK`. "Check time" below says what changed.
-
-The versions between them, 1.2.1 to 1.2.19, were released internally and never
-submitted, so everything since 1.1.0 is new to CRAN. `NEWS.md` opens with a
-summary of the net change from 1.1.0, written for a user upgrading from it,
-followed by the detailed record for each internal version. Several later
-entries in that record reverse earlier ones; the summary nets them out.
-
-## License change
-
-The license is now GPL (>= 2). 1.1.0 was MIT.
-
-The reason is one internal function, `.hzr_mt_normal()`. It reproduces the
-numbers `set.seed()` and `rnorm()` give under R's default generators without
-using R's random number stream, and its seeding, zero-word substitution and
-normal inversion are derived from R's `src/main/RNG.c` and
-`src/nmath/snorm.c`, which are GPL (>= 2). The package therefore carries that
-license. `inst/COPYRIGHTS` lists the derived code and its copyright holders,
-and `Authors@R` credits the R Core Team and the authors of the Mersenne
-Twister, Makoto Matsumoto and Takuji Nishimura, as copyright holders. 1.1.0
-had a single author and copyright holder, the maintainer, who made the change.
-
-## Changes that can alter results
-
-This is numbered as a minor release, but some of its changes can change the
-result of a script written for 1.1.0. The "Upgrading from 1.1.0" section of
-`NEWS.md` lists them. The ones a user is most likely to meet:
-
-* **`hzr_stepwise()` now defaults to `criterion = "score"`,** the selection
-  statistic of the SAS HAZARD program this package reproduces. A stepwise
-  analysis re-run under 1.3.0 can select a different set of variables.
-* **Several fixes move fitted values.** Among them: multiphase fits under
-  Conservation of Events now reach maxima that 1.1.0 stopped short of;
-  exponential, log-logistic and log-normal fits now honour left truncation;
-  and left- and interval-censored `Surv()` responses on the formula interface
-  were mistranslated in 1.1.0.
-* **Some input 1.1.0 accepted is now refused or warned about,** such as
-  `control` elements that 1.1.0 accepted and never applied.
-
-The major digit is reserved for the first production release. These changes
-correct behaviour that departed from the reference implementation, rather than
-redesigning the interface, and each is documented in `NEWS.md` and on the
-affected help page.
-
-## Random number streams
-
-* A multiphase fit with `n_starts > 1` draws its start offsets from
-  `.hzr_mt_normal()` under `control$start_seed` (default 3). It neither reads
-  nor writes `.Random.seed`, so fitting does not depend on or advance the
-  user's stream.
-* `hzr_bootstrap(seed =)` calls `set.seed(seed)` on a seed the user supplies
-  and does not restore the stream afterwards, as its documentation says. It
-  does not write `.Random.seed` into the global environment.
+It is a patch release, but some calls that ran under 1.3.0 now give a
+different result. A multiphase fit whose shape parameter has run to a hard
+limit (a phase becoming a step, or its half-time leaving the observed times)
+is now refitted from a grid of starts with a warning, or refused with an
+error that names the parameter. Under 1.3.0 such a fit returned the drifted
+last iterate, often with no warning, so it was not an estimate. A weaker
+flag, such as a poorly identified half-time, tries the same grid but is
+never refused: when no start does better, the original fit is returned
+without the restart warning, and the check's outcome is recorded on the fit. `NEWS.md`
+opens the 1.3.1 section with these changes.
 
 ## Test environments
 
-* **Local:** R 4.6.1 on macOS (aarch64-apple-darwin23). `R CMD check
-  --as-cran` on a tarball built from a clean `git archive` export, with the
-  PDF manual: `Status: OK`, 0 errors, 0 warnings, 0 notes. The source tarball
-  is 4.07 MB.
-* **win-builder,** 2026-11-05, on a tarball that differs from this one only
-  in `tests/testthat/test-vignette-fit-step.R`, which skips on CRAN: R-devel (2026-11-04 r90836), R-release (4.6.2) and
-  R-oldrelease (4.5.3), each `Status: OK` with 0 errors, 0 warnings and
-  0 notes.
-* **GitHub Actions, `R CMD check --as-cran` with the manual,** on the commit
-  before the test skips: windows-latest
-  (R-devel, R-release, R-oldrel-1), macos-latest (R-release) and
-  ubuntu-latest (R-devel, R-release), all `Status: OK`, with
-  `urlchecker::url_check()` clean.
+TO FILL before submitting, from the logs of this tarball's checks:
+
+* **Local:** `R CMD check --as-cran` with the PDF manual, on a tarball built
+  from a clean `git archive` export.
+* **win-builder:** R-devel, R-release and R-oldrelease, with per-step timings.
+* **GitHub Actions, `R CMD check --as-cran` with the manual:** the
+  `check-release.yaml` run on `main` after this bump.
 * **GitHub Actions, on every merge:** ubuntu-latest (R-devel, R-release,
   R-oldrel-1 and R 4.1.0, the declared minimum), macos-latest (R-release) and
   windows-latest (R-release).
 
 ## Check time
 
-1.1.0 took 528 to 623 s to check on CRAN's Windows flavors. The tests that run
-under `R CMD check` had grown about fourfold since September 2026, and the
-first 1.3.0 submission's r-devel-windows incoming check took 11 minutes:
-228 s in the tests and 249 s rebuilding the vignettes.
-
-For this resubmission:
-
-* **Tests:** the 100 test files that took longest under the check carry a
-  file-level `skip_on_cran()`, against 50 in the first submission. They still
-  run on every GitHub Actions job and in the local suite. On macOS the tests
-  under the check now take 23 s, against 42 s for the first submission's
-  tarball.
-* **Vignettes:** the most expensive vignette chunk, a stepwise selection in
-  `clinical-analysis-walkthrough`, now shows its code and loads its stored
-  result from `inst/extdata/vignette-fit-step.rds` (72 KB). A test that runs
-  on GitHub Actions refits the vignette's code and compares it with the
-  stored result.
-
-On win-builder this tarball's tests took 34 s (R-devel), 33 s (R-release) and
-39 s (R-oldrelease), against 113 s to 123 s for the first submission's; the
-vignette rebuild took 131 s to 135 s, against 243 s to 252 s. The whole check
-took 5 min 3 s on R-devel and 5 min 11 s on R-release, against 8 min 30 s and
-8 min 24 s for the first submission's, which then took 11 minutes in the
-incoming r-devel-windows check.
+TO FILL from win-builder's `00check.log`. 1.3.0 took 5 min 3 s on win-builder
+R-devel and was accepted.
 
 ## Reverse dependencies
 
-`tools::package_dependencies(reverse = TRUE, which = "all")` against CRAN
-returns none.
+TO FILL from `tools::package_dependencies(reverse = TRUE, which = "all")`.
 
 ## NOTEs
 
-None. All three win-builder checks gave 0 errors, 0 warnings and 0 notes,
-incoming feasibility included.
+TO FILL from the win-builder checks.
 
 ## Background
 

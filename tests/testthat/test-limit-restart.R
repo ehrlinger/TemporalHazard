@@ -996,7 +996,29 @@ test_that("#734: a span move that gains fires, and weight-0 rows do not widen th
   testthat::local_mocked_bindings(
     .hzr_limit_span_move = function(th, pk, type, to, free, ut, ll) ll(th) + 5,
     .package = "TemporalHazard")
-  expect_identical(.hzr_limit_span(far), span_trigger_734)
+  # It is recorded as a gain, not as a flat span: "at no cost" would tell
+  # the analyst t_half is unidentified, a different conclusion (#740 review).
+  gain_trigger <- list(list(
+    phase = "early", parameter = "t_half", limit = .hzr_limit_span_gain,
+    source = "span"))
+  gained <- .hzr_limit_span(far)
+  expect_identical(gained, gain_trigger)
+  expect_false(identical(.hzr_limit_span_gain, .hzr_limit_span_limit))
+  expect_match(.hzr_limit_describe(gained),
+               "early.t_half: a span move that raises the log-likelihood",
+               fixed = TRUE)
+  expect_false(.hzr_limit_is_hard(gained))
+  # A flat upward move does not hide a gain downward: both directions are
+  # measured and the gain wins (#740 review).
+  moved <- character(0)
+  testthat::local_mocked_bindings(
+    .hzr_limit_span_move = function(th, pk, type, to, free, ut, ll) {
+      up <- to > th[[pk[[2L]]]]
+      moved <<- c(moved, if (up) "up" else "down")
+      ll(th) + if (up) 0 else 5
+    }, .package = "TemporalHazard")
+  expect_identical(.hzr_limit_span(far), gain_trigger)
+  expect_identical(moved, c("up", "down"))
   # Weight-0 rows are not in the likelihood, so they do not make a t_half
   # past the weighted data read as inside it. The last time gets weight 0
   # and t_half sits between it and the next one, with m >= 0.
@@ -1009,5 +1031,6 @@ test_that("#734: a span move that gains fires, and weight-0 rows do not widen th
   prep$weights <- rep(1, length(prep$time))
   expect_null(.hzr_limit_span(inside, prep))  # the premise: inside the data
   prep$weights[[i]] <- 0
-  expect_identical(.hzr_limit_span(inside, prep), span_trigger_734)
+  # The move is still mocked to gain, so it fires as a gain.
+  expect_identical(.hzr_limit_span(inside, prep), gain_trigger)
 })

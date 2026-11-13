@@ -335,9 +335,9 @@ returned: \code{hazard()} stops with class \code{"hzr_limit_refusal"},
 and the error's \code{$fit} holds the drifted fit for inspection, with
 \code{outcome = "refused"}.
 A fit whose only flag is a flat direction (a ridge), a Hessian that
-cannot be used (no standard errors), or a flat span (a \code{t_half}
-that moves across the data's whole range at no cost; see
-\code{control$limit_restart}), tries the same restart but is never
+cannot be used (no standard errors), or a span check (a \code{t_half}
+that moves across the data's whole range at no cost, or that does better
+moved; see \code{control$limit_restart}), tries the same restart but is never
 refused: when no restart does better it is returned unchanged, with
 \code{outcome = "kept"} and \code{winner = NA}. An unusable Hessian
 triggers the restart only on a converged fit that nothing else flagged
@@ -409,7 +409,8 @@ other parameters refitted. When either move lowers the log-likelihood
 by less than \code{0.5 * qchisq(0.5, 1)} (about 0.23), \code{t_half} is not
 identified: with \code{m < 0}, \code{nu} and \code{t_half} run to infinity together and
 the phase is a power law in t over the data. A move that raises it fires
-the check too: the fit is then not a maximum. When a move cannot be
+the check too: the fit is then not a maximum, and the record says the
+move raises the log-likelihood, not that the span is flat. When a move cannot be
 computed (a \code{t_half} near the largest double, or a failed refit) and
 the other move is not flat, the record says the span is unchecked, not
 flat: nothing was measured. This also only tries the grid, and a start
