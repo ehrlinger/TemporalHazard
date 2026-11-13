@@ -379,16 +379,17 @@ family.
   `hazard()` stops with class `"hzr_limit_refusal"`, and the error's
   `$fit` holds the drifted fit for inspection, with
   `outcome = "refused"`. A fit whose only flag is a flat direction (a
-  ridge), a Hessian that cannot be used (no standard errors), or a flat
-  span (a `t_half` that moves across the data's whole range at no cost;
-  see `control$limit_restart`), tries the same restart but is never
-  refused: when no restart does better it is returned unchanged, with
-  `outcome = "kept"` and `winner = NA`. An unusable Hessian triggers the
-  restart only on a converged fit that nothing else flagged and that has
-  a cdf or hazard phase with a free `t_half`. A restart then counts as
-  better only when its objective is higher by more than a relative 1e-6
-  and its own identification can be checked. It does not trigger the
-  restart when the cause is that the numDeriv package is not installed.
+  ridge), a Hessian that cannot be used (no standard errors), or a span
+  check (a `t_half` that moves across the data's whole range at no cost,
+  or that does better moved; see `control$limit_restart`), tries the
+  same restart but is never refused: when no restart does better it is
+  returned unchanged, with `outcome = "kept"` and `winner = NA`. An
+  unusable Hessian triggers the restart only on a converged fit that
+  nothing else flagged and that has a cdf or hazard phase with a free
+  `t_half`. A restart then counts as better only when its objective is
+  higher by more than a relative 1e-6 and its own identification can be
+  checked. It does not trigger the restart when the cause is that the
+  numDeriv package is not installed.
 
 ## Details
 
@@ -454,14 +455,15 @@ Control parameters:
   0.23), `t_half` is not identified: with `m < 0`, `nu` and `t_half` run
   to infinity together and the phase is a power law in t over the data.
   A move that raises it fires the check too: the fit is then not a
-  maximum. When a move cannot be computed (a `t_half` near the largest
-  double, or a failed refit) and the other move is not flat, the record
-  says the span is unchecked, not flat: nothing was measured. This also
-  only tries the grid, and a start wins only if this check is clean for
-  it too and its Hessian can be used. With `FALSE` the grid is skipped:
-  a limit found by the boundary checks then refuses at once, and a flat
-  direction, an unusable Hessian or a flat span returns the original
-  fit.
+  maximum, and the record says the move raises the log-likelihood, not
+  that the span is flat. When a move cannot be computed (a `t_half` near
+  the largest double, or a failed refit) and the other move is not flat,
+  the record says the span is unchecked, not flat: nothing was measured.
+  This also only tries the grid, and a start wins only if this check is
+  clean for it too and its Hessian can be used. With `FALSE` the grid is
+  skipped: a limit found by the boundary checks then refuses at once,
+  and a flat direction, an unusable Hessian or a flat span returns the
+  original fit.
 
 - `phase_share_tol`: Threshold for the multiphase identifiability
   warning (default 1e-8). A phase is reported as having left the model
