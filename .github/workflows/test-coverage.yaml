@@ -40,10 +40,11 @@ jobs:
 
       - uses: r-lib/actions/setup-pandoc@v2
 
+      # covr 4.0.0 pinned to the CRAN source: the PPM mirror lagged CRAN on release day.
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           cache-version: 2
-          extra-packages: any::covr
+          extra-packages: url::https://cran.r-project.org/src/contrib/covr_4.0.0.tar.gz
           needs: coverage
 
       - name: Test coverage
