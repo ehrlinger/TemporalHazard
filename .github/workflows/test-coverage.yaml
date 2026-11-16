@@ -42,11 +42,15 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
+          cache-version: 2
           extra-packages: any::covr
           needs: coverage
 
       - name: Test coverage
         shell: Rscript {0}
-        run: covr::codecov(quiet = FALSE)
+        run: |
+          # covr >= 4.0.0 required; a cached 3.6.5 would otherwise run silently.
+          stopifnot(packageVersion("covr") >= "4.0.0")
+          covr::codecov(quiet = FALSE)
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
