@@ -42,11 +42,17 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
+          cache-version: 3
           extra-packages: any::covr
           needs: coverage
 
       - name: Test coverage
         shell: Rscript {0}
-        run: covr::codecov(quiet = FALSE)
+        run: |
+          # covr >= 4.0.0 required; a cached 3.6.5 would otherwise run silently.
+          # Posit's CRAN mirror lagged CRAN on 4.0.0's release day, so fall back to CRAN itself.
+          if (packageVersion("covr") < "4.0.0") install.packages("covr", repos = "https://cloud.r-project.org")
+          stopifnot(packageVersion("covr") >= "4.0.0")
+          covr::codecov(quiet = FALSE)
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
